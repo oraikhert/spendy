@@ -3,13 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, User as UserSchema, Token
-from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.deps import get_current_active_user
+from app.services import user_service, auth_service
 
 
 router = APIRouter()
@@ -33,36 +32,14 @@ async def register(
     Raises:
         HTTPException: If email or username already exists
     """
-    # Check if email already exists
-    result = await db.execute(select(User).where(User.email == user_in.email))
-    if result.scalar_one_or_none():
+    try:
+        user = await user_service.create_user(user_in, db)
+        return user
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            detail=str(e)
         )
-    
-    # Check if username already exists
-    result = await db.execute(select(User).where(User.username == user_in.username))
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken"
-        )
-    
-    # Create new user
-    db_user = User(
-        email=user_in.email,
-        username=user_in.username,
-        full_name=user_in.full_name,
-        hashed_password=get_password_hash(user_in.password),
-        is_active=user_in.is_active,
-    )
-    
-    db.add(db_user)
-    await db.commit()
-    await db.refresh(db_user)
-    
-    return db_user
 
 
 @router.post("/login", response_model=Token)
@@ -83,31 +60,25 @@ async def login(
     Raises:
         HTTPException: If credentials are incorrect
     """
-    # Try to find user by username or email
-    result = await db.execute(
-        select(User).where(
-            (User.username == form_data.username) | (User.email == form_data.username)
+    try:
+        user = await auth_service.authenticate_user(
+            form_data.username, form_data.password, db
         )
-    )
-    user = result.scalar_one_or_none()
-    
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
-    
-    # Create access token (sub must be string for JWT)
-    access_token = create_access_token(data={"sub": str(user.id), "username": user.username})
-    
-    return Token(access_token=access_token, token_type="bearer")
+        token = await auth_service.create_user_access_token(user)
+        return token
+    except ValueError as e:
+        # Map service exceptions to appropriate HTTP status codes
+        if "Inactive" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(e),
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
 
 @router.get("/me", response_model=UserSchema)

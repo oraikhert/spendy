@@ -32,16 +32,35 @@ spendy/
 │   ├── main.py              # Главный файл приложения
 │   ├── config.py            # Конфигурация приложения
 │   ├── database.py          # Настройка базы данных
-│   ├── models/              # SQLAlchemy модели
-│   ├── schemas/             # Pydantic схемы
-│   ├── api/v1/              # API роуты (auth)
-│   └── core/                # security, deps
+│   ├── models/              # SQLAlchemy модели (таблицы БД)
+│   ├── schemas/             # Pydantic схемы (валидация)
+│   ├── services/            # Сервисный слой (бизнес-логика)
+│   │   ├── user_service.py  # CRUD операции с пользователями
+│   │   └── auth_service.py  # Аутентификация и токены
+│   ├── api/v1/              # API роуты (JSON responses)
+│   └── core/                # Утилиты (security, deps)
 ├── docs/                    # Документация (архитектура, миграции, решение проблем)
 ├── alembic/                 # Миграции БД
 ├── requirements.txt
 ├── run.py
 └── README.md
 ```
+
+### Архитектура
+
+Приложение использует **многослойную архитектуру с сервисным слоем**:
+
+```
+API Routes (JSON) → Services (бизнес-логика) → Models (БД)
+```
+
+**Преимущества:**
+- Бизнес-логика отделена от HTTP слоя
+- Один сервисный слой может использоваться разными клиентами (API, веб-страницы, мобильные приложения)
+- Легко тестировать сервисы независимо от HTTP
+- Готовность к добавлению Jinja2+HTMX или SPA в будущем
+
+Подробнее: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Установка и запуск
 
@@ -153,7 +172,9 @@ print(requests.get(f"{BASE}/auth/me", headers={"Authorization": f"Bearer {token}
 - **Где хранятся данные?** — В файле `spendy.db` (SQLite) в корне проекта.
 - **Как сбросить БД?** — Остановите сервер, выполните `rm spendy.db`, при следующем запуске БД создастся заново.
 - **Примеры запросов?** — `api_examples.http` или Swagger UI.
-- **Запуск тестов:** `python test_api.py` (в каталоге проекта с активированным venv).
+- **Запуск тестов:** 
+  1. `pip install -r requirements-dev.txt` (установка test зависимостей)
+  2. `python test_api.py` (в каталоге проекта с активированным venv)
 
 ## Переход с SQLite на PostgreSQL
 
@@ -183,6 +204,7 @@ print(requests.get(f"{BASE}/auth/me", headers={"Authorization": f"Bearer {token}
 | Файл | Описание |
 |------|----------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Архитектура и дизайн приложения |
+| [docs/SERVICE_LAYER.md](docs/SERVICE_LAYER.md) | Сервисный слой: структура, использование, примеры |
 | [docs/MIGRATIONS.md](docs/MIGRATIONS.md) | Работа с миграциями Alembic |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Решение проблем при установке и запуске |
 

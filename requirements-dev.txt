@@ -1,0 +1,13 @@
+# Development and Testing Dependencies
+# Устанавливайте командой: pip install -r requirements-dev.txt
+
+# Включаем все production зависимости
+-r requirements.txt
+
+# Тестирование API
+requests>=2.32.0
+
+# Будущее: Unit testing
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+# httpx>=0.26.0

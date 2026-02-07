@@ -2,10 +2,14 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import RedirectResponse
 
 from app.config import settings
 from app.database import init_db
 from app.api.v1 import api_router
+from app.web import web_router
 
 
 @asynccontextmanager
@@ -37,18 +41,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+# Configure Jinja2 templates
+templates = Jinja2Templates(directory="app/templates")
+
 # Include API routes
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+# Include web routes
+app.include_router(web_router)
 
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
-    return {
-        "message": f"Welcome to {settings.APP_NAME} API",
-        "docs": "/docs",
-        "version": "1.0.0"
-    }
+    """Root endpoint - redirect to login page"""
+    return RedirectResponse(url="/auth/login", status_code=303)
 
 
 @app.get("/health")

@@ -19,8 +19,22 @@ spendy/
 │   │   ├── user_service.py  # CRUD операции с пользователями
 │   │   └── auth_service.py  # Аутентификация и токены
 │   │
-│   ├── api/v1/              # API эндпоинты версии 1
+│   ├── api/v1/              # API эндпоинты версии 1 (JSON)
 │   │   └── auth.py          # Авторизация (register, login, me)
+│   │
+│   ├── web/                 # Веб-эндпоинты (HTML)
+│   │   ├── auth.py          # Страницы авторизации/регистрации
+│   │   └── pages.py         # Остальные страницы (dashboard и т.д.)
+│   │
+│   ├── templates/           # Jinja2 шаблоны
+│   │   ├── base.html        # Базовый шаблон
+│   │   ├── auth/            # Шаблоны авторизации
+│   │   │   ├── login.html
+│   │   │   └── register.html
+│   │   └── dashboard.html   # Панель пользователя
+│   │
+│   ├── static/              # Статические файлы
+│   │   └── css/             # CSS файлы
 │   │
 │   └── core/                # Основные утилиты
 │       ├── security.py      # JWT, хеширование паролей
@@ -204,29 +218,28 @@ OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 ```mermaid
 graph TD
-    Client[Client/Frontend]
+    Browser[Browser]
+    APIClient[API Client<br/>Mobile/External]
+    WebPages[Web Pages<br/>Jinja2+HTMX HTML]
     API[API Routes<br/>JSON responses]
-    Pages[Page Routes<br/>Jinja2+HTMX HTML<br/>будущее]
     Services[Service Layer<br/>Business Logic]
     DB[(Database<br/>SQLite/PostgreSQL)]
     Security[Core Security<br/>JWT, Password Hashing]
     
-    Client --> API
-    Client -.->|будущее| Pages
+    Browser --> WebPages
+    APIClient --> API
+    WebPages --> Services
     API --> Services
-    Pages -.->|будущее| Services
     Services --> DB
     Services --> Security
-    
-    style Pages fill:#f9f,stroke:#333,stroke-dasharray: 5 5
 ```
 
 **Преимущества архитектуры:**
-- Бизнес-логика не дублируется
-- API роуты возвращают JSON
-- Страничные роуты (будущие) будут возвращать HTML
-- SPA (будущее) будет использовать существующий API
-- Простая миграция между UI технологиями
+- Бизнес-логика не дублируется между API и веб-страницами
+- API роуты возвращают JSON для мобильных и внешних клиентов
+- Веб-страницы используют Jinja2+HTMX для интерактивного UI
+- Один сервисный слой обслуживает оба типа клиентов
+- Простая миграция на SPA в будущем без изменения сервисов
 
 ### Слои приложения
 
@@ -235,12 +248,12 @@ graph TD
 │        Presentation Layer               │
 │  ┌────────────────────────────────────┐ │
 │  │  API Routes (/api/v1/*)            │ │ ◄── JSON responses
-│  │  Page Routes (будущее)             │ │ ◄── HTML responses
+│  │  Web Routes (/auth/*, /dashboard)  │ │ ◄── HTML responses (Jinja2+HTMX)
 │  └────────────────────────────────────┘ │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│         Service Layer (НОВЫЙ!)          │
+│         Service Layer                   │
 │  ┌────────────────────────────────────┐ │
 │  │  user_service.py                   │ │
 │  │   • create_user()                  │ │
@@ -280,6 +293,7 @@ graph TD
 - Вызов функций сервисного слоя
 - Преобразование исключений в HTTP статусы
 - Формирование JSON ответов
+- Аутентификация через Bearer токены
 
 **Пример:**
 ```python
@@ -291,6 +305,43 @@ async def register(user_in: UserCreate, db: AsyncSession):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 ```
+
+#### 1a. Web Routes (app/web/)
+**Ответственность:**
+- Отображение HTML страниц через Jinja2 шаблоны
+- Обработка форм с HTMX
+- Вызов тех же функций сервисного слоя
+- Аутентификация через HTTP-only cookies
+- Формирование HTML ответов или HTMX-заголовков
+
+**Пример:**
+```python
+@router.post("/login")
+async def login_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        user = await auth_service.authenticate_user(username, password, db)
+        token = await auth_service.create_user_access_token(user)
+        
+        # HTMX redirect через заголовок
+        response = Response(status_code=200)
+        response.headers["HX-Redirect"] = "/dashboard"
+        response.set_cookie(key="access_token", value=token.access_token, httponly=True)
+        return response
+    except ValueError as e:
+        # Возврат HTML фрагмента с ошибкой
+        return HTMLResponse(content=f'<div class="alert alert-error">{e}</div>')
+```
+
+**Технологии:**
+- **Jinja2** - серверный рендеринг шаблонов
+- **HTMX** - асинхронная отправка форм без перезагрузки
+- **Tailwind CSS** - утилитарные CSS классы
+- **DaisyUI** - компоненты UI на базе Tailwind
 
 #### 2. Service Layer (app/services/) - НОВЫЙ СЛОЙ
 **Ответственность:**
@@ -336,8 +387,13 @@ async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
 
 #### 4. Core Utilities (app/core/)
 **Ответственность:**
-- security.py: криптография, JWT
-- deps.py: FastAPI dependencies
+- security.py: криптография, JWT, хеширование паролей
+- deps.py: FastAPI dependencies для API и веб-страниц
+
+**Типы аутентификации:**
+- `get_current_user()` - для API (Bearer токен из заголовка)
+- `get_current_user_from_cookie()` - для веб-страниц (JWT из HTTP-only cookie)
+- `get_current_user_from_cookie_required()` - для защищенных веб-страниц
 
 ## Зависимости (dependencies)
 
@@ -370,34 +426,50 @@ get_current_active_user
 
 3. Код остается неизменным благодаря абстракции SQLAlchemy
 
-## Будущие расширения
+## Реализованный веб-интерфейс
 
-### Путь миграции UI
+### Jinja2 + HTMX + Tailwind + DaisyUI
 
 **Текущее состояние:**
-- ✅ API роуты (JSON)
-- ✅ Сервисный слой
+- ✅ API роуты (JSON) - для мобильных и внешних клиентов
+- ✅ Веб-роуты (HTML) - для браузерных пользователей
+- ✅ Сервисный слой - единый для обоих
 
-**Этап 1: MVP с Jinja2 + HTMX**
+**Веб-страницы (app/web/):**
 ```python
-# app/pages/auth.py (будущее)
-@router.post("/register")
-async def register_page(user_in: UserCreate, db: AsyncSession):
-    try:
-        user = await user_service.create_user(user_in, db)
-        return templates.TemplateResponse("success.html", {...})
-    except ValueError as e:
-        return templates.TemplateResponse("register.html", {"error": e})
+# app/web/auth.py
+@router.post("/login")
+async def login_post(username: str = Form(...), password: str = Form(...), ...):
+    user = await auth_service.authenticate_user(username, password, db)
+    token = await auth_service.create_user_access_token(user)
+    
+    response = Response(status_code=200)
+    response.headers["HX-Redirect"] = "/dashboard"  # HTMX редирект
+    response.set_cookie(key="access_token", value=token.access_token, httponly=True)
+    return response
 ```
-- API роуты остаются для мобильных приложений
-- Страничные роуты для веб-интерфейса
-- Один сервисный слой для обоих
 
-**Этап 2: Миграция на SPA (React/Vue)**
-- Удаляем `app/pages/` и шаблоны
+**Особенности:**
+- HTMX отправляет формы асинхронно
+- Сервер возвращает HTML фрагменты или заголовки редиректа
+- JWT хранится в HTTP-only cookie (защита от XSS)
+- API и веб-интерфейс используют один сервисный слой
+- Не требуется дублирование бизнес-логики
+
+### Будущие расширения
+
+**Этап 1: Расширение веб-интерфейса**
+- Добавить страницы для транзакций
+- Страницы отчетов и аналитики
+- Страницы настроек профиля
+- Управление семейными группами
+
+**Этап 2: Возможная миграция на SPA (React/Vue)**
+- Удаляем `app/web/` и шаблоны
 - API роуты остаются без изменений
 - Сервисный слой остаётся без изменений
 - SPA использует существующий API
+- Нулевое изменение бизнес-логики
 
 ### Планируемые модели:
 

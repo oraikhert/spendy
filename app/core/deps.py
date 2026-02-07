@@ -1,6 +1,6 @@
 """Dependencies for route handlers"""
 from typing import Annotated
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request, Cookie
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,3 +82,72 @@ async def get_current_active_user(
             detail="Inactive user"
         )
     return current_user
+
+
+async def get_current_user_from_cookie(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    access_token: str | None = Cookie(None)
+) -> User | None:
+    """
+    Get current user from cookie (for web pages).
+    Returns None if no valid token found (does not raise exception).
+    
+    Args:
+        request: FastAPI request object
+        db: Database session
+        access_token: JWT token from cookie
+        
+    Returns:
+        User | None: Current authenticated user or None
+    """
+    if not access_token:
+        return None
+    
+    payload = decode_access_token(access_token)
+    
+    if payload is None:
+        return None
+    
+    user_id_str: str | None = payload.get("sub")
+    
+    if user_id_str is None:
+        return None
+    
+    try:
+        user_id = int(user_id_str)
+    except (ValueError, TypeError):
+        return None
+    
+    # Get user from database using service
+    user = await user_service.get_user_by_id(user_id, db)
+    
+    if user is None or not user.is_active:
+        return None
+    
+    return user
+
+
+async def get_current_user_from_cookie_required(
+    user: Annotated[User | None, Depends(get_current_user_from_cookie)]
+) -> User:
+    """
+    Get current user from cookie (required - raises exception if not found).
+    Use this for protected web pages.
+    
+    Args:
+        user: User from cookie dependency
+        
+    Returns:
+        User: Current authenticated user
+        
+    Raises:
+        HTTPException: If user is not authenticated (redirects to login)
+    """
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_303_SEE_OTHER,
+            detail="Not authenticated",
+            headers={"Location": "/auth/login"}
+        )
+    return user

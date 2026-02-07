@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Регистрация - Spendy{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-center min-h-screen p-4">
+    <div class="card w-full max-w-md bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-3xl font-bold text-center justify-center mb-6">
+                Регистрация
+            </h2>
+            
+            <!-- Error/Success Messages Container -->
+            <div id="messages" class="fade-in"></div>
+            
+            <!-- Registration Form -->
+            <form hx-post="/auth/register" 
+                  hx-target="#messages" 
+                  hx-swap="innerHTML"
+                  class="space-y-4"
+                  id="registerForm">
+                
+                <!-- Email Field -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Email</span>
+                    </label>
+                    <input 
+                        type="email" 
+                        name="email" 
+                        placeholder="example@mail.com" 
+                        class="input input-bordered w-full" 
+                        required
+                        autocomplete="email"
+                    />
+                </div>
+                
+                <!-- Username Field -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Логин</span>
+                    </label>
+                    <input 
+                        type="text" 
+                        name="username" 
+                        placeholder="Введите логин" 
+                        class="input input-bordered w-full" 
+                        required
+                        minlength="3"
+                        maxlength="100"
+                        autocomplete="username"
+                    />
+                    <label class="label">
+                        <span class="label-text-alt">От 3 до 100 символов</span>
+                    </label>
+                </div>
+                
+                <!-- Full Name Field (Optional) -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Полное имя (необязательно)</span>
+                    </label>
+                    <input 
+                        type="text" 
+                        name="full_name" 
+                        placeholder="Иван Иванов" 
+                        class="input input-bordered w-full"
+                        autocomplete="name"
+                    />
+                </div>
+                
+                <!-- Password Field -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Пароль</span>
+                    </label>
+                    <input 
+                        type="password" 
+                        name="password" 
+                        id="password"
+                        placeholder="Введите пароль" 
+                        class="input input-bordered w-full" 
+                        required
+                        minlength="8"
+                        maxlength="72"
+                        autocomplete="new-password"
+                    />
+                    <label class="label">
+                        <span class="label-text-alt">От 8 до 72 символов</span>
+                    </label>
+                </div>
+                
+                <!-- Confirm Password Field -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Подтвердите пароль</span>
+                    </label>
+                    <input 
+                        type="password" 
+                        name="password_confirm" 
+                        id="password_confirm"
+                        placeholder="Повторите пароль" 
+                        class="input input-bordered w-full" 
+                        required
+                        minlength="8"
+                        maxlength="72"
+                        autocomplete="new-password"
+                    />
+                </div>
+                
+                <!-- Submit Button -->
+                <div class="form-control mt-6">
+                    <button type="submit" class="btn btn-primary w-full">
+                        <span class="htmx-indicator loading loading-spinner loading-sm"></span>
+                        <span>Зарегистрироваться</span>
+                    </button>
+                </div>
+            </form>
+            
+            <!-- Login Link -->
+            <div class="divider">или</div>
+            <div class="text-center">
+                <p class="text-sm">
+                    Уже есть аккаунт? 
+                    <a href="/auth/login" class="link link-primary font-semibold">
+                        Войти
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Client-side password confirmation validation
+    document.getElementById('registerForm').addEventListener('submit', function(e) {
+        const password = document.getElementById('password').value;
+        const passwordConfirm = document.getElementById('password_confirm').value;
+        
+        if (password !== passwordConfirm) {
+            e.preventDefault();
+            document.getElementById('messages').innerHTML = `
+                <div class="alert alert-error">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Пароли не совпадают</span>
+                </div>
+            `;
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,28 @@
+Generic single-database configuration with async support for SQLAlchemy.
+
+## Использование
+
+### Создание новой миграции
+```bash
+alembic revision --autogenerate -m "описание изменений"
+```
+
+### Применение миграций
+```bash
+alembic upgrade head
+```
+
+### Откат миграции
+```bash
+alembic downgrade -1
+```
+
+### Просмотр истории миграций
+```bash
+alembic history
+```
+
+### Текущая версия
+```bash
+alembic current
+```

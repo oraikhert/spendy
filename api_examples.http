@@ -1,0 +1,127 @@
+### Spendy API Examples
+### Используйте расширение REST Client в VS Code или любой HTTP клиент
+
+@baseUrl = http://localhost:8000
+@apiV1 = {{baseUrl}}/api/v1
+
+### Переменные (заполните после получения токена)
+@accessToken = YOUR_TOKEN_HERE
+
+###############################################
+# Health Check
+###############################################
+
+### Health check
+GET {{baseUrl}}/health
+
+### Root endpoint
+GET {{baseUrl}}/
+
+###############################################
+# Authentication
+###############################################
+
+### 1. Регистрация нового пользователя
+POST {{apiV1}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "username": "testuser",
+  "password": "testpassword123",
+  "full_name": "Test User"
+}
+
+###
+
+### 2. Регистрация второго пользователя
+POST {{apiV1}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "john@example.com",
+  "username": "john",
+  "password": "john123456",
+  "full_name": "John Doe"
+}
+
+###
+
+### 3. Вход в систему (Login)
+POST {{apiV1}}/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=testuser&password=testpassword123
+
+###
+
+### 4. Вход через email
+POST {{apiV1}}/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=test@example.com&password=testpassword123
+
+###
+
+### 5. Получить данные текущего пользователя
+GET {{apiV1}}/auth/me
+Authorization: Bearer {{accessToken}}
+
+###
+
+###############################################
+# Error Cases (для тестирования)
+###############################################
+
+### Регистрация с существующим email (должна вернуть ошибку)
+POST {{apiV1}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "username": "anotheruser",
+  "password": "password123",
+  "full_name": "Another User"
+}
+
+###
+
+### Регистрация с существующим username (должна вернуть ошибку)
+POST {{apiV1}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "another@example.com",
+  "username": "testuser",
+  "password": "password123",
+  "full_name": "Another User"
+}
+
+###
+
+### Вход с неверным паролем (должна вернуть ошибку)
+POST {{apiV1}}/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=testuser&password=wrongpassword
+
+###
+
+### Вход с несуществующим пользователем (должна вернуть ошибку)
+POST {{apiV1}}/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=nonexistent&password=password123
+
+###
+
+### Доступ без токена (должна вернуть ошибку 401)
+GET {{apiV1}}/auth/me
+
+###
+
+### Доступ с невалидным токеном (должна вернуть ошибку 401)
+GET {{apiV1}}/auth/me
+Authorization: Bearer invalid_token_here
+
+###

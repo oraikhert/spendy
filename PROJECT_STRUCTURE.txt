@@ -1,0 +1,69 @@
+📁 Spendy - Family Budget Tracking Application
+├── 📄 START_HERE.md                 ⭐ НАЧНИТЕ ОТСЮДА!
+├── 📄 QUICKSTART.md                 🚀 Быстрый старт
+├── 📄 README.md                     📚 Полная документация
+├── 📄 ARCHITECTURE.md               🏗️  Архитектура приложения
+├── 📄 MIGRATIONS.md                 🔄 Работа с миграциями
+├── 📄 SUMMARY.md                    📊 Сводка проекта
+│
+├── 📄 requirements.txt              📦 Python зависимости
+├── 📄 run.py                        ▶️  Скрипт запуска сервера
+├── 📄 test_api.py                   🧪 Автоматизированные тесты
+├── 📄 api_examples.http             📮 Примеры HTTP запросов
+│
+├── 📄 .env                          ⚙️  Переменные окружения
+├── 📄 .env.example                  📝 Пример настроек
+├── 📄 .gitignore                    🚫 Игнорируемые файлы
+├── 📄 alembic.ini                   🔧 Конфигурация Alembic
+│
+├── 📁 app/                          💻 ОСНОВНОЕ ПРИЛОЖЕНИЕ
+│   ├── 📄 __init__.py
+│   ├── 📄 main.py                   🎯 Точка входа FastAPI
+│   ├── 📄 config.py                 ⚙️  Настройки приложения
+│   ├── 📄 database.py               🗄️  Конфигурация БД
+│   │
+│   ├── 📁 models/                   💾 SQLAlchemy модели
+│   │   ├── 📄 __init__.py
+│   │   └── 📄 user.py               👤 Модель пользователя
+│   │
+│   ├── 📁 schemas/                  ✅ Pydantic схемы
+│   │   ├── 📄 __init__.py
+│   │   └── 📄 user.py               📋 Схемы User/Token
+│   │
+│   ├── 📁 api/                      🌐 API endpoints
+│   │   ├── 📄 __init__.py
+│   │   └── 📁 v1/                   📌 API версия 1
+│   │       ├── 📄 __init__.py
+│   │       └── 📄 auth.py           🔐 Авторизация
+│   │
+│   └── 📁 core/                     🛠️  Утилиты
+│       ├── 📄 __init__.py
+│       ├── 📄 security.py           🔒 JWT, хеширование
+│       └── 📄 deps.py               🔗 Зависимости
+│
+└── 📁 alembic/                      🗃️  Миграции БД
+    ├── 📄 env.py                    ⚙️  Настройка окружения
+    ├── 📄 script.py.mako            📝 Шаблон миграций
+    ├── 📄 README                    📖 Инструкции
+    └── 📁 versions/                 📚 Файлы миграций
+        └── 📄 .gitkeep
+
+═══════════════════════════════════════════════════════════════
+
+📊 СТАТИСТИКА:
+   • Файлов Python: 15
+   • Моделей БД: 1 (User)
+   • API Endpoints: 3 (register, login, me)
+   • Документация: 6 файлов
+   • Готовность: ✅ 100%
+
+═══════════════════════════════════════════════════════════════
+
+🚀 ЗАПУСК:
+   1. python -m venv venv
+   2. source venv/bin/activate
+   3. pip install -r requirements.txt
+   4. python run.py
+   5. Откройте: http://localhost:8000/docs
+
+═══════════════════════════════════════════════════════════════

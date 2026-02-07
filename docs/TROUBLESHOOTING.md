@@ -1,5 +1,16 @@
 # Решение проблем при установке
 
+## Успешная установка
+
+Если установка прошла корректно:
+
+- **Виртуальное окружение** создано (`venv/`), зависимости установлены.
+- **Скрипты**: `./install.sh` — установка (venv + зависимости, при необходимости с обходом SSL), `./start.sh` — запуск приложения.
+- **Проверка**: активируйте venv (`source venv/bin/activate`), выполните `python -c "import fastapi; import uvicorn; print('OK')"`, затем `python run.py`. В логе должны быть строки «Database initialized» и «Uvicorn running on http://0.0.0.0:8000».
+- **Дальше**: откройте http://localhost:8000/docs, протестируйте API (`python test_api.py`). При проблемах — разделы ниже.
+
+---
+
 ## Проблема 1: Ошибка "externally-managed-environment"
 
 ### Симптомы

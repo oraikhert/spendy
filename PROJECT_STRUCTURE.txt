@@ -1,10 +1,9 @@
 📁 Spendy - Family Budget Tracking Application
-├── 📄 START_HERE.md                 ⭐ НАЧНИТЕ ОТСЮДА!
-├── 📄 QUICKSTART.md                 🚀 Быстрый старт
-├── 📄 README.md                     📚 Полная документация
-├── 📄 ARCHITECTURE.md               🏗️  Архитектура приложения
-├── 📄 MIGRATIONS.md                 🔄 Работа с миграциями
-├── 📄 SUMMARY.md                    📊 Сводка проекта
+├── 📄 README.md                     📚 Документация (начните здесь)
+├── 📁 docs/                        📚 Доп. документация
+│   ├── 📄 ARCHITECTURE.md           🏗️  Архитектура
+│   ├── 📄 MIGRATIONS.md             🔄 Миграции БД
+│   └── 📄 TROUBLESHOOTING.md        🔧 Решение проблем
 │
 ├── 📄 requirements.txt              📦 Python зависимости
 ├── 📄 run.py                        ▶️  Скрипт запуска сервера
@@ -54,7 +53,7 @@
    • Файлов Python: 15
    • Моделей БД: 1 (User)
    • API Endpoints: 3 (register, login, me)
-   • Документация: 6 файлов
+   • Документация: README + docs/ (4 файла)
    • Готовность: ✅ 100%
 
 ═══════════════════════════════════════════════════════════════

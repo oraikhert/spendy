@@ -1,0 +1,12 @@
+---
+description: "Enforces virtual environment activation and prevents standalone test creation when dependencies are missing."
+globs: "**/*.py"
+alwaysApply: true
+---
+
+# Python Environment & Execution Rules
+
+## Mandatory Environment Activation
+Before running any Python scripts, tests, or project commands, you **MUST** ensure the project's virtual environment is activated and environment variables are loaded.
+
+- **Required Command:** Always use `source venv/bin/activate` before execution.

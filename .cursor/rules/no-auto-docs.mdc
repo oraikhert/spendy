@@ -1,0 +1,12 @@
+---
+description: "Prevents automatic documentation generation during coding tasks to save tokens."
+globs: "**/*"
+alwaysApply: true
+---
+
+# Global Restriction: No Auto-Docs
+
+- **DO NOT** create, modify, or suggest any documentation files (`*.md`) during feature implementation or debugging [1, 3].
+- **DO NOT** generate `IMPLEMENTATION_SUMMARY.md`, `CHANGELOG.md`, `SETUP_CHECKLIST.md`, or similar files [4].
+- Focus exclusively on code changes. 
+- Ignore all documentation-related tasks unless the user explicitly asks for them in a separate request.

@@ -1,0 +1,24 @@
+---
+description: "Rules for documentation updates to ensure consistency and brevity."
+globs: "docs/*.md, README.md"
+alwaysApply: false
+---
+
+# Documentation Protocol
+
+## 1. Permitted Files Only
+Update only the existing structure. **NEVER** create new `.md` files without explicit confirmation.
+- **Main Entry:** @README.md (Quick start, tech stack, API overview)
+- **Architecture:** @docs/ARCHITECTURE.md (DB schema, auth flow, service layers)
+- **Service Layer:** @docs/SERVICE_LAYER.md (Business logic rules, usage, function reference)
+- **Operations:** @docs/TROUBLESHOOTING.md (Common issues, install/run fixes)
+- **Database:** @docs/MIGRATIONS.md (Alembic workflow, migration history)
+
+## 2. Content Standards
+- **Simple English:** Write clearly and concisely to minimize token usage.
+- **No Redundancy:** Check existing content before writing. Do not duplicate information across files.
+- **No Summaries:** Do not create separate "summary" or "checklist" files.
+- **Reference Code:** Mention file paths (e.g., `services/auth.py`) instead of copying large code blocks into markdown.
+
+## 3. Workflow
+- If a new document is absolutely necessary, ask for user confirmation first.

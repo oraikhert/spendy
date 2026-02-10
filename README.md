@@ -1,71 +1,68 @@
-# Spendy - Family Budget Tracking Application
+# Spendy — Family Budget Tracking Application
 
-Приложение для отслеживания семейного бюджета, построенное на FastAPI.
+A family budget tracking app built with FastAPI.
 
-## Технологический стек
+## Tech stack
 
 - **Backend**: FastAPI
 - **Frontend**: Jinja2 + HTMX + Tailwind CSS + DaisyUI
-- **Database**: SQLite (с возможностью миграции на PostgreSQL)
+- **Database**: SQLite (can be switched to PostgreSQL)
 - **ORM**: SQLAlchemy 2.0 (async)
-- **Authentication**: JWT tokens (Bearer для API, HTTP-only cookies для веб-страниц)
-- **Password Hashing**: bcrypt
+- **Authentication**: JWT (Bearer for API, HTTP-only cookies for web pages)
+- **Password hashing**: bcrypt
 
-## Быстрый старт
+## Quick start
 
 ```bash
 python -m venv venv
-source venv/bin/activate   # Mac/Linux; на Windows: venv\Scripts\activate
+source venv/bin/activate   # Mac/Linux; on Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env      # опционально
+cp .env.example .env      # optional
 python run.py
 ```
 
-Или через скрипты: `./install.sh` (установка), затем `./start.sh` (запуск).
+Or use scripts: `./install.sh` (install), then `./start.sh` (run).
 
-После запуска:
-- **Веб-интерфейс**: http://localhost:8000 (автоматически перенаправит на страницу входа)
-- **API документация**: http://localhost:8000/docs
+After starting:
+- **Web UI**: http://localhost:8000 (redirects to login)
+- **API docs**: http://localhost:8000/docs
 
-При проблемах с установкой см. [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+If you have install issues, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
-## Структура проекта
+## Project structure
 
 ```
 spendy/
 ├── app/
-│   ├── main.py              # Главный файл приложения
-│   ├── config.py            # Конфигурация приложения
-│   ├── database.py          # Настройка базы данных
-│   ├── models/              # SQLAlchemy модели (таблицы БД)
-│   ├── schemas/             # Pydantic схемы (валидация)
-│   ├── services/            # Сервисный слой (бизнес-логика)
-│   │   ├── user_service.py  # CRUD операции с пользователями
-│   │   └── auth_service.py  # Аутентификация и токены
-│   ├── api/v1/              # API роуты (JSON responses)
-│   ├── web/                 # Веб-роуты (HTML страницы)
-│   │   ├── auth.py          # Страницы авторизации/регистрации
-│   │   └── pages.py         # Остальные страницы (dashboard и т.д.)
-│   ├── templates/           # Jinja2 шаблоны
-│   │   ├── base.html        # Базовый шаблон
-│   │   ├── auth/            # Шаблоны авторизации
-│   │   └── dashboard.html   # Панель пользователя
-│   ├── static/              # Статические файлы (CSS, JS, изображения)
-│   └── core/                # Утилиты (security, deps)
-├── docs/                    # Документация (архитектура, миграции, решение проблем)
-├── alembic/                 # Миграции БД
+│   ├── main.py              # Application entry point
+│   ├── config.py            # Configuration
+│   ├── database.py          # Database setup
+│   ├── models/              # SQLAlchemy models (DB tables)
+│   ├── schemas/             # Pydantic schemas (validation)
+│   ├── services/            # Service layer (business logic)
+│   │   ├── user_service.py  # User CRUD
+│   │   └── auth_service.py  # Auth and tokens
+│   ├── api/v1/              # API routes (JSON)
+│   ├── web/                 # Web routes (HTML)
+│   │   ├── auth.py          # Login/register pages
+│   │   └── pages.py         # Other pages (dashboard, etc.)
+│   ├── templates/           # Jinja2 templates
+│   ├── static/              # CSS, JS, images
+│   └── core/                # Utilities (security, deps)
+├── docs/                    # Documentation
+├── alembic/                 # DB migrations
 ├── requirements.txt
 ├── run.py
 └── README.md
 ```
 
-### Архитектура
+### Architecture
 
-Приложение использует **многослойную архитектуру с сервисным слоем**:
+The app uses a **layered architecture with a service layer**:
 
 ```
 ┌─────────────────────────────────────────┐
-│         Клиенты (Clients)               │
+│         Clients                         │
 ├──────────────────┬──────────────────────┤
 │   Web Pages      │      REST API        │
 │  (Jinja2+HTMX)   │    (JSON/Bearer)     │
@@ -75,12 +72,12 @@ spendy/
                   │
          ┌────────▼─────────┐
          │    Services      │
-         │  (Бизнес-логика) │
+         │ (Business logic) │
          └────────┬─────────┘
                   │
          ┌────────▼─────────┐
          │     Models       │
-         │   (SQLAlchemy)   │
+         │   (SQLAlchemy)    │
          └────────┬─────────┘
                   │
          ┌────────▼─────────┐
@@ -89,18 +86,11 @@ spendy/
          └──────────────────┘
 ```
 
-**Преимущества:**
-- Бизнес-логика отделена от HTTP слоя
-- Один сервисный слой обслуживает и API, и веб-страницы
-- Легко тестировать сервисы независимо от HTTP
-- Веб-интерфейс с Jinja2+HTMX для быстрого интерактивного UI
-- REST API остается доступным для сторонних клиентов
+**Benefits:** Business logic is separate from HTTP; one service layer serves both API and web; services are easy to test; REST API stays available for other clients. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
-Подробнее: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+## Installation and run
 
-## Установка и запуск
-
-### 1. Виртуальное окружение и зависимости
+### 1. Virtual environment and dependencies
 
 ```bash
 python -m venv venv
@@ -109,105 +99,104 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-При ошибке SSL (macOS): `pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements.txt` или используйте `./install.sh`.
+If you get an SSL error on macOS: `pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements.txt` or use `./install.sh`.
 
-### 2. Настройка окружения
+### 2. Environment
 
 ```bash
 cp .env.example .env
 ```
 
-Для продакшена смените `SECRET_KEY` (например: `python -c "import secrets; print(secrets.token_hex(32))"`).
+For production, change `SECRET_KEY` (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`).
 
-### 3. Запуск
+### 3. Run
 
 ```bash
 python run.py
-# или
+# or
 uvicorn app.main:app --reload
 ```
 
-Приложение: http://localhost:8000  
+App: http://localhost:8000  
 Swagger: http://localhost:8000/docs  
 ReDoc: http://localhost:8000/redoc
 
-## Веб-интерфейс
+## Web UI
 
-Приложение включает полноценный веб-интерфейс с использованием Jinja2, HTMX, Tailwind CSS и DaisyUI.
+The app has a web UI with Jinja2, HTMX, Tailwind CSS and DaisyUI.
 
-### Веб-страницы
+### Pages
 
-| Путь | Описание |
-|------|----------|
-| `/` | Главная страница (редирект на `/auth/login`) |
-| `/auth/login` | Страница входа |
-| `/auth/register` | Страница регистрации |
-| `/auth/logout` | Выход из системы |
-| `/dashboard` | Панель пользователя (требует авторизацию) |
+| Path | Description |
+|------|-------------|
+| `/` | Home (redirects to `/auth/login`) |
+| `/auth/login` | Login |
+| `/auth/register` | Register |
+| `/auth/logout` | Logout |
+| `/dashboard` | User dashboard (auth required) |
 
-### Особенности веб-интерфейса
+### Features
 
-- **HTMX** — формы отправляются асинхронно без перезагрузки страницы
-- **Tailwind CSS + DaisyUI** — современный адаптивный дизайн
-- **HTTP-only cookies** — безопасное хранение JWT токенов (защита от XSS)
-- **Валидация** — проверка данных на клиенте и сервере
-- **Автоматический вход** — после регистрации пользователь сразу авторизуется
+- **HTMX** — forms submit without full page reload
+- **Tailwind CSS + DaisyUI** — responsive UI
+- **HTTP-only cookies** — JWT stored safely (XSS protection)
+- **Validation** — client and server
+- **Auto login** — after register you are logged in
 
-### Использование веб-интерфейса
+### Using the web UI
 
-1. Откройте http://localhost:8000 в браузере
-2. Нажмите "Зарегистрироваться" для создания нового аккаунта
-3. После успешной регистрации вы автоматически войдете в систему
-4. Откроется dashboard с информацией о вашем профиле
+1. Open http://localhost:8000
+2. Click "Register" to create an account
+3. After register you are logged in and see the dashboard
 
-## API Endpoints
+## API endpoints
 
-### Авторизация
+### Auth
 
-| Метод | Путь | Описание |
-|-------|------|----------|
-| POST | `/api/v1/auth/register` | Регистрация |
-| POST | `/api/v1/auth/login` | Вход (получение JWT) |
-| GET | `/api/v1/auth/me` | Текущий пользователь (нужен токен) |
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/auth/register` | Register |
+| POST | `/api/v1/auth/login` | Login (returns JWT) |
+| GET | `/api/v1/auth/me` | Current user (token required) |
 
-**Регистрация** — JSON: `email`, `username`, `password` (мин. 8 символов), `full_name` (опционально).  
-**Вход** — form-data: `username` (или email), `password`. Ответ: `access_token`, `token_type: "bearer"`.  
-**Профиль** — заголовок: `Authorization: Bearer <access_token>`.
+**Register** — JSON: `email`, `username`, `password` (min 8 chars), `full_name` (optional).  
+**Login** — form-data: `username` (or email), `password`. Response: `access_token`, `token_type: "bearer"`.  
+**Profile** — header: `Authorization: Bearer <access_token>`.
 
-## Использование API
+## Using the API
 
-### Через Swagger UI (http://localhost:8000/docs)
+### Via Swagger UI (http://localhost:8000/docs)
 
-1. **Регистрация**: POST `/api/v1/auth/register` → «Try it out» → введите данные → «Execute».
-2. **Вход**: POST `/api/v1/auth/login` → введите username и password → «Execute» → скопируйте `access_token`.
-3. **Авторизация**: кнопка «Authorize» → вставьте токен в поле Value → «Authorize».
-4. **Профиль**: GET `/api/v1/auth/me` → «Try it out» → «Execute».
+1. **Register**: POST `/api/v1/auth/register` → "Try it out" → enter data → "Execute".
+2. **Login**: POST `/api/v1/auth/login` → enter username and password → "Execute" → copy `access_token`.
+3. **Authorize**: "Authorize" → paste token in Value → "Authorize".
+4. **Profile**: GET `/api/v1/auth/me` → "Try it out" → "Execute".
 
-### Требования к данным
+### Data requirements
 
-- **Email** — валидный адрес, уникальный.
-- **Username** — 3–100 символов, уникальный.
-- **Password** — 8–72 символа.
+- **Email** — valid, unique.
+- **Username** — 3–100 chars, unique.
+- **Password** — 8–72 chars.
 
-### Полный цикл (bash)
+### Full flow (bash)
 
 ```bash
-# Регистрация
+# Register
 curl -X POST "http://localhost:8000/api/v1/auth/register" \
   -H "Content-Type: application/json" \
   -d '{"email": "test@example.com", "username": "testuser", "password": "testpassword123", "full_name": "Test User"}'
 
-# Вход и сохранение токена
+# Login and save token
 TOKEN=$(curl -s -X POST "http://localhost:8000/api/v1/auth/login" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=testuser&password=testpassword123" \
   | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
 
-# Профиль
+# Profile
 curl -X GET "http://localhost:8000/api/v1/auth/me" -H "Authorization: Bearer $TOKEN"
 ```
 
-### Пример на Python
+### Python example
 
 ```python
 import requests
@@ -218,61 +207,61 @@ token = r.json()["access_token"]
 print(requests.get(f"{BASE}/auth/me", headers={"Authorization": f"Bearer {token}"}).json())
 ```
 
-### Возможные ошибки API
+### API errors
 
-- **400** «Email already registered» / «Username already taken» — смените email или username.
-- **401** «Incorrect username or password» — неверные учётные данные.
-- **401** «Could not validate credentials» — неверный или истёкший токен, войдите снова.
-- **400** «Inactive user» — пользователь деактивирован.
+- **400** "Email already registered" / "Username already taken" — use another email or username.
+- **401** "Incorrect username or password" — wrong credentials.
+- **401** "Could not validate credentials" — wrong or expired token; login again.
+- **400** "Inactive user" — user is deactivated.
 
-### Полезные советы
+### Tips
 
-- JWT действует 30 минут (настраивается в `.env`).
-- Вход возможен по **username** или по **email** в поле `username`.
-- Примеры запросов также в файле `api_examples.http` (REST Client в VS Code).
+- JWT expires in 30 minutes (configurable in `.env`).
+- Login accepts **username** or **email** in the `username` field.
+- More examples in `api_examples.http` (VS Code REST Client).
 
-## Часто задаваемые вопросы
+## FAQ
 
-- **Как остановить сервер?** — `Ctrl+C` в терминале.
-- **Где хранятся данные?** — В файле `spendy.db` (SQLite) в корне проекта.
-- **Как сбросить БД?** — Остановите сервер, выполните `rm spendy.db`, при следующем запуске БД создастся заново.
-- **Примеры запросов?** — `api_examples.http` или Swagger UI.
-- **Запуск тестов:** 
-  1. `pip install -r requirements-dev.txt` (установка test зависимостей)
-  2. `python test_api.py` (в каталоге проекта с активированным venv)
+- **Stop the server?** — `Ctrl+C` in the terminal.
+- **Where is data stored?** — In `spendy.db` (SQLite) in the project root.
+- **Reset DB?** — Stop server, run `rm spendy.db`; DB is recreated on next start.
+- **Request examples?** — `api_examples.http` or Swagger UI.
+- **Run tests:**  
+  1. `pip install -r requirements-dev.txt`  
+  2. `python test_api.py` (from project root with venv active)
 
-## Переход с SQLite на PostgreSQL
+## Switching to PostgreSQL
 
-1. Создайте БД в PostgreSQL.
-2. В `.env`: `DATABASE_URL=postgresql+asyncpg://user:password@localhost/spendy`
+1. Create a database in PostgreSQL.
+2. In `.env`: `DATABASE_URL=postgresql+asyncpg://user:password@localhost/spendy`
 3. `pip install asyncpg`
-4. Перезапустите приложение (или примените миграции: см. [docs/MIGRATIONS.md](docs/MIGRATIONS.md)).
+4. Restart the app (or apply migrations; see [docs/MIGRATIONS.md](docs/MIGRATIONS.md)).
 
-## Безопасность
+## Security
 
-- Пароли хешируются с bcrypt.
-- JWT для аутентификации, срок жизни настраивается в `.env`.
-- В продакшене: HTTPS, свой `SECRET_KEY`, ограничьте CORS в `app/main.py`.
+- Passwords hashed with bcrypt.
+- JWT for auth; expiry set in `.env`.
+- In production: use HTTPS, your own `SECRET_KEY`, and limit CORS in `app/main.py`.
 
-## Дальнейшее развитие
+## Roadmap
 
-1. **Управление бюджетом** — добавление транзакций (доходы/расходы), категории, счета
-2. **Веб-страницы** — страницы для транзакций, отчетов, настроек
-3. **Семейные группы** — совместный бюджет для семьи
-4. **Отчёты и аналитика** — графики, статистика, экспорт данных
-5. **Уведомления** — напоминания, превышение бюджета
-6. **Мобильное приложение** — React Native или Flutter
-7. **Расширенная аутентификация** — OAuth, двухфакторная аутентификация
+1. **Budget management** — transactions (income/expense), categories, accounts
+2. **Web pages** — transactions, reports, settings
+3. **Family groups** — shared family budget
+4. **Reports** — charts, stats, export
+5. **Notifications** — reminders, budget alerts
+6. **Mobile app** — React Native or Flutter
+7. **Auth** — OAuth, two-factor
 
-## Документация
+## Documentation
 
-| Файл | Описание |
-|------|----------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Архитектура и дизайн приложения |
-| [docs/SERVICE_LAYER.md](docs/SERVICE_LAYER.md) | Сервисный слой: структура, использование, примеры |
-| [docs/MIGRATIONS.md](docs/MIGRATIONS.md) | Работа с миграциями Alembic |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Решение проблем при установке и запуске |
+| File | Description |
+|------|-------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture and design |
+| [docs/SERVICE_LAYER.md](docs/SERVICE_LAYER.md) | Service layer: structure, usage, examples |
+| [docs/MIGRATIONS.md](docs/MIGRATIONS.md) | Alembic migrations |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Install and run problems |
 
-## Лицензия
+## License
 
 MIT

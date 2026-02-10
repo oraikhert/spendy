@@ -1,30 +1,30 @@
-# Сервисный слой (Service Layer)
+# Service layer
 
-## Что такое сервисный слой?
+## What it is
 
-Сервисный слой — это промежуточный слой между API роутами и моделями базы данных, который содержит всю бизнес-логику приложения.
+The service layer sits between API routes and the database models. It holds the application’s business logic.
 
-## Зачем нужен сервисный слой?
+## Why use it
 
-### Проблема без сервисного слоя
+### Without a service layer
 
-До рефакторинга вся логика была в API роутах:
+All logic lived in API routes:
 
 ```python
-# app/api/v1/auth.py (старая версия)
+# app/api/v1/auth.py (old)
 @router.post("/register")
 async def register(user_in: UserCreate, db: AsyncSession):
-    # Проверка email - 5 строк
+    # Check email - 5 lines
     result = await db.execute(select(User).where(User.email == user_in.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Проверка username - 5 строк
+    # Check username - 5 lines
     result = await db.execute(select(User).where(User.username == user_in.username))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Username already taken")
     
-    # Создание пользователя - 10 строк
+    # Create user - 10 lines
     db_user = User(
         email=user_in.email,
         username=user_in.username,
@@ -37,18 +37,14 @@ async def register(user_in: UserCreate, db: AsyncSession):
     return db_user
 ```
 
-**Проблемы:**
-- ❌ Дублирование кода при добавлении страничных роутов (Jinja2+HTMX)
-- ❌ Сложно тестировать (нужно имитировать HTTP запросы)
-- ❌ Бизнес-логика смешана с HTTP логикой
-- ❌ Невозможно переиспользовать логику
+**Issues:** Logic duplicated when adding web routes; hard to test (need to mock HTTP); business and HTTP logic mixed; no reuse.
 
-### Решение: сервисный слой
+### With a service layer
 
 ```python
-# app/services/user_service.py (новая версия)
+# app/services/user_service.py
 async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
-    """Вся бизнес-логика создания пользователя"""
+    """All user-creation business logic"""
     if await get_user_by_email(user_in.email, db):
         raise ValueError("Email already registered")
     
@@ -68,10 +64,10 @@ async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
 ```
 
 ```python
-# app/api/v1/auth.py (новая версия)
+# app/api/v1/auth.py
 @router.post("/register")
 async def register(user_in: UserCreate, db: AsyncSession):
-    """Только HTTP логика"""
+    """Only HTTP handling"""
     try:
         user = await user_service.create_user(user_in, db)
         return user
@@ -79,47 +75,20 @@ async def register(user_in: UserCreate, db: AsyncSession):
         raise HTTPException(status_code=400, detail=str(e))
 ```
 
-**Преимущества:**
-- ✅ Один код для API (JSON) и страниц (HTML)
-- ✅ Легко тестировать без HTTP
-- ✅ Чистое разделение ответственности
-- ✅ Переиспользование логики
+**Benefits:** One implementation for API and web; easy to test without HTTP; clear separation; reusable logic. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture.
 
-## Архитектура
-
-```mermaid
-graph TD
-    API[API Routes<br/>app/api/v1/auth.py]
-    Pages[Page Routes<br/>app/pages/ будущее]
-    UserService[user_service.py<br/>CRUD операции]
-    AuthService[auth_service.py<br/>Аутентификация]
-    Models[SQLAlchemy Models<br/>app/models/]
-    DB[(Database)]
-    
-    API -->|вызывает| UserService
-    API -->|вызывает| AuthService
-    Pages -.->|будущее| UserService
-    Pages -.->|будущее| AuthService
-    UserService -->|использует| Models
-    AuthService -->|использует| Models
-    AuthService -->|использует| UserService
-    Models -->|работает с| DB
-    
-    style Pages fill:#f9f,stroke:#333,stroke-dasharray: 5 5
-```
-
-## Структура сервисного слоя
+## Structure
 
 ```
 app/services/
-├── __init__.py           # Экспорт всех функций
-├── user_service.py       # CRUD операции с пользователями
-└── auth_service.py       # Аутентификация и токены
+├── __init__.py           # Exports
+├── user_service.py       # User CRUD
+└── auth_service.py       # Auth and tokens
 ```
 
-### app/services/__init__.py
+### __init__.py
 
-Экспортирует все функции для удобного импорта:
+Exports all service functions for simple imports:
 
 ```python
 from app.services.user_service import (
@@ -136,133 +105,90 @@ from app.services.auth_service import (
 )
 ```
 
-**Использование:**
+**Usage:**
 ```python
 from app.services import user_service, auth_service
 
-# Вместо:
-# from app.services.user_service import create_user
-# Можно:
 user = await user_service.create_user(...)
 ```
 
-## Функции сервисов
+## Service functions
 
-### user_service.py - Работа с пользователями
+### user_service.py
 
 #### `get_user_by_id(user_id: int, db: AsyncSession) -> User | None`
-Получить пользователя по ID.
+
+Get user by ID.
 
 ```python
 user = await user_service.get_user_by_id(123, db)
 if user:
-    print(f"Найден: {user.username}")
+    print(f"Found: {user.username}")
 ```
 
 #### `get_user_by_email(email: str, db: AsyncSession) -> User | None`
-Получить пользователя по email.
 
-```python
-user = await user_service.get_user_by_email("test@example.com", db)
-```
+Get user by email.
 
 #### `get_user_by_username(username: str, db: AsyncSession) -> User | None`
-Получить пользователя по username.
 
-```python
-user = await user_service.get_user_by_username("johndoe", db)
-```
+Get user by username.
 
 #### `get_user_by_username_or_email(identifier: str, db: AsyncSession) -> User | None`
-Гибкий поиск по username ИЛИ email. Полезно для входа.
+
+Find by username or email (e.g. for login).
 
 ```python
-# Работает с любым из вариантов
 user = await user_service.get_user_by_username_or_email("johndoe", db)
 user = await user_service.get_user_by_username_or_email("john@example.com", db)
 ```
 
 #### `create_user(user_in: UserCreate, db: AsyncSession) -> User`
-Создать нового пользователя с полной валидацией.
 
-**Валидация:**
-- ✅ Проверка уникальности email
-- ✅ Проверка уникальности username
-- ✅ Автоматическое хеширование пароля
-- ✅ Сохранение в БД
+Create user with validation: unique email, unique username, password hashing, save to DB.
 
-**Исключения:**
-- `ValueError("Email already registered")` - email уже используется
-- `ValueError("Username already taken")` - username уже используется
+**Raises:** `ValueError("Email already registered")`, `ValueError("Username already taken")`.
 
 ```python
 try:
     user = await user_service.create_user(user_in, db)
-    print(f"Создан пользователь: {user.id}")
 except ValueError as e:
-    print(f"Ошибка: {e}")
+    print(f"Error: {e}")
 ```
 
 #### `update_user(user_id: int, user_update: UserUpdate, db: AsyncSession) -> User`
-Обновить существующего пользователя.
 
-**Валидация:**
-- ✅ Проверка существования пользователя
-- ✅ Проверка уникальности email (если меняется)
-- ✅ Проверка уникальности username (если меняется)
-- ✅ Автоматическое хеширование пароля (если меняется)
+Update user. Validates existence and uniqueness when email/username change; hashes password if changed.
 
-**Исключения:**
-- `ValueError("User not found")` - пользователь не найден
-- `ValueError("Email already registered")` - email уже используется
-- `ValueError("Username already taken")` - username уже используется
+**Raises:** `ValueError("User not found")`, `ValueError("Email already registered")`, `ValueError("Username already taken")`.
 
-```python
-try:
-    user = await user_service.update_user(123, user_update, db)
-    print(f"Обновлен пользователь: {user.username}")
-except ValueError as e:
-    print(f"Ошибка: {e}")
-```
-
-### auth_service.py - Аутентификация
+### auth_service.py
 
 #### `authenticate_user(username_or_email: str, password: str, db: AsyncSession) -> User`
-Аутентифицировать пользователя (проверка credentials).
 
-**Проверки:**
-- ✅ Поиск пользователя по username или email
-- ✅ Проверка пароля (bcrypt)
-- ✅ Проверка активности пользователя (is_active)
+Check credentials: find user by username or email, verify password (bcrypt), check `is_active`.
 
-**Исключения:**
-- `ValueError("Incorrect username or password")` - неверные учётные данные
-- `ValueError("Inactive user")` - пользователь деактивирован
+**Raises:** `ValueError("Incorrect username or password")`, `ValueError("Inactive user")`.
 
 ```python
 try:
     user = await auth_service.authenticate_user("johndoe", "password123", db)
-    print(f"Авторизован: {user.username}")
 except ValueError as e:
-    print(f"Ошибка входа: {e}")
+    print(f"Login error: {e}")
 ```
 
 #### `create_user_access_token(user: User) -> Token`
-Создать JWT токен доступа для пользователя.
 
-**Возвращает:** `Token` объект с полями:
-- `access_token` - JWT токен
-- `token_type` - всегда "bearer"
+Create JWT access token. Returns `Token` with `access_token` and `token_type` ("bearer").
 
 ```python
-user = await auth_service.authenticate_user("johndoe", "password123", db)
 token = await auth_service.create_user_access_token(user)
-print(f"Токен: {token.access_token}")
+print(token.access_token)
 ```
 
-## Использование в API роутах
+## Using services in API routes
 
-### Паттерн использования
+### Pattern
 
 ```python
 from app.services import user_service, auth_service
@@ -270,15 +196,13 @@ from app.services import user_service, auth_service
 @router.post("/endpoint")
 async def endpoint(data: Schema, db: AsyncSession):
     try:
-        # Вызов сервиса
         result = await service_function(data, db)
         return result  # 200 OK
     except ValueError as e:
-        # Преобразование бизнес-ошибки в HTTP ошибку
         raise HTTPException(status_code=400, detail=str(e))
 ```
 
-### Пример: Регистрация
+### Register example
 
 ```python
 @router.post("/register", response_model=UserSchema, status_code=201)
@@ -290,7 +214,7 @@ async def register(user_in: UserCreate, db: AsyncSession) -> User:
         raise HTTPException(status_code=400, detail=str(e))
 ```
 
-### Пример: Вход
+### Login example
 
 ```python
 @router.post("/login", response_model=Token)
@@ -312,82 +236,47 @@ async def login(form_data: OAuth2PasswordRequestForm, db: AsyncSession) -> Token
             )
 ```
 
-## Использование в будущих страничных роутах
+## Using services in web routes
 
-Когда добавим Jinja2+HTMX, используем те же сервисы:
+Web routes (Jinja2+HTMX) use the same services. On success return HTML or set cookies/redirect; on `ValueError` return an error fragment or 400. See [ARCHITECTURE.md](ARCHITECTURE.md) for the login example.
 
-```python
-# app/pages/auth.py (будущее)
-from fastapi import APIRouter, Request
-from fastapi.templating import Jinja2Templates
-from app.services import user_service
+## Rules
 
-router = APIRouter()
-templates = Jinja2Templates(directory="templates")
+### In services
 
-@router.post("/register")
-async def register_page(
-    request: Request,
-    user_in: UserCreate,
-    db: AsyncSession
-):
-    try:
-        # Тот же сервис, что и в API!
-        user = await user_service.create_user(user_in, db)
-        return templates.TemplateResponse(
-            "register_success.html",
-            {"request": request, "user": user}
-        )
-    except ValueError as e:
-        # HTML ответ вместо JSON
-        return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": str(e)},
-            status_code=400
-        )
-```
+- Business logic, validation, checks
+- DB access (queries, commits)
+- Work with multiple models
+- Complex calculations or external integrations
 
-## Правила работы с сервисным слоем
+### Not in services
 
-### ✅ Что должно быть в сервисах
+- HTTP-specific code (HTTPException, status codes, headers)
+- FastAPI dependencies
+- request/response objects
+- Building JSON or HTML responses
 
-- Бизнес-логика (валидация, проверки)
-- Работа с базой данных (queries, commits)
-- Работа с несколькими моделями
-- Сложные вычисления
-- Интеграция с внешними сервисами
+### Exceptions
 
-### ❌ Что НЕ должно быть в сервисах
-
-- HTTP специфичные вещи (HTTPException, status codes, headers)
-- Зависимости от FastAPI
-- Работа с request/response объектами
-- Формирование JSON/HTML ответов
-
-### Исключения
-
-Сервисы **НЕ** используют `HTTPException`. Вместо этого:
+Services raise `ValueError`, not `HTTPException`. Routes map them to HTTP:
 
 ```python
-# ❌ Плохо - HTTP в сервисе
-async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
-    if await get_user_by_email(user_in.email, db):
+# Bad - HTTP in service
+async def create_user(...):
+    if await get_user_by_email(...):
         raise HTTPException(status_code=400, detail="Email exists")
 
-# ✅ Хорошо - доменные исключения
-async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
-    if await get_user_by_email(user_in.email, db):
+# Good - domain exception
+async def create_user(...):
+    if await get_user_by_email(...):
         raise ValueError("Email already registered")
 ```
 
-Роуты преобразуют `ValueError` в нужный HTTP статус:
-- `400 Bad Request` - для ошибок валидации
-- `401 Unauthorized` - для ошибок авторизации
-- `404 Not Found` - для ненайденных ресурсов
+Typical mapping: 400 (validation), 401 (auth), 404 (not found).
 
-## Тестирование сервисов
+## Testing
 
-Сервисы легко тестировать без HTTP слоя:
+Test services without HTTP:
 
 ```python
 # tests/test_user_service.py
@@ -396,34 +285,25 @@ from app.services import user_service
 
 @pytest.mark.asyncio
 async def test_create_user(db_session):
-    # Arrange
     user_data = UserCreate(
         email="test@example.com",
         username="testuser",
         password="password123"
     )
-    
-    # Act
     user = await user_service.create_user(user_data, db_session)
-    
-    # Assert
     assert user.id is not None
     assert user.email == "test@example.com"
-    assert user.username == "testuser"
 
 @pytest.mark.asyncio
 async def test_create_user_duplicate_email(db_session):
-    # Arrange
     user_data = UserCreate(
         email="test@example.com",
         username="testuser",
         password="password123"
     )
     await user_service.create_user(user_data, db_session)
-    
-    # Act & Assert
     user_data2 = UserCreate(
-        email="test@example.com",  # Тот же email
+        email="test@example.com",
         username="testuser2",
         password="password123"
     )
@@ -431,122 +311,24 @@ async def test_create_user_duplicate_email(db_session):
         await user_service.create_user(user_data2, db_session)
 ```
 
-## Расширение сервисного слоя
+## Adding new services
 
-При добавлении новых функций следуйте этой структуре:
+1. **Create the module** (e.g. `app/services/transaction_service.py`) with async functions that take schemas and `db: AsyncSession`, do validation and DB work, return domain objects or raise `ValueError`.
+2. **Export in** `app/services/__init__.py`.
+3. **Use in routes**: call the service in a try/except and map `ValueError` to HTTP status.
 
-### 1. Создайте новый сервис
+## Moving logic from routes to services
 
-```python
-# app/services/transaction_service.py
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.transaction import Transaction
-from app.schemas.transaction import TransactionCreate
+1. Extract the business logic from the route into a new function in a service module.
+2. Keep the same logic (DB calls, checks).
+3. In the route, call the service and convert `ValueError` to `HTTPException`.
 
-async def create_transaction(
-    transaction_in: TransactionCreate,
-    db: AsyncSession
-) -> Transaction:
-    """Создание новой транзакции"""
-    # Валидация бизнес-правил
-    # Работа с БД
-    # Возврат результата
-    pass
+## Summary
 
-async def get_user_transactions(
-    user_id: int,
-    db: AsyncSession
-) -> list[Transaction]:
-    """Получение всех транзакций пользователя"""
-    pass
-```
+The service layer gives:
 
-### 2. Экспортируйте в __init__.py
-
-```python
-# app/services/__init__.py
-from app.services.transaction_service import (
-    create_transaction,
-    get_user_transactions,
-)
-```
-
-### 3. Используйте в роутах
-
-```python
-# app/api/v1/transactions.py
-from app.services import transaction_service
-
-@router.post("/transactions")
-async def create_transaction_endpoint(
-    transaction_in: TransactionCreate,
-    db: AsyncSession
-):
-    try:
-        transaction = await transaction_service.create_transaction(
-            transaction_in, db
-        )
-        return transaction
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-```
-
-## Миграция существующего кода в сервисы
-
-Если у вас есть бизнес-логика в роутах:
-
-### Шаг 1: Выделите логику
-
-```python
-# Было в роуте:
-@router.post("/complex-operation")
-async def complex_operation(data: Schema, db: AsyncSession):
-    # 50 строк логики
-    result = await db.execute(...)
-    if result:
-        # ещё логика
-    return something
-```
-
-### Шаг 2: Перенесите в сервис
-
-```python
-# app/services/my_service.py
-async def perform_complex_operation(data: Schema, db: AsyncSession):
-    # Те же 50 строк логики
-    result = await db.execute(...)
-    if result:
-        # ещё логика
-    return something
-```
-
-### Шаг 3: Используйте в роуте
-
-```python
-# Стало в роуте:
-from app.services import my_service
-
-@router.post("/complex-operation")
-async def complex_operation(data: Schema, db: AsyncSession):
-    try:
-        result = await my_service.perform_complex_operation(data, db)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-```
-
-## Заключение
-
-Сервисный слой — это ключевой элемент масштабируемой архитектуры:
-
-- 📦 **Инкапсуляция** - бизнес-логика в одном месте
-- ♻️ **Переиспользование** - один код для разных клиентов
-- 🧪 **Тестируемость** - простые unit-тесты
-- 🔄 **Гибкость** - легко менять UI без изменения логики
-- 📈 **Масштабируемость** - готовность к росту проекта
-
-**Следующие шаги:**
-1. ✅ Сервисный слой для User и Auth
-2. 🔜 Добавить Jinja2+HTMX страницы
-3. 🔜 Расширить сервисы для Transactions, Categories, Budgets
-4. 🔜 Миграция на SPA (React/Vue)
+- **Encapsulation** — business logic in one place
+- **Reuse** — same code for API and web
+- **Testability** — simple unit tests
+- **Flexibility** — change UI without changing logic
+- **Scalability** — ready for more clients and features

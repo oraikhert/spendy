@@ -1,53 +1,50 @@
-# Архитектура приложения Spendy
+# Spendy application architecture
 
-## Структура проекта
+## Project structure
 
 ```
 spendy/
 ├── app/
-│   ├── main.py              # Точка входа FastAPI
-│   ├── config.py            # Конфигурация (settings)
-│   ├── database.py          # Настройка БД и сессий
+│   ├── main.py              # FastAPI entry point
+│   ├── config.py            # Settings
+│   ├── database.py          # DB and session setup
 │   │
-│   ├── models/              # SQLAlchemy модели
-│   │   └── user.py          # Модель User
+│   ├── models/              # SQLAlchemy models
+│   │   └── user.py          # User model
 │   │
-│   ├── schemas/             # Pydantic схемы (валидация)
-│   │   └── user.py          # Схемы для User
+│   ├── schemas/             # Pydantic schemas (validation)
+│   │   └── user.py          # User schemas
 │   │
-│   ├── services/            # Сервисный слой (бизнес-логика)
-│   │   ├── user_service.py  # CRUD операции с пользователями
-│   │   └── auth_service.py  # Аутентификация и токены
+│   ├── services/            # Service layer (business logic)
+│   │   ├── user_service.py  # User CRUD
+│   │   └── auth_service.py  # Auth and tokens
 │   │
-│   ├── api/v1/              # API эндпоинты версии 1 (JSON)
-│   │   └── auth.py          # Авторизация (register, login, me)
+│   ├── api/v1/              # API v1 (JSON)
+│   │   └── auth.py          # Register, login, me
 │   │
-│   ├── web/                 # Веб-эндпоинты (HTML)
-│   │   ├── auth.py          # Страницы авторизации/регистрации
-│   │   └── pages.py         # Остальные страницы (dashboard и т.д.)
+│   ├── web/                 # Web routes (HTML)
+│   │   ├── auth.py          # Login/register pages
+│   │   └── pages.py         # Other pages (dashboard, etc.)
 │   │
-│   ├── templates/           # Jinja2 шаблоны
-│   │   ├── base.html        # Базовый шаблон
-│   │   ├── auth/            # Шаблоны авторизации
-│   │   │   ├── login.html
-│   │   │   └── register.html
-│   │   └── dashboard.html   # Панель пользователя
+│   ├── templates/           # Jinja2 templates
+│   │   ├── base.html
+│   │   ├── auth/            # login.html, register.html
+│   │   └── dashboard.html
 │   │
-│   ├── static/              # Статические файлы
-│   │   └── css/             # CSS файлы
+│   ├── static/              # CSS, etc.
 │   │
-│   └── core/                # Основные утилиты
-│       ├── security.py      # JWT, хеширование паролей
-│       └── deps.py          # Зависимости для endpoints
+│   └── core/                # Utilities
+│       ├── security.py      # JWT, password hashing
+│       └── deps.py          # FastAPI dependencies
 │
-├── requirements.txt         # Python зависимости
-├── .env                     # Переменные окружения
-└── run.py                   # Скрипт запуска
+├── requirements.txt
+├── .env
+└── run.py
 ```
 
-## Схема базы данных
+## Database schema
 
-### Таблица: users
+### Table: users
 
 ```sql
 CREATE TABLE users (
@@ -63,9 +60,9 @@ CREATE TABLE users (
 );
 ```
 
-## Диаграмма потока авторизации (с сервисным слоем)
+## Auth flow (with service layer)
 
-### Регистрация пользователя
+### User registration
 
 ```
 ┌─────────────┐
@@ -76,24 +73,24 @@ CREATE TABLE users (
        ▼
 ┌──────────────────────┐
 │  API: auth.register  │
-│  (обработка HTTP)    │
+│  (HTTP handling)     │
 └──────────┬───────────┘
            │
            ▼
 ┌──────────────────────┐
 │ Service:             │
 │ user_service         │
-│ .create_user()       │──► Проверка email (уникальность)
-│                      │──► Проверка username (уникальность)
-│                      │──► Хеширование пароля
-│                      │──► Создание User в БД
-│                      │──► Commit транзакции
+│ .create_user()       │──► Check email unique
+│                      │──► Check username unique
+│                      │──► Hash password
+│                      │──► Create User in DB
+│                      │──► Commit
 └──────────┬───────────┘
            │
            │ User object / ValueError
            ▼
 ┌──────────────────────┐
-│  API: auth.register  │──► Преобразование в HTTP статус
+│  API: auth.register  │──► Map to HTTP status
 └──────────┬───────────┘
            │
            │ 201 Created / 400 Bad Request
@@ -103,7 +100,7 @@ CREATE TABLE users (
 └─────────────┘
 ```
 
-### Вход пользователя
+### User login
 
 ```
 ┌─────────────┐
@@ -114,29 +111,28 @@ CREATE TABLE users (
        ▼
 ┌──────────────────────┐
 │  API: auth.login     │
-│  (обработка HTTP)    │
 └──────────┬───────────┘
            │
            ▼
 ┌──────────────────────┐
 │ Service:             │
 │ auth_service         │
-│ .authenticate_user() │──► Поиск по username или email
-│                      │──► Проверка пароля (bcrypt)
-│                      │──► Проверка is_active
+│ .authenticate_user() │──► Find by username or email
+│                      │──► Check password (bcrypt)
+│                      │──► Check is_active
 └──────────┬───────────┘
            │ User object / ValueError
            ▼
 ┌──────────────────────┐
 │ Service:             │
 │ auth_service         │
-│ .create_user_access  │──► Создание JWT payload
-│ _token()             │──► Генерация токена
+│ .create_user_access  │──► Build JWT payload
+│ _token()             │──► Generate token
 └──────────┬───────────┘
            │ Token object
            ▼
 ┌──────────────────────┐
-│  API: auth.login     │──► Преобразование в HTTP ответ
+│  API: auth.login     │──► HTTP response
 └──────────┬───────────┘
            │
            │ {access_token, token_type}
@@ -146,7 +142,7 @@ CREATE TABLE users (
 └─────────────┘
 ```
 
-### Получение профиля
+### Get profile
 
 ```
 ┌─────────────┐
@@ -157,12 +153,11 @@ CREATE TABLE users (
        ▼
 ┌──────────────────────┐
 │  API: auth.me        │
-│                      │
 │  Dependency:         │
-│  get_current_active  │──► Декодирование JWT
-│  _user()             │──► Извлечение user_id
+│  get_current_active  │──► Decode JWT
+│  _user()             │──► Get user_id
 │                      │──► user_service.get_user_by_id()
-│                      │──► Проверка is_active
+│                      │──► Check is_active
 └──────────┬───────────┘
            │
            │ User object
@@ -172,49 +167,44 @@ CREATE TABLE users (
 └─────────────┘
 ```
 
-## Компоненты безопасности
+## Security components
 
-### 1. Хеширование паролей (bcrypt)
+### 1. Password hashing (bcrypt)
 
 ```python
 passlib.context.CryptContext(schemes=["bcrypt"])
 ```
 
-- Надежное одностороннее хеширование
-- Соль автоматически генерируется и сохраняется
-- Защита от rainbow table атак
+- One-way hashing; salt generated and stored automatically; protects against rainbow tables.
 
-### 2. JWT токены (JSON Web Tokens)
+### 2. JWT (JSON Web Tokens)
 
 ```python
 jose.jwt.encode(data, SECRET_KEY, algorithm="HS256")
 ```
 
-**Структура токена:**
+**Token payload:**
 ```json
 {
   "sub": 1,              // user_id
-  "username": "user",    // username
-  "exp": 1234567890      // время истечения
+  "username": "user",
+  "exp": 1234567890      // expiry
 }
 ```
 
-**Параметры:**
-- `SECRET_KEY`: Секретный ключ для подписи (из .env)
-- `ALGORITHM`: HS256 (HMAC with SHA-256)
-- `ACCESS_TOKEN_EXPIRE_MINUTES`: 30 минут (настраиваемо)
+**Settings:** `SECRET_KEY` from `.env`; `ALGORITHM`: HS256; `ACCESS_TOKEN_EXPIRE_MINUTES`: 30 (configurable).
 
-### 3. OAuth2 Password Flow
+### 3. OAuth2 password flow
 
-Используется стандартная схема OAuth2 с password bearer:
+Standard OAuth2 password bearer:
 
 ```python
 OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 ```
 
-## Архитектура приложения
+## Layered architecture
 
-### Текущая архитектура с сервисным слоем
+### Service-layer overview
 
 ```mermaid
 graph TD
@@ -234,68 +224,46 @@ graph TD
     Services --> Security
 ```
 
-**Преимущества архитектуры:**
-- Бизнес-логика не дублируется между API и веб-страницами
-- API роуты возвращают JSON для мобильных и внешних клиентов
-- Веб-страницы используют Jinja2+HTMX для интерактивного UI
-- Один сервисный слой обслуживает оба типа клиентов
-- Простая миграция на SPA в будущем без изменения сервисов
+**Benefits:** One business layer for API and web; API returns JSON for external clients; web uses Jinja2+HTMX; easy to move to SPA later without changing services.
 
-### Слои приложения
+### Layers
 
 ```
 ┌─────────────────────────────────────────┐
 │        Presentation Layer               │
-│  ┌────────────────────────────────────┐ │
-│  │  API Routes (/api/v1/*)            │ │ ◄── JSON responses
-│  │  Web Routes (/auth/*, /dashboard)  │ │ ◄── HTML responses (Jinja2+HTMX)
-│  └────────────────────────────────────┘ │
+│  API Routes (/api/v1/*) → JSON          │
+│  Web Routes (/auth/*, /dashboard) → HTML│
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
 │         Service Layer                   │
-│  ┌────────────────────────────────────┐ │
-│  │  user_service.py                   │ │
-│  │   • create_user()                  │ │
-│  │   • get_user_by_id()               │ │
-│  │   • get_user_by_email()            │ │
-│  │   • update_user()                  │ │
-│  │                                    │ │
-│  │  auth_service.py                   │ │
-│  │   • authenticate_user()            │ │
-│  │   • create_user_access_token()     │ │
-│  └────────────────────────────────────┘ │
+│  user_service: create_user, get_user_*  │
+│  auth_service: authenticate_user,       │
+│                create_user_access_token │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
 │         Data Access Layer               │
-│  ┌────────────────────────────────────┐ │
-│  │  SQLAlchemy Models                 │ │
-│  │  Async Sessions                    │ │
-│  │  Query Building                    │ │
-│  └────────────────────────────────────┘ │
+│  SQLAlchemy models, async sessions      │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│            Database Layer               │
-│  ┌────────────────────────────────────┐ │
-│  │  SQLite (dev)                      │ │
-│  │  PostgreSQL (production)           │ │
-│  └────────────────────────────────────┘ │
+│            Database                     │
+│  SQLite (dev) / PostgreSQL (prod)       │
 └─────────────────────────────────────────┘
 ```
 
-### Разделение ответственности
+### Responsibilities
 
-#### 1. API Routes (app/api/v1/)
-**Ответственность:**
-- Приём и валидация HTTP запросов
-- Вызов функций сервисного слоя
-- Преобразование исключений в HTTP статусы
-- Формирование JSON ответов
-- Аутентификация через Bearer токены
+#### API routes (app/api/v1/)
 
-**Пример:**
+- Handle and validate HTTP requests
+- Call service layer
+- Map exceptions to HTTP status codes
+- Return JSON
+- Auth via Bearer token
+
+**Example:**
 ```python
 @router.post("/register")
 async def register(user_in: UserCreate, db: AsyncSession):
@@ -306,15 +274,15 @@ async def register(user_in: UserCreate, db: AsyncSession):
         raise HTTPException(status_code=400, detail=str(e))
 ```
 
-#### 1a. Web Routes (app/web/)
-**Ответственность:**
-- Отображение HTML страниц через Jinja2 шаблоны
-- Обработка форм с HTMX
-- Вызов тех же функций сервисного слоя
-- Аутентификация через HTTP-only cookies
-- Формирование HTML ответов или HTMX-заголовков
+#### Web routes (app/web/)
 
-**Пример:**
+- Render HTML with Jinja2
+- Handle forms with HTMX
+- Call the same service layer
+- Auth via HTTP-only cookies
+- Return HTML or HTMX headers
+
+**Example:**
 ```python
 @router.post("/login")
 async def login_post(
@@ -327,179 +295,98 @@ async def login_post(
         user = await auth_service.authenticate_user(username, password, db)
         token = await auth_service.create_user_access_token(user)
         
-        # HTMX redirect через заголовок
         response = Response(status_code=200)
         response.headers["HX-Redirect"] = "/dashboard"
         response.set_cookie(key="access_token", value=token.access_token, httponly=True)
         return response
     except ValueError as e:
-        # Возврат HTML фрагмента с ошибкой
         return HTMLResponse(content=f'<div class="alert alert-error">{e}</div>')
 ```
 
-**Технологии:**
-- **Jinja2** - серверный рендеринг шаблонов
-- **HTMX** - асинхронная отправка форм без перезагрузки
-- **Tailwind CSS** - утилитарные CSS классы
-- **DaisyUI** - компоненты UI на базе Tailwind
+**Stack:** Jinja2 (templates), HTMX (forms without reload), Tailwind CSS, DaisyUI (components).
 
-#### 2. Service Layer (app/services/) - НОВЫЙ СЛОЙ
-**Ответственность:**
-- Бизнес-логика приложения
-- Проверка уникальности данных
-- Валидация бизнес-правил
-- Работа с несколькими моделями
-- Возврат доменных объектов или ошибок (ValueError)
+#### Service layer (app/services/)
 
-**Пример:**
+- Business logic
+- Uniqueness checks
+- Business rules
+- Work with multiple models
+- Return domain objects or raise `ValueError`
+
+**Example:**
 ```python
 async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
-    # Проверка уникальности email
     if await get_user_by_email(user_in.email, db):
         raise ValueError("Email already registered")
     
-    # Создание пользователя
     db_user = User(...)
     db.add(db_user)
     await db.commit()
     return db_user
 ```
 
-**Функции сервисного слоя:**
+**Functions:** See [SERVICE_LAYER.md](SERVICE_LAYER.md) for full list (user_service, auth_service).
 
-`user_service.py`:
-- `get_user_by_id()` - получение по ID
-- `get_user_by_email()` - получение по email
-- `get_user_by_username()` - получение по username
-- `get_user_by_username_or_email()` - гибкий поиск
-- `create_user()` - создание с валидацией
-- `update_user()` - обновление с проверками
+#### Models (app/models/)
 
-`auth_service.py`:
-- `authenticate_user()` - проверка credentials
-- `create_user_access_token()` - генерация JWT
+- Table definitions, relations, indexes, constraints.
 
-#### 3. Models (app/models/)
-**Ответственность:**
-- Определение структуры таблиц БД
-- Связи между таблицами
-- Индексы и ограничения
+#### Core (app/core/)
 
-#### 4. Core Utilities (app/core/)
-**Ответственность:**
-- security.py: криптография, JWT, хеширование паролей
-- deps.py: FastAPI dependencies для API и веб-страниц
+- security.py: JWT, password hashing
+- deps.py: FastAPI dependencies
 
-**Типы аутентификации:**
-- `get_current_user()` - для API (Bearer токен из заголовка)
-- `get_current_user_from_cookie()` - для веб-страниц (JWT из HTTP-only cookie)
-- `get_current_user_from_cookie_required()` - для защищенных веб-страниц
+**Auth helpers:** `get_current_user()` (API, Bearer); `get_current_user_from_cookie()` / `get_current_user_from_cookie_required()` (web).
 
-## Зависимости (dependencies)
+## Dependencies
 
-Цепочка зависимостей для защищенных эндпоинтов:
+Protected endpoints use:
 
 ```
 get_current_active_user
         │
         ├──► get_current_user
-        │           │
-        │           ├──► oauth2_scheme (извлекает токен)
-        │           └──► get_db (сессия БД)
+        │           ├──► oauth2_scheme (extract token)
+        │           └──► get_db
         │
-        └──► Проверка is_active
+        └──► Check is_active
 ```
 
-## Переход на PostgreSQL
+## Switching to PostgreSQL
 
-Для переключения на PostgreSQL нужно:
-
-1. Изменить `DATABASE_URL` в `.env`:
+1. Set `DATABASE_URL` in `.env`:
    ```
    DATABASE_URL=postgresql+asyncpg://user:password@localhost/spendy
    ```
+2. Install driver: `pip install asyncpg`
+3. Code stays the same (SQLAlchemy abstraction).
 
-2. Установить драйвер:
-   ```bash
-   pip install asyncpg
-   ```
+## Web UI (current)
 
-3. Код остается неизменным благодаря абстракции SQLAlchemy
+- API routes (JSON) and web routes (HTML) both use the service layer.
+- HTMX submits forms without full reload; server returns HTML fragments or redirect headers.
+- JWT in HTTP-only cookie (XSS protection).
 
-## Реализованный веб-интерфейс
+### Possible next steps
 
-### Jinja2 + HTMX + Tailwind + DaisyUI
+**Phase 1:** More web pages (transactions, reports, settings, family groups).
 
-**Текущее состояние:**
-- ✅ API роуты (JSON) - для мобильных и внешних клиентов
-- ✅ Веб-роуты (HTML) - для браузерных пользователей
-- ✅ Сервисный слой - единый для обоих
+**Phase 2:** Optional move to SPA (React/Vue): remove `app/web/` and templates; API and services unchanged.
 
-**Веб-страницы (app/web/):**
-```python
-# app/web/auth.py
-@router.post("/login")
-async def login_post(username: str = Form(...), password: str = Form(...), ...):
-    user = await auth_service.authenticate_user(username, password, db)
-    token = await auth_service.create_user_access_token(user)
-    
-    response = Response(status_code=200)
-    response.headers["HX-Redirect"] = "/dashboard"  # HTMX редирект
-    response.set_cookie(key="access_token", value=token.access_token, httponly=True)
-    return response
-```
+### Planned models
 
-**Особенности:**
-- HTMX отправляет формы асинхронно
-- Сервер возвращает HTML фрагменты или заголовки редиректа
-- JWT хранится в HTTP-only cookie (защита от XSS)
-- API и веб-интерфейс используют один сервисный слой
-- Не требуется дублирование бизнес-логики
+- Transaction, Category, Budget, Family, Account
 
-### Будущие расширения
+### Planned services / API
 
-**Этап 1: Расширение веб-интерфейса**
-- Добавить страницы для транзакций
-- Страницы отчетов и аналитики
-- Страницы настроек профиля
-- Управление семейными группами
+- transaction_service, category_service, budget_service, family_service, report_service
+- `/api/v1/transactions`, `/api/v1/categories`, `/api/v1/budgets`, `/api/v1/families`, `/api/v1/reports`
 
-**Этап 2: Возможная миграция на SPA (React/Vue)**
-- Удаляем `app/web/` и шаблоны
-- API роуты остаются без изменений
-- Сервисный слой остаётся без изменений
-- SPA использует существующий API
-- Нулевое изменение бизнес-логики
+## Service layer benefits
 
-### Планируемые модели:
-
-- **Transaction** - операции (доходы/расходы)
-- **Category** - категории операций
-- **Budget** - бюджеты по категориям
-- **Family** - семейные группы
-- **Account** - счета (наличные, карты, и т.д.)
-
-### Планируемые сервисы:
-
-- `transaction_service.py` - работа с транзакциями
-- `category_service.py` - управление категориями
-- `budget_service.py` - управление бюджетами
-- `family_service.py` - управление семейными группами
-- `report_service.py` - генерация отчётов
-
-### Планируемые API эндпоинты:
-
-- `/api/v1/transactions` - управление транзакциями
-- `/api/v1/categories` - управление категориями
-- `/api/v1/budgets` - управление бюджетами
-- `/api/v1/families` - управление семейными группами
-- `/api/v1/reports` - отчеты и аналитика
-
-## Преимущества сервисного слоя
-
-1. **Переиспользование кода** - логика написана один раз, используется везде
-2. **Тестируемость** - сервисы легко тестировать без HTTP слоя
-3. **Гибкость UI** - легко менять presentation layer без изменения логики
-4. **Чистота роутов** - роуты занимаются только HTTP, не бизнес-логикой
-5. **Масштабируемость** - легко добавлять новые типы клиентов (API, веб, мобильные)
-6. **Независимость от фреймворка** - бизнес-логика не привязана к FastAPI
+1. **Reuse** — logic in one place, used by API and web
+2. **Testability** — test services without HTTP
+3. **Flexible UI** — change presentation without changing logic
+4. **Thin routes** — routes handle HTTP only
+5. **Scalable** — easy to add new clients (API, web, mobile)
+6. **Framework-agnostic** — business logic not tied to FastAPI

@@ -12,7 +12,7 @@ from app.models.transaction import Transaction
 from app.models.transaction_source_link import TransactionSourceLink
 from app.schemas.source_event import SourceEventCreateText, TransactionCreateAndLink
 from app.utils.parsing import parse_text
-from app.utils.matching import find_matching_transactions, normalize_merchant, generate_fingerprint
+from app.utils.matching import find_matching_transactions, normalize_merchant, generate_fingerprint, find_card_by_last_four
 
 
 async def create_source_event_from_text(
@@ -41,25 +41,34 @@ async def create_source_event_from_text(
     # Parse text (stub)
     parsed = parse_text(source_data.raw_text)
     
+    # Resolve effective card_id: from request or from parsed last-four digits
+    effective_card_id = source_data.card_id
+    if not effective_card_id and parsed.get("parsed_card_number"):
+        card = await find_card_by_last_four(
+            db, parsed["parsed_card_number"], source_data.account_id
+        )
+        if card:
+            effective_card_id = card.id
+    
     # Create source event
     source_event = SourceEvent(
         source_type=source_data.source_type,
         raw_text=source_data.raw_text,
         raw_hash=raw_hash,
         account_id=source_data.account_id,
-        card_id=source_data.card_id,
+        card_id=effective_card_id,
         **parsed
     )
     db.add(source_event)
     await db.flush()  # Get ID without committing
     
-    # Attempt matching if we have parsed amount and currency
-    if parsed["parsed_amount"] and parsed["parsed_currency"] and source_data.card_id:
+    # Attempt matching if we have parsed amount and currency and a card
+    if parsed["parsed_amount"] and parsed["parsed_currency"] and effective_card_id:
         merchant_norm = normalize_merchant(parsed["parsed_description"] or "")
         
         matching_transactions = await find_matching_transactions(
             db=db,
-            card_id=source_data.card_id,
+            card_id=effective_card_id,
             amount=parsed["parsed_amount"],
             currency=parsed["parsed_currency"],
             posting_datetime=parsed["parsed_posting_datetime"],
@@ -79,7 +88,7 @@ async def create_source_event_from_text(
         elif len(matching_transactions) == 0:
             # No match - create new transaction
             fingerprint = generate_fingerprint(
-                card_id=source_data.card_id,
+                card_id=effective_card_id,
                 amount=parsed["parsed_amount"],
                 currency=parsed["parsed_currency"],
                 posting_datetime=parsed["parsed_posting_datetime"],
@@ -88,7 +97,7 @@ async def create_source_event_from_text(
             )
             
             transaction = Transaction(
-                card_id=source_data.card_id,
+                card_id=effective_card_id,
                 amount=parsed["parsed_amount"],
                 currency=parsed["parsed_currency"],
                 transaction_datetime=parsed["parsed_transaction_datetime"],

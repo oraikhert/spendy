@@ -5,7 +5,43 @@ from decimal import Decimal
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.card import Card
 from app.models.transaction import Transaction
+
+
+async def find_card_by_last_four(
+    db: AsyncSession,
+    last_four: str,
+    account_id: int | None = None
+) -> Card | None:
+    """
+    Find a card by last 4 digits of the masked number.
+
+    Normalizes card_masked_number to digits only, takes last 4, and compares
+    to last_four. Optionally restricts to account_id.
+
+    Args:
+        db: Database session
+        last_four: Exactly 4 digits (e.g. from parsed "Credit Card ending 3278")
+        account_id: If set, only consider cards for this account
+
+    Returns:
+        First matching Card or None
+    """
+    if not last_four or len(last_four) != 4 or not last_four.isdigit():
+        return None
+
+    query = select(Card)
+    if account_id is not None:
+        query = query.where(Card.account_id == account_id)
+    result = await db.execute(query)
+    cards = result.scalars().all()
+
+    for card in cards:
+        digits_only = re.sub(r"\D", "", card.card_masked_number or "")
+        if len(digits_only) >= 4 and digits_only[-4:] == last_four:
+            return card
+    return None
 
 
 def normalize_merchant(description: str) -> str:

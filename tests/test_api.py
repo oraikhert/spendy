@@ -1,6 +1,6 @@
 """
-Простой скрипт для тестирования API
-Запуск: python test_api.py
+Simple script for testing the API
+Run: python test_api.py
 """
 import requests
 import json
@@ -11,7 +11,7 @@ API_V1 = f"{BASE_URL}/api/v1"
 
 
 def print_response(response: requests.Response, title: str = "Response"):
-    """Красивый вывод ответа"""
+    """Pretty-print response"""
     print(f"\n{'='*60}")
     print(f"{title}")
     print(f"{'='*60}")
@@ -24,16 +24,16 @@ def print_response(response: requests.Response, title: str = "Response"):
 
 
 def test_health_check():
-    """Тест health check"""
-    print("\n🔍 Проверка health check...")
+    """Test health check"""
+    print("\n🔍 Checking health...")
     response = requests.get(f"{BASE_URL}/health")
     print_response(response, "Health Check")
     assert response.status_code == 200
 
 
 def test_register_user(email: str, username: str, password: str, full_name: str) -> Dict[str, Any]:
-    """Тест регистрации пользователя"""
-    print(f"\n📝 Регистрация пользователя: {username}")
+    """Test user registration"""
+    print(f"\n📝 Registering user: {username}")
     
     data = {
         "email": email,
@@ -43,19 +43,19 @@ def test_register_user(email: str, username: str, password: str, full_name: str)
     }
     
     response = requests.post(f"{API_V1}/auth/register", json=data)
-    print_response(response, f"Регистрация: {username}")
+    print_response(response, f"Registration: {username}")
     
     if response.status_code == 201:
-        print(f"✅ Пользователь {username} успешно зарегистрирован!")
+        print(f"✅ User {username} registered successfully!")
         return response.json()
     else:
-        print(f"❌ Ошибка регистрации: {response.status_code}")
+        print(f"❌ Registration error: {response.status_code}")
         return {}
 
 
 def test_login(username: str, password: str) -> str:
-    """Тест входа в систему"""
-    print(f"\n🔐 Вход в систему: {username}")
+    """Test login"""
+    print(f"\n🔐 Logging in: {username}")
     
     data = {
         "username": username,
@@ -68,70 +68,70 @@ def test_login(username: str, password: str) -> str:
         headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
     
-    print_response(response, f"Вход: {username}")
+    print_response(response, f"Login: {username}")
     
     if response.status_code == 200:
         token = response.json()["access_token"]
-        print(f"✅ Успешный вход! Токен получен.")
+        print(f"✅ Login successful! Token received.")
         return token
     else:
-        print(f"❌ Ошибка входа: {response.status_code}")
+        print(f"❌ Login error: {response.status_code}")
         return ""
 
 
 def test_get_me(token: str):
-    """Тест получения данных текущего пользователя"""
-    print("\n👤 Получение данных текущего пользователя...")
+    """Test getting current user data"""
+    print("\n👤 Getting current user data...")
     
     headers = {
         "Authorization": f"Bearer {token}"
     }
     
     response = requests.get(f"{API_V1}/auth/me", headers=headers)
-    print_response(response, "Данные пользователя")
+    print_response(response, "User data")
     
     if response.status_code == 200:
-        print("✅ Данные пользователя получены!")
+        print("✅ User data retrieved!")
         return response.json()
     else:
-        print(f"❌ Ошибка получения данных: {response.status_code}")
+        print(f"❌ Error fetching data: {response.status_code}")
         return {}
 
 
 def test_error_cases():
-    """Тест обработки ошибок"""
-    print("\n🧪 Тестирование обработки ошибок...")
+    """Test error handling"""
+    print("\n🧪 Testing error handling...")
     
-    # 1. Доступ без токена
-    print("\n❌ Попытка доступа без токена...")
+    # 1. Access without token
+    print("\n❌ Attempting access without token...")
     response = requests.get(f"{API_V1}/auth/me")
-    print(f"Status: {response.status_code} (ожидается 401)")
-    assert response.status_code == 401, "Должна быть ошибка 401"
-    print("✅ Правильно! Доступ запрещен без токена.")
+    print(f"Status: {response.status_code} (expected 401)")
+    assert response.status_code == 401, "Should return 401"
+    print("✅ Correct! Access denied without token.")
     
-    # 2. Вход с неверным паролем
-    print("\n❌ Попытка входа с неверным паролем...")
+    # 2. Login with wrong password
+    print("\n❌ Attempting login with wrong password...")
     response = requests.post(
         f"{API_V1}/auth/login",
         data={"username": "testuser", "password": "wrongpassword"},
         headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
-    print(f"Status: {response.status_code} (ожидается 401)")
-    assert response.status_code == 401, "Должна быть ошибка 401"
-    print("✅ Правильно! Неверный пароль отклонен.")
+    print(f"Status: {response.status_code} (expected 401)")
+    assert response.status_code == 401, "Should return 401"
+    print("✅ Correct! Wrong password rejected.")
 
 
 def main():
-    """Основная функция тестирования"""
+    """Main test function"""
     print("\n" + "="*60)
-    print("🚀 ТЕСТИРОВАНИЕ API SPENDY")
+    print("🚀 SPENDY API TESTING")
     print("="*60)
     
     try:
         # 1. Health check
         test_health_check()
         
-        # 2. Регистрация пользователя
+        # 2. User registration
         user1 = test_register_user(
             email="test@example.com",
             username="testuser",
@@ -139,7 +139,7 @@ def main():
             full_name="Test User"
         )
         
-        # 3. Регистрация второго пользователя
+        # 3. Register second user
         user2 = test_register_user(
             email="john@example.com",
             username="john",
@@ -147,27 +147,27 @@ def main():
             full_name="John Doe"
         )
         
-        # 4. Вход в систему
+        # 4. Login
         token = test_login("testuser", "testpassword123")
         
         if token:
-            # 5. Получение данных пользователя
+            # 5. Get user data
             user_data = test_get_me(token)
         
-        # 6. Тестирование ошибок
+        # 6. Test error cases
         test_error_cases()
         
         print("\n" + "="*60)
-        print("✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ УСПЕШНО!")
+        print("✅ ALL TESTS PASSED!")
         print("="*60 + "\n")
         
     except requests.exceptions.ConnectionError:
-        print("\n❌ ОШИБКА: Не удалось подключиться к серверу!")
-        print("Убедитесь, что сервер запущен: python run.py\n")
+        print("\n❌ ERROR: Could not connect to server!")
+        print("Make sure the server is running: python run.py\n")
     except AssertionError as e:
-        print(f"\n❌ ОШИБКА ТЕСТА: {e}\n")
+        print(f"\n❌ TEST ERROR: {e}\n")
     except Exception as e:
-        print(f"\n❌ НЕОЖИДАННАЯ ОШИБКА: {e}\n")
+        print(f"\n❌ UNEXPECTED ERROR: {e}\n")
 
 
 if __name__ == "__main__":

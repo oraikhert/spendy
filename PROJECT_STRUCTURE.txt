@@ -1,75 +1,75 @@
 📁 Spendy - Family Budget Tracking Application
-├── 📄 README.md                     📚 Документация (начните здесь)
-├── 📁 docs/                        📚 Доп. документация
-│   ├── 📄 ARCHITECTURE.md           🏗️  Архитектура
-│   ├── 📄 MIGRATIONS.md             🔄 Миграции БД
-│   └── 📄 TROUBLESHOOTING.md        🔧 Решение проблем
+├── 📄 README.md                     📚 Documentation (start here)
+├── 📁 docs/                        📚 Additional docs
+│   ├── 📄 ARCHITECTURE.md           🏗️  Architecture
+│   ├── 📄 MIGRATIONS.md             🔄 DB migrations
+│   └── 📄 TROUBLESHOOTING.md        🔧 Troubleshooting
 │
-├── 📄 requirements.txt              📦 Python зависимости
-├── 📄 run.py                        ▶️  Скрипт запуска сервера
-├── 📄 test_api.py                   🧪 Автоматизированные тесты
-├── 📄 api_examples.http             📮 Примеры HTTP запросов
+├── 📄 requirements.txt              📦 Python dependencies
+├── 📄 run.py                        ▶️  Server startup script
+├── 📄 test_api.py                   🧪 Automated tests
+├── 📄 api_examples.http             📮 HTTP request examples
 │
-├── 📄 .env                          ⚙️  Переменные окружения
-├── 📄 .env.example                  📝 Пример настроек
-├── 📄 .gitignore                    🚫 Игнорируемые файлы
-├── 📄 alembic.ini                   🔧 Конфигурация Alembic
+├── 📄 .env                          ⚙️  Environment variables
+├── 📄 .env.example                  📝 Settings example
+├── 📄 .gitignore                    🚫 Ignored files
+├── 📄 alembic.ini                   🔧 Alembic config
 │
-├── 📁 app/                          💻 ОСНОВНОЕ ПРИЛОЖЕНИЕ
+├── 📁 app/                          💻 MAIN APPLICATION
 │   ├── 📄 __init__.py
-│   ├── 📄 main.py                   🎯 Точка входа FastAPI
-│   ├── 📄 config.py                 ⚙️  Настройки приложения
-│   ├── 📄 database.py               🗄️  Конфигурация БД
+│   ├── 📄 main.py                   🎯 FastAPI entry point
+│   ├── 📄 config.py                 ⚙️  App settings
+│   ├── 📄 database.py               🗄️  DB config
 │   │
-│   ├── 📁 models/                   💾 SQLAlchemy модели
+│   ├── 📁 models/                   💾 SQLAlchemy models
 │   │   ├── 📄 __init__.py
-│   │   └── 📄 user.py               👤 Модель пользователя
+│   │   └── 📄 user.py               👤 User model
 │   │
-│   ├── 📁 schemas/                  ✅ Pydantic схемы
+│   ├── 📁 schemas/                  ✅ Pydantic schemas
 │   │   ├── 📄 __init__.py
-│   │   └── 📄 user.py               📋 Схемы User/Token
+│   │   └── 📄 user.py               📋 User/Token schemas
 │   │
-│   ├── 📁 services/                 🎯 СЕРВИСНЫЙ СЛОЙ (бизнес-логика)
+│   ├── 📁 services/                 🎯 SERVICE LAYER (business logic)
 │   │   ├── 📄 __init__.py
-│   │   ├── 📄 user_service.py       👥 CRUD пользователей
-│   │   └── 📄 auth_service.py       🔐 Аутентификация
+│   │   ├── 📄 user_service.py       👥 User CRUD
+│   │   └── 📄 auth_service.py       🔐 Authentication
 │   │
 │   ├── 📁 api/                      🌐 API endpoints
 │   │   ├── 📄 __init__.py
-│   │   └── 📁 v1/                   📌 API версия 1
+│   │   └── 📁 v1/                   📌 API v1
 │   │       ├── 📄 __init__.py
-│   │       └── 📄 auth.py           🔐 Авторизация (JSON)
+│   │       └── 📄 auth.py           🔐 Auth (JSON)
 │   │
-│   └── 📁 core/                     🛠️  Утилиты
+│   └── 📁 core/                     🛠️  Utilities
 │       ├── 📄 __init__.py
-│       ├── 📄 security.py           🔒 JWT, хеширование
-│       └── 📄 deps.py               🔗 Зависимости
+│       ├── 📄 security.py           🔒 JWT, hashing
+│       └── 📄 deps.py               🔗 Dependencies
 │
-└── 📁 alembic/                      🗃️  Миграции БД
-    ├── 📄 env.py                    ⚙️  Настройка окружения
-    ├── 📄 script.py.mako            📝 Шаблон миграций
-    ├── 📄 README                    📖 Инструкции
-    └── 📁 versions/                 📚 Файлы миграций
+└── 📁 alembic/                      🗃️  DB migrations
+    ├── 📄 env.py                    ⚙️  Environment setup
+    ├── 📄 script.py.mako            📝 Migration template
+    ├── 📄 README                    📖 Instructions
+    └── 📁 versions/                 📚 Migration files
         └── 📄 .gitkeep
 
 ═══════════════════════════════════════════════════════════════
 
-📊 СТАТИСТИКА:
-   • Файлов Python: 18
-   • Моделей БД: 1 (User)
-   • Сервисов: 2 (user_service, auth_service)
+📊 STATS:
+   • Python files: 18
+   • DB models: 1 (User)
+   • Services: 2 (user_service, auth_service)
    • API Endpoints: 3 (register, login, me)
-   • Документация: README + docs/ (4 файла)
-   • Архитектура: ✅ Многослойная с Service Layer
-   • Готовность: ✅ 100%
+   • Documentation: README + docs/ (4 files)
+   • Architecture: ✅ Layered with Service Layer
+   • Status: ✅ 100%
 
 ═══════════════════════════════════════════════════════════════
 
-🚀 ЗАПУСК:
+🚀 RUN:
    1. python -m venv venv
    2. source venv/bin/activate
    3. pip install -r requirements.txt
    4. python run.py
-   5. Откройте: http://localhost:8000/docs
+   5. Open: http://localhost:8000/docs
 
 ═══════════════════════════════════════════════════════════════

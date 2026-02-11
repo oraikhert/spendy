@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Регистрация - Spendy{% endblock %}
+{% block title %}Register - Spendy{% endblock %}
 
 {% block content %}
 <div class="flex items-center justify-center min-h-screen p-4">
     <div class="card w-full max-w-md bg-base-100 shadow-xl">
         <div class="card-body">
             <h2 class="card-title text-3xl font-bold text-center justify-center mb-6">
-                Регистрация
+                Sign up
             </h2>
             
             <!-- Error/Success Messages Container -->
@@ -38,12 +38,12 @@
                 <!-- Username Field -->
                 <div class="form-control">
                     <label class="label">
-                        <span class="label-text">Логин</span>
+                        <span class="label-text">Username</span>
                     </label>
                     <input 
                         type="text" 
                         name="username" 
-                        placeholder="Введите логин" 
+                        placeholder="Enter username" 
                         class="input input-bordered w-full" 
                         required
                         minlength="3"
@@ -51,19 +51,19 @@
                         autocomplete="username"
                     />
                     <label class="label">
-                        <span class="label-text-alt">От 3 до 100 символов</span>
+                        <span class="label-text-alt">3 to 100 characters</span>
                     </label>
                 </div>
                 
                 <!-- Full Name Field (Optional) -->
                 <div class="form-control">
                     <label class="label">
-                        <span class="label-text">Полное имя (необязательно)</span>
+                        <span class="label-text">Full name (optional)</span>
                     </label>
                     <input 
                         type="text" 
                         name="full_name" 
-                        placeholder="Иван Иванов" 
+                        placeholder="John Doe" 
                         class="input input-bordered w-full"
                         autocomplete="name"
                     />
@@ -72,13 +72,13 @@
                 <!-- Password Field -->
                 <div class="form-control">
                     <label class="label">
-                        <span class="label-text">Пароль</span>
+                        <span class="label-text">Password</span>
                     </label>
                     <input 
                         type="password" 
                         name="password" 
                         id="password"
-                        placeholder="Введите пароль" 
+                        placeholder="Enter password" 
                         class="input input-bordered w-full" 
                         required
                         minlength="8"
@@ -86,20 +86,20 @@
                         autocomplete="new-password"
                     />
                     <label class="label">
-                        <span class="label-text-alt">От 8 до 72 символов</span>
+                        <span class="label-text-alt">8 to 72 characters</span>
                     </label>
                 </div>
                 
                 <!-- Confirm Password Field -->
                 <div class="form-control">
                     <label class="label">
-                        <span class="label-text">Подтвердите пароль</span>
+                        <span class="label-text">Confirm password</span>
                     </label>
                     <input 
                         type="password" 
                         name="password_confirm" 
                         id="password_confirm"
-                        placeholder="Повторите пароль" 
+                        placeholder="Repeat password" 
                         class="input input-bordered w-full" 
                         required
                         minlength="8"
@@ -112,18 +112,18 @@
                 <div class="form-control mt-6">
                     <button type="submit" class="btn btn-primary w-full">
                         <span class="htmx-indicator loading loading-spinner loading-sm"></span>
-                        <span>Зарегистрироваться</span>
+                        <span>Sign up</span>
                     </button>
                 </div>
             </form>
             
             <!-- Login Link -->
-            <div class="divider">или</div>
+            <div class="divider">or</div>
             <div class="text-center">
                 <p class="text-sm">
-                    Уже есть аккаунт? 
+                    Already have an account? 
                     <a href="/auth/login" class="link link-primary font-semibold">
-                        Войти
+                        Log in
                     </a>
                 </p>
             </div>
@@ -146,7 +146,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span>Пароли не совпадают</span>
+                    <span>Passwords do not match</span>
                 </div>
             `;
         }

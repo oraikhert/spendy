@@ -1,74 +1,74 @@
 #!/bin/bash
 
-# Скрипт для установки зависимостей проекта Spendy
-# Решает проблему с SSL сертификатами на macOS
+# Script to install Spendy project dependencies
+# Fixes SSL certificate issues on macOS
 
-echo "🚀 Установка зависимостей для Spendy"
+echo "🚀 Installing dependencies for Spendy"
 echo "====================================="
 echo ""
 
-# Проверка наличия Python
+# Check for Python
 if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 не найден. Установите Python 3.10+"
+    echo "❌ Python 3 not found. Install Python 3.10+"
     exit 1
 fi
 
-echo "✅ Python найден: $(python3 --version)"
+echo "✅ Python found: $(python3 --version)"
 echo ""
 
-# Создание виртуального окружения
+# Create virtual environment
 if [ ! -d "venv" ]; then
-    echo "📦 Создание виртуального окружения..."
+    echo "📦 Creating virtual environment..."
     python3 -m venv venv
-    echo "✅ Виртуальное окружение создано"
+    echo "✅ Virtual environment created"
 else
-    echo "✅ Виртуальное окружение уже существует"
+    echo "✅ Virtual environment already exists"
 fi
 echo ""
 
-# Активация виртуального окружения
-echo "🔄 Активация виртуального окружения..."
+# Activate virtual environment
+echo "🔄 Activating virtual environment..."
 source venv/bin/activate
 
-# Обновление pip
-echo "⬆️  Обновление pip..."
+# Update pip
+echo "⬆️  Updating pip..."
 pip install --upgrade pip --quiet
 
-# Установка зависимостей
-echo "📥 Установка зависимостей..."
-echo "   (это может занять несколько минут)"
+# Install dependencies
+echo "📥 Installing dependencies..."
+echo "   (this may take a few minutes)"
 echo ""
 
-# Проверка наличия проблем с SSL
+# Check for SSL issues
 if pip install -r requirements.txt 2>&1 | grep -q "SSLError\|certificate"; then
-    echo "⚠️  Обнаружена проблема с SSL сертификатами"
-    echo "🔧 Переустановка с доверенными хостами..."
+    echo "⚠️  SSL certificate issue detected"
+    echo "🔧 Reinstalling with trusted hosts..."
     pip install --trusted-host pypi.org \
                 --trusted-host pypi.python.org \
                 --trusted-host files.pythonhosted.org \
                 -r requirements.txt
 else
-    echo "✅ Установка без проблем"
+    echo "✅ Installation completed without issues"
 fi
 
-# Проверка установки
+# Verify installation
 echo ""
-echo "🧪 Проверка установки..."
+echo "🧪 Verifying installation..."
 if python -c "import fastapi; import uvicorn; import sqlalchemy" 2>/dev/null; then
-    echo "✅ Все зависимости установлены успешно!"
+    echo "✅ All dependencies installed successfully!"
 else
-    echo "❌ Ошибка при проверке зависимостей"
+    echo "❌ Error verifying dependencies"
     exit 1
 fi
 
 echo ""
 echo "====================================="
-echo "🎉 Установка завершена!"
+echo "🎉 Installation complete!"
 echo ""
-echo "Для запуска приложения:"
+echo "To run the application:"
 echo "  source venv/bin/activate"
 echo "  python run.py"
 echo ""
-echo "Или просто:"
+echo "Or simply:"
 echo "  ./start.sh"
 echo "====================================="

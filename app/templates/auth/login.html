@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Вход - Spendy{% endblock %}
+{% block title %}Login - Spendy{% endblock %}
 
 {% block content %}
 <div class="flex items-center justify-center min-h-screen p-4">
     <div class="card w-full max-w-md bg-base-100 shadow-xl">
         <div class="card-body">
             <h2 class="card-title text-3xl font-bold text-center justify-center mb-6">
-                Вход в Spendy
+                Login to Spendy
             </h2>
             
             <!-- Error/Success Messages Container -->
@@ -22,12 +22,12 @@
                 <!-- Username/Email Field -->
                 <div class="form-control">
                     <label class="label">
-                        <span class="label-text">Логин или Email</span>
+                        <span class="label-text">Username or Email</span>
                     </label>
                     <input 
                         type="text" 
                         name="username" 
-                        placeholder="Введите логин или email" 
+                        placeholder="Enter username or email" 
                         class="input input-bordered w-full" 
                         required
                         autocomplete="username"
@@ -37,12 +37,12 @@
                 <!-- Password Field -->
                 <div class="form-control">
                     <label class="label">
-                        <span class="label-text">Пароль</span>
+                        <span class="label-text">Password</span>
                     </label>
                     <input 
                         type="password" 
                         name="password" 
-                        placeholder="Введите пароль" 
+                        placeholder="Enter password" 
                         class="input input-bordered w-full" 
                         required
                         minlength="8"
@@ -54,18 +54,18 @@
                 <div class="form-control mt-6">
                     <button type="submit" class="btn btn-primary w-full">
                         <span class="htmx-indicator loading loading-spinner loading-sm"></span>
-                        <span>Войти</span>
+                        <span>Log in</span>
                     </button>
                 </div>
             </form>
             
             <!-- Register Link -->
-            <div class="divider">или</div>
+            <div class="divider">or</div>
             <div class="text-center">
                 <p class="text-sm">
-                    Нет аккаунта? 
+                    Don't have an account? 
                     <a href="/auth/register" class="link link-primary font-semibold">
-                        Зарегистрироваться
+                        Sign up
                     </a>
                 </p>
             </div>

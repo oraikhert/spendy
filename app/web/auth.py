@@ -115,7 +115,7 @@ async def register_post(
     try:
         # Validate password confirmation
         if password != password_confirm:
-            raise ValueError("Пароли не совпадают")
+            raise ValueError("Passwords do not match")
         
         # Create user data
         user_data = UserCreate(

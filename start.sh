@@ -1,20 +1,20 @@
 #!/bin/bash
 
-# Скрипт для быстрого запуска Spendy
+# Quick start script for Spendy
 
-# Проверка виртуального окружения
+# Check for virtual environment
 if [ ! -d "venv" ]; then
-    echo "❌ Виртуальное окружение не найдено"
-    echo "Запустите сначала: ./install.sh"
+    echo "❌ Virtual environment not found"
+    echo "Run first: ./install.sh"
     exit 1
 fi
 
-# Активация виртуального окружения
+# Activate virtual environment
 source venv/bin/activate
 
-# Запуск приложения
-echo "🚀 Запуск Spendy..."
-echo "📖 Документация: http://localhost:8000/docs"
-echo "🛑 Остановка: Ctrl+C"
+# Run application
+echo "🚀 Starting Spendy..."
+echo "📖 Docs: http://localhost:8000/docs"
+echo "🛑 Stop: Ctrl+C"
 echo ""
 python run.py

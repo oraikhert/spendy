@@ -1,10 +1,10 @@
 ### Spendy API Examples
-### Используйте расширение REST Client в VS Code или любой HTTP клиент
+### Use REST Client extension in VS Code or any HTTP client
 
 @baseUrl = http://localhost:8000
 @apiV1 = {{baseUrl}}/api/v1
 
-### Переменные (заполните после получения токена)
+### Variables (fill in after getting token)
 @accessToken = YOUR_TOKEN_HERE
 
 ###############################################
@@ -21,7 +21,7 @@ GET {{baseUrl}}/
 # Authentication
 ###############################################
 
-### 1. Регистрация нового пользователя
+### 1. Register new user
 POST {{apiV1}}/auth/register
 Content-Type: application/json
 
@@ -34,7 +34,7 @@ Content-Type: application/json
 
 ###
 
-### 2. Регистрация второго пользователя
+### 2. Register second user
 POST {{apiV1}}/auth/register
 Content-Type: application/json
 
@@ -47,7 +47,7 @@ Content-Type: application/json
 
 ###
 
-### 3. Вход в систему (Login)
+### 3. Login
 POST {{apiV1}}/auth/login
 Content-Type: application/x-www-form-urlencoded
 
@@ -55,7 +55,7 @@ username=testuser&password=testpassword123
 
 ###
 
-### 4. Вход через email
+### 4. Login with email
 POST {{apiV1}}/auth/login
 Content-Type: application/x-www-form-urlencoded
 
@@ -63,17 +63,17 @@ username=test@example.com&password=testpassword123
 
 ###
 
-### 5. Получить данные текущего пользователя
+### 5. Get current user data
 GET {{apiV1}}/auth/me
 Authorization: Bearer {{accessToken}}
 
 ###
 
 ###############################################
-# Error Cases (для тестирования)
+# Error Cases (for testing)
 ###############################################
 
-### Регистрация с существующим email (должна вернуть ошибку)
+### Register with existing email (should return error)
 POST {{apiV1}}/auth/register
 Content-Type: application/json
 
@@ -86,7 +86,7 @@ Content-Type: application/json
 
 ###
 
-### Регистрация с существующим username (должна вернуть ошибку)
+### Register with existing username (should return error)
 POST {{apiV1}}/auth/register
 Content-Type: application/json
 
@@ -99,7 +99,7 @@ Content-Type: application/json
 
 ###
 
-### Вход с неверным паролем (должна вернуть ошибку)
+### Login with wrong password (should return error)
 POST {{apiV1}}/auth/login
 Content-Type: application/x-www-form-urlencoded
 
@@ -107,7 +107,7 @@ username=testuser&password=wrongpassword
 
 ###
 
-### Вход с несуществующим пользователем (должна вернуть ошибку)
+### Login with non-existent user (should return error)
 POST {{apiV1}}/auth/login
 Content-Type: application/x-www-form-urlencoded
 
@@ -115,12 +115,12 @@ username=nonexistent&password=password123
 
 ###
 
-### Доступ без токена (должна вернуть ошибку 401)
+### Access without token (should return 401)
 GET {{apiV1}}/auth/me
 
 ###
 
-### Доступ с невалидным токеном (должна вернуть ошибку 401)
+### Access with invalid token (should return 401)
 GET {{apiV1}}/auth/me
 Authorization: Bearer invalid_token_here
 

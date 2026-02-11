@@ -81,35 +81,30 @@ async def register(user_in: UserCreate, db: AsyncSession):
 
 ```
 app/services/
-├── __init__.py           # Exports
-├── user_service.py       # User CRUD
-└── auth_service.py       # Auth and tokens
+├── __init__.py             # Exports
+├── user_service.py         # User CRUD
+├── auth_service.py         # Auth and tokens
+├── account_service.py      # Account CRUD
+├── card_service.py         # Card CRUD
+├── transaction_service.py  # Transaction CRUD, list with filters, get sources
+├── source_event_service.py # Create from text/upload, link, create-and-link, reprocess
+└── dashboard_service.py    # Summary (total_spent, total_income, by_kind)
 ```
 
-### __init__.py
-
-Exports all service functions for simple imports:
-
-```python
-from app.services.user_service import (
-    get_user_by_id,
-    get_user_by_email,
-    get_user_by_username,
-    get_user_by_username_or_email,
-    create_user,
-    update_user,
-)
-from app.services.auth_service import (
-    authenticate_user,
-    create_user_access_token,
-)
+```
+app/utils/
+├── parsing.py              # parse_text_stub (SMS bank notifications: amount, currency, merchant, card number)
+├── matching.py             # normalize_merchant, generate_fingerprint, find_matching_transactions
+└── canonicalization.py     # canonicalize_transaction (priority from linked source events)
 ```
 
 **Usage:**
 ```python
-from app.services import user_service, auth_service
+from app.services import user_service, auth_service, account_service, card_service, transaction_service, source_event_service, dashboard_service
 
 user = await user_service.create_user(...)
+account = await account_service.create_account(db, account_data)
+# etc.
 ```
 
 ## Service functions
@@ -310,6 +305,16 @@ async def test_create_user_duplicate_email(db_session):
     with pytest.raises(ValueError, match="Email already registered"):
         await user_service.create_user(user_data2, db_session)
 ```
+
+## Transaction-domain services (reference)
+
+- **account_service** — create_account, get_account, get_accounts, update_account, delete_account. See `app/services/account_service.py`.
+- **card_service** — create_card, get_card, get_cards_by_account, update_card, delete_card. See `app/services/card_service.py`.
+- **transaction_service** — create_transaction (sets merchant_norm, fingerprint), get_transaction, get_transactions (filters: account_id, card_id, date_from/to, q, kind, min/max_amount, limit, offset), update_transaction, delete_transaction, get_transaction_sources. See `app/services/transaction_service.py`.
+- **source_event_service** — create_source_event_from_text (parse + optional auto-match), create_source_event_from_file (stores in data/uploads), get_source_event, get_source_events (filters), link_source_to_transaction, create_transaction_and_link, unlink_source_from_transaction, reprocess_source_event (re-parse + re-match). See `app/services/source_event_service.py`.
+- **dashboard_service** — get_dashboard_summary(date_from, date_to, account_id?, card_id?); returns total_spent, total_income, by_kind, count_transactions, last_updated_at. See `app/services/dashboard_service.py`.
+
+Utils: `parse_text_stub` in `app/utils/parsing.py` returns parsed_amount, parsed_currency, parsed_description, parsed_card_number, parse_status. Matching and canonicalization are used inside source_event_service and transaction_service.
 
 ## Adding new services
 

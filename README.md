@@ -37,18 +37,16 @@ spendy/
 │   ├── main.py              # Application entry point
 │   ├── config.py            # Configuration
 │   ├── database.py          # Database setup
-│   ├── models/              # SQLAlchemy models (DB tables)
+│   ├── models/              # SQLAlchemy models (User, Account, Card, Transaction, SourceEvent, TransactionSourceLink)
 │   ├── schemas/             # Pydantic schemas (validation)
-│   ├── services/            # Service layer (business logic)
-│   │   ├── user_service.py  # User CRUD
-│   │   └── auth_service.py  # Auth and tokens
-│   ├── api/v1/              # API routes (JSON)
+│   ├── services/            # Service layer (user, auth, account, card, transaction, source_event, dashboard)
+│   ├── utils/               # Parsing, matching, canonicalization
+│   ├── api/v1/              # API routes (auth, accounts, cards, transactions, source-events, dashboard, meta)
 │   ├── web/                 # Web routes (HTML)
-│   │   ├── auth.py          # Login/register pages
-│   │   └── pages.py         # Other pages (dashboard, etc.)
-│   ├── templates/           # Jinja2 templates
+│   ├── templates/          # Jinja2 templates
 │   ├── static/              # CSS, JS, images
 │   └── core/                # Utilities (security, deps)
+├── data/uploads/            # Uploaded files (PDFs, screenshots); contents ignored in git
 ├── docs/                    # Documentation
 ├── alembic/                 # DB migrations
 ├── requirements.txt
@@ -109,7 +107,15 @@ cp .env.example .env
 
 For production, change `SECRET_KEY` (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`).
 
-### 3. Run
+### 3. Migrations (transaction features)
+
+```bash
+alembic upgrade head
+```
+
+See [docs/MIGRATIONS.md](docs/MIGRATIONS.md).
+
+### 4. Run
 
 ```bash
 python run.py
@@ -151,6 +157,8 @@ The app has a web UI with Jinja2, HTMX, Tailwind CSS and DaisyUI.
 
 ## API endpoints
 
+All endpoints except `/health` and auth login/register require `Authorization: Bearer <access_token>`.
+
 ### Auth
 
 | Method | Path | Description |
@@ -162,6 +170,28 @@ The app has a web UI with Jinja2, HTMX, Tailwind CSS and DaisyUI.
 **Register** — JSON: `email`, `username`, `password` (min 8 chars), `full_name` (optional).  
 **Login** — form-data: `username` (or email), `password`. Response: `access_token`, `token_type: "bearer"`.  
 **Profile** — header: `Authorization: Bearer <access_token>`.
+
+### Transactions (token required)
+
+| Area | Methods | Path pattern |
+|------|---------|--------------|
+| Accounts | GET, POST | `/api/v1/accounts` |
+| Account | GET, PATCH, DELETE | `/api/v1/accounts/{id}` |
+| Cards | GET, POST | `/api/v1/accounts/{id}/cards` |
+| Card | GET, PATCH, DELETE | `/api/v1/cards/{id}` |
+| Transactions | GET, POST | `/api/v1/transactions` (query: account_id, card_id, date_from, date_to, q, kind, min_amount, max_amount, limit, offset) |
+| Transaction | GET, PATCH, DELETE | `/api/v1/transactions/{id}` |
+| Transaction sources | GET | `/api/v1/transactions/{id}/sources` |
+| Source events (text) | POST | `/api/v1/source-events/text` (JSON: source_type, raw_text, account_id?, card_id?) |
+| Source events (upload) | POST | `/api/v1/source-events/upload` (form: source_type, file, account_id?, card_id?) |
+| Source events | GET, GET by id | `/api/v1/source-events`, `/api/v1/source-events/{id}` |
+| Link / create-and-link / unlink | POST, DELETE | `/api/v1/source-events/{id}/link`, `.../create-transaction-and-link`, `.../link/{transaction_id}` |
+| Reprocess | POST | `/api/v1/source-events/{id}/reprocess` |
+| Download file | GET | `/api/v1/source-events/{id}/download` |
+| Dashboard | GET | `/api/v1/dashboard/summary` (query: date_from, date_to, account_id?, card_id?) |
+| Meta | GET | `/api/v1/meta/transaction-kinds` |
+
+Details: `app/api/v1/` and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Using the API
 
@@ -245,7 +275,7 @@ print(requests.get(f"{BASE}/auth/me", headers={"Authorization": f"Bearer {token}
 
 ## Roadmap
 
-1. **Budget management** — transactions (income/expense), categories, accounts
+1. **Transaction tracking** — done (accounts, cards, transactions, source events, matching, dashboard summary)
 2. **Web pages** — transactions, reports, settings
 3. **Family groups** — shared family budget
 4. **Reports** — charts, stats, export

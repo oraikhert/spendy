@@ -156,6 +156,21 @@ kill -9 <PID>
 
 ---
 
+## Problem 6b: Missing tables (e.g. accounts, transactions)
+
+**Symptoms:** `no such table: accounts` or similar after pulling transaction features.
+
+**Fix:** Apply migrations with venv active and from project root:
+
+```bash
+source venv/bin/activate
+alembic upgrade head
+```
+
+See [MIGRATIONS.md](MIGRATIONS.md).
+
+---
+
 ## Problem 7: Module not found on run
 
 **Symptoms:**

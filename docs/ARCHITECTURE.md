@@ -10,33 +10,25 @@ spendy/
 │   ├── database.py          # DB and session setup
 │   │
 │   ├── models/              # SQLAlchemy models
-│   │   └── user.py          # User model
+│   │   ├── user.py          # User
+│   │   ├── account.py       # Account (institution, currency)
+│   │   ├── card.py          # Card (account_id, masked number, type)
+│   │   ├── transaction.py   # Transaction (canonical; amount, currency, fingerprint)
+│   │   ├── source_event.py  # SourceEvent (raw text/file, parsed_*, parse_status)
+│   │   └── transaction_source_link.py  # Link transaction ↔ source_event
 │   │
-│   ├── schemas/             # Pydantic schemas (validation)
-│   │   └── user.py          # User schemas
+│   ├── schemas/             # Pydantic schemas (account, card, transaction, source_event, dashboard)
+│   ├── services/            # account, card, transaction, source_event, dashboard (+ user, auth)
+│   ├── utils/               # parsing (SMS/text), matching (fingerprint), canonicalization
 │   │
-│   ├── services/            # Service layer (business logic)
-│   │   ├── user_service.py  # User CRUD
-│   │   └── auth_service.py  # Auth and tokens
-│   │
-│   ├── api/v1/              # API v1 (JSON)
-│   │   └── auth.py          # Register, login, me
-│   │
-│   ├── web/                 # Web routes (HTML)
-│   │   ├── auth.py          # Login/register pages
-│   │   └── pages.py         # Other pages (dashboard, etc.)
-│   │
-│   ├── templates/           # Jinja2 templates
-│   │   ├── base.html
-│   │   ├── auth/            # login.html, register.html
-│   │   └── dashboard.html
-│   │
-│   ├── static/              # CSS, etc.
-│   │
-│   └── core/                # Utilities
-│       ├── security.py      # JWT, password hashing
-│       └── deps.py          # FastAPI dependencies
+│   ├── api/v1/              # auth, accounts, cards, transactions, source_events, dashboard, meta
+│   ├── web/                 # Login/register, pages
+│   ├── templates/           # base, auth, dashboard
+│   ├── static/              # CSS
+│   └── core/                # security.py, deps.py
 │
+├── data/uploads/            # Stored uploads (git-ignored except .gitkeep)
+├── alembic/versions/        # Migrations (users, transaction tables, parsed_card_number)
 ├── requirements.txt
 ├── .env
 └── run.py
@@ -46,19 +38,17 @@ spendy/
 
 ### Table: users
 
-```sql
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    username VARCHAR(100) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    full_name VARCHAR(255),
-    is_active BOOLEAN DEFAULT TRUE,
-    is_superuser BOOLEAN DEFAULT FALSE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+See `app/models/user.py`. Columns: id, email, username, hashed_password, full_name, is_active, is_superuser, created_at, updated_at.
+
+### Transaction domain tables
+
+- **accounts** — id, institution, name, account_currency, created_at, updated_at.
+- **cards** — id, account_id (FK), card_masked_number, card_type (debit|credit), name; UNIQUE(account_id, card_masked_number). See `app/models/card.py`.
+- **transactions** — id, card_id (FK), amount, currency, transaction_datetime, posting_datetime, description, transaction_kind (purchase|topup|refund|other), optional FX fields, merchant_norm, fingerprint; indexes on (card_id, posting_datetime), (card_id, transaction_datetime), (card_id, amount, currency), fingerprint. See `app/models/transaction.py`.
+- **source_events** — id, source_type (e.g. sms_text, pdf_statement), received_at, raw_text, file_path, raw_hash (unique), parsed_* fields (amount, currency, description, parsed_card_number, etc.), account_id/card_id (optional), parse_status (new|parsed|failed). See `app/models/source_event.py`.
+- **transaction_source_links** — composite PK (transaction_id, source_event_id), match_confidence, is_primary. See `app/models/transaction_source_link.py`.
+
+Migrations: `alembic/versions/` (trans001 for transaction tables, parsed_card_001 for parsed_card_number). See [MIGRATIONS.md](MIGRATIONS.md).
 
 ## Auth flow (with service layer)
 
@@ -325,7 +315,7 @@ async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
     return db_user
 ```
 
-**Functions:** See [SERVICE_LAYER.md](SERVICE_LAYER.md) for full list (user_service, auth_service).
+**Functions:** See [SERVICE_LAYER.md](SERVICE_LAYER.md) for full list (user_service, auth_service, account_service, card_service, transaction_service, source_event_service, dashboard_service).
 
 #### Models (app/models/)
 
@@ -373,14 +363,15 @@ get_current_active_user
 
 **Phase 2:** Optional move to SPA (React/Vue): remove `app/web/` and templates; API and services unchanged.
 
-### Planned models
+### Implemented (transaction tracking)
 
-- Transaction, Category, Budget, Family, Account
+- **Models:** Account, Card, Transaction, SourceEvent, TransactionSourceLink.
+- **Services:** account_service, card_service, transaction_service, source_event_service, dashboard_service; utils: `app/utils/parsing.py` (SMS/text parsing), `app/utils/matching.py` (fingerprint, merchant_norm), `app/utils/canonicalization.py`.
+- **API:** `/api/v1/accounts`, `/api/v1/cards`, `/api/v1/transactions`, `/api/v1/source-events`, `/api/v1/dashboard/summary`, `/api/v1/meta/transaction-kinds`. Source events support text ingest, file upload, manual link, create-transaction-and-link, reprocess, download.
 
-### Planned services / API
+### Planned (not yet implemented)
 
-- transaction_service, category_service, budget_service, family_service, report_service
-- `/api/v1/transactions`, `/api/v1/categories`, `/api/v1/budgets`, `/api/v1/families`, `/api/v1/reports`
+- Category, Budget, Family; category_service, budget_service, family_service, report_service; corresponding API routes.
 
 ## Service layer benefits
 

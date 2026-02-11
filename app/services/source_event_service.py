@@ -103,7 +103,8 @@ async def create_source_event_from_text(
                 transaction_datetime=parsed["parsed_transaction_datetime"],
                 posting_datetime=parsed["parsed_posting_datetime"],
                 description=parsed["parsed_description"] or source_data.raw_text,
-                transaction_kind="other",  # Default kind
+                location=parsed.get("parsed_location"),
+                transaction_kind=parsed.get("parsed_transaction_kind") or "other",
                 merchant_norm=merchant_norm,
                 fingerprint=fingerprint
             )
@@ -339,7 +340,16 @@ async def create_transaction_and_link(
         or source_event.parsed_posting_datetime
     )
     
-    transaction_kind = transaction_data.transaction_kind or "other"
+    location = (
+        transaction_data.location
+        or source_event.parsed_location
+    )
+    
+    transaction_kind = (
+        transaction_data.transaction_kind
+        or source_event.parsed_transaction_kind
+        or "other"
+    )
     
     # Generate merchant_norm and fingerprint
     merchant_norm = normalize_merchant(description)
@@ -360,6 +370,7 @@ async def create_transaction_and_link(
         transaction_datetime=transaction_datetime,
         posting_datetime=posting_datetime,
         description=description,
+        location=location,
         transaction_kind=transaction_kind,
         original_amount=transaction_data.original_amount,
         original_currency=transaction_data.original_currency,

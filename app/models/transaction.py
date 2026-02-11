@@ -26,6 +26,7 @@ class Transaction(Base):
     transaction_datetime: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     posting_datetime: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     description: Mapped[str] = mapped_column(String, nullable=False)
+    location: Mapped[str | None] = mapped_column(String(200), nullable=True)
     
     # Kind
     transaction_kind: Mapped[str] = mapped_column(String(50), nullable=False)  # purchase | topup | refund | other

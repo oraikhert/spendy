@@ -29,6 +29,8 @@ class SourceEventResponse(SourceEventBase):
     parsed_posting_datetime: datetime | None = None
     parsed_description: str | None = None
     parsed_card_number: str | None = None
+    parsed_transaction_kind: str | None = None
+    parsed_location: str | None = None
     account_id: int | None = None
     card_id: int | None = None
     parse_status: str
@@ -66,6 +68,7 @@ class TransactionCreateAndLink(BaseModel):
     transaction_datetime: datetime | None = None
     posting_datetime: datetime | None = None
     description: str | None = None
+    location: str | None = None
     transaction_kind: str | None = Field(None, pattern="^(purchase|topup|refund|other)$")
     original_amount: Decimal | None = Field(None, decimal_places=2)
     original_currency: str | None = Field(None, min_length=3, max_length=3)

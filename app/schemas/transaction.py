@@ -11,6 +11,7 @@ class TransactionBase(BaseModel):
     transaction_datetime: datetime | None = None
     posting_datetime: datetime | None = None
     description: str
+    location: str | None = None
     transaction_kind: str = Field(..., pattern="^(purchase|topup|refund|other)$")
     original_amount: Decimal | None = Field(None, decimal_places=2)
     original_currency: str | None = Field(None, min_length=3, max_length=3)
@@ -30,6 +31,7 @@ class TransactionUpdate(BaseModel):
     transaction_datetime: datetime | None = None
     posting_datetime: datetime | None = None
     description: str | None = None
+    location: str | None = None
     transaction_kind: str | None = Field(None, pattern="^(purchase|topup|refund|other)$")
     original_amount: Decimal | None = Field(None, decimal_places=2)
     original_currency: str | None = Field(None, min_length=3, max_length=3)

@@ -59,7 +59,7 @@ test_cases = [
 ]
 
 try:
-    from app.utils.parsing import parse_text_stub
+    from app.utils.parsing import parse_text
     
     print("\n" + "="*80)
     print("Testing Enhanced SMS Parser")
@@ -71,7 +71,7 @@ try:
         print(f"\n📝 Test {i}:")
         print(f"Input: {test['text'][:80]}...")
         
-        result = parse_text_stub(test['text'])
+        result = parse_text(test['text'])
         expected = test['expected']
         
         # Check amount

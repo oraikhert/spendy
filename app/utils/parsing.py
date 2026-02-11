@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime
 
 
-def parse_text_stub(raw_text: str) -> dict:
+def parse_text(raw_text: str) -> dict:
     """
     Parse bank SMS notifications.
     

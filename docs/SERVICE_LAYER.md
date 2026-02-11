@@ -93,7 +93,7 @@ app/services/
 
 ```
 app/utils/
-├── parsing.py              # parse_text_stub (SMS bank notifications: amount, currency, merchant, card number)
+├── parsing.py              # parse_text (SMS bank notifications: amount, currency, merchant, card number)
 ├── matching.py             # normalize_merchant, generate_fingerprint, find_matching_transactions
 └── canonicalization.py     # canonicalize_transaction (priority from linked source events)
 ```
@@ -314,7 +314,7 @@ async def test_create_user_duplicate_email(db_session):
 - **source_event_service** — create_source_event_from_text (parse + optional auto-match), create_source_event_from_file (stores in data/uploads), get_source_event, get_source_events (filters), link_source_to_transaction, create_transaction_and_link, unlink_source_from_transaction, reprocess_source_event (re-parse + re-match). See `app/services/source_event_service.py`.
 - **dashboard_service** — get_dashboard_summary(date_from, date_to, account_id?, card_id?); returns total_spent, total_income, by_kind, count_transactions, last_updated_at. See `app/services/dashboard_service.py`.
 
-Utils: `parse_text_stub` in `app/utils/parsing.py` returns parsed_amount, parsed_currency, parsed_description, parsed_card_number, parse_status. Matching and canonicalization are used inside source_event_service and transaction_service.
+Utils: `parse_text` in `app/utils/parsing.py` returns parsed_amount, parsed_currency, parsed_description, parsed_card_number, parse_status. Matching and canonicalization are used inside source_event_service and transaction_service.
 
 ## Adding new services
 

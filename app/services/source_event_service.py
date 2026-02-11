@@ -11,7 +11,7 @@ from app.models.source_event import SourceEvent
 from app.models.transaction import Transaction
 from app.models.transaction_source_link import TransactionSourceLink
 from app.schemas.source_event import SourceEventCreateText, TransactionCreateAndLink
-from app.utils.parsing import parse_text_stub
+from app.utils.parsing import parse_text
 from app.utils.matching import find_matching_transactions, normalize_merchant, generate_fingerprint
 
 
@@ -39,7 +39,7 @@ async def create_source_event_from_text(
         raise ValueError("Source event with this content already exists")
     
     # Parse text (stub)
-    parsed = parse_text_stub(source_data.raw_text)
+    parsed = parse_text(source_data.raw_text)
     
     # Create source event
     source_event = SourceEvent(
@@ -414,7 +414,7 @@ async def reprocess_source_event(
     
     # Re-parse if text source
     if source_event.raw_text:
-        parsed = parse_text_stub(source_event.raw_text)
+        parsed = parse_text(source_event.raw_text)
         for field, value in parsed.items():
             setattr(source_event, field, value)
     

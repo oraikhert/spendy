@@ -1,5 +1,12 @@
 """Test the enhanced parsing function with real SMS examples"""
 import sys
+from pathlib import Path
+
+# Ensure project root is on path so "app" can be imported when run as python tests/test_parsing.py
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
 from decimal import Decimal
 
 # Test without importing dependencies
@@ -9,7 +16,8 @@ test_cases = [
         "expected": {
             "amount": Decimal("-2.50"),
             "currency": "AED",
-            "description": "EKFC DELI 2 GO 599995"
+            "description": "EKFC DELI 2 GO 599995",
+            "card_number": "3278"
         }
     },
     {
@@ -17,7 +25,8 @@ test_cases = [
         "expected": {
             "amount": Decimal("-1493.10"),
             "currency": "AED",
-            "description": "AL FUTTAIM TRANSPORT"
+            "description": "AL FUTTAIM TRANSPORT",
+            "card_number": "3278"
         }
     },
     {
@@ -25,7 +34,8 @@ test_cases = [
         "expected": {
             "amount": Decimal("-21.00"),
             "currency": "USD",
-            "description": "OPENAI *CHATGPT SUBSCR"
+            "description": "OPENAI *CHATGPT SUBSCR",
+            "card_number": "3278"
         }
     },
     {
@@ -33,7 +43,8 @@ test_cases = [
         "expected": {
             "amount": Decimal("-20.00"),
             "currency": "USD",
-            "description": "CURSOR, AI POWERED IDE"
+            "description": "CURSOR, AI POWERED IDE",
+            "card_number": "3278"
         }
     },
     {
@@ -41,7 +52,8 @@ test_cases = [
         "expected": {
             "amount": Decimal("-87.20"),
             "currency": "AED",
-            "description": "carrefouruae.com"
+            "description": "carrefouruae.com",
+            "card_number": "3278"
         }
     }
 ]
@@ -83,6 +95,13 @@ try:
             print(f"  ⚠️  Description: Expected '{expected['description']}', got '{result['parsed_description']}'")
             # Description mismatch is a warning, not a failure
         
+        # Check card number
+        if result['parsed_card_number'] == expected['card_number']:
+            print(f"  ✅ Card Number: {result['parsed_card_number']}")
+        else:
+            print(f"  ❌ Card Number: Expected {expected['card_number']}, got {result['parsed_card_number']}")
+            all_passed = False
+        
         # Show parse status
         print(f"  ℹ️  Parse status: {result['parse_status']}")
     
@@ -93,6 +112,7 @@ try:
         print("  • Transaction amounts (with comma handling)")
         print("  • Currency codes (AED, USD, etc.)")
         print("  • Merchant names from 'at' and 'to' patterns")
+        print("  • Card numbers (last 4 digits)")
         print("  • Negative amounts for purchases/payments")
     else:
         print("❌ SOME TESTS FAILED")

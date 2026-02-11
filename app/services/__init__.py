@@ -1,4 +1,23 @@
 """Service layer for business logic"""
+from app.services import (
+    auth_service,
+    user_service,
+    account_service,
+    card_service,
+    transaction_service,
+    source_event_service,
+    dashboard_service,
+)
+
+__all__ = [
+    "auth_service",
+    "user_service",
+    "account_service",
+    "card_service",
+    "transaction_service",
+    "source_event_service",
+    "dashboard_service",
+]
 from app.services.user_service import (
     get_user_by_id,
     get_user_by_email,

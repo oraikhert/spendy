@@ -38,6 +38,13 @@ wheels/
 *.swo
 *~
 
+# Uploads (keep folder via .gitkeep)
+data/uploads/*
+!data/uploads/.gitkeep
+
+# Local todo
+todo.txt
+
 # OS
 .DS_Store
 Thumbs.db

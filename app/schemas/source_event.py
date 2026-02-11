@@ -29,8 +29,6 @@ class SourceEventResponse(SourceEventBase):
     parsed_posting_datetime: datetime | None = None
     parsed_description: str | None = None
     parsed_card_number: str | None = None
-    parsed_original_amount: Decimal | None = None
-    parsed_original_currency: str | None = None
     account_id: int | None = None
     card_id: int | None = None
     parse_status: str

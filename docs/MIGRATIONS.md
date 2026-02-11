@@ -57,8 +57,9 @@ alembic revision --autogenerate -m "Add transactions table"
 | cfc042908370 | Initial: users table |
 | trans001 | Transaction domain: accounts, cards, transactions, source_events, transaction_source_links |
 | parsed_card_001 | Add source_events.parsed_card_number (String 4) |
+| drop_orig_001 | Drop source_events.parsed_original_amount, parsed_original_currency |
 
-Files: `alembic/versions/cfc042908370_*.py`, `trans001_add_transaction_tables.py`, `add_parsed_card_number.py`.
+Files: `alembic/versions/cfc042908370_*.py`, `trans001_add_transaction_tables.py`, `add_parsed_card_number.py`, `drop_parsed_original_from_source_events.py`.
 
 ## Important notes
 

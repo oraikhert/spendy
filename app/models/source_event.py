@@ -32,8 +32,6 @@ class SourceEvent(Base):
     parsed_posting_datetime: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     parsed_description: Mapped[str | None] = mapped_column(String, nullable=True)
     parsed_card_number: Mapped[str | None] = mapped_column(String(4), nullable=True)
-    parsed_original_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
-    parsed_original_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     
     # Context (optional)
     account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)

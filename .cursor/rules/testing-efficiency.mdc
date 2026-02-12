@@ -1,0 +1,27 @@
+---
+description: "Enforces minimalist testing standards to save tokens and ensure proper test structure."
+globs: "**/*.py"
+alwaysApply: true
+---
+
+# Testing Standards & Token Efficiency
+
+## 1. Minimalist Testing Policy
+To minimize token consumption, follow these criteria:
+- **Core Only:** Create tests **ONLY** for critical business logic or complex functions.
+- **Skip Simple Logic:** Do not create tests for trivial functions, basic getters/setters, or simple utility methods.
+- **Manual Confirmation:** If unsure whether a test is necessary, ask the user before creating it.
+
+## 2. No Standalone Tests
+- **Prohibited:** Never create "standalone" test scripts that duplicate project logic or run in isolation.
+- **Requirement:** Always import functions, classes, and methods from the existing codebase (e.g., `from app.services import ...`).
+- **Integration:** Tests must rely on the project's established environment and dependencies.
+
+## 3. Organization & Location
+- **Directory:** All test files **MUST** be stored in the `@tests/` directory.
+- **Naming:** Follow standard naming conventions (e.g., `test_*.py`) to ensure compatibility with `pytest`.
+
+## 4. Token Optimization
+- **Brevity:** Keep test code concise. Focus on the "happy path" and critical edge cases only.
+- **Reference:** Instead of copying large data structures into tests, reference existing constants or use minimal mock data.
+- **Cleanup:** Do not generate verbose comments or redundant docstrings within test files.

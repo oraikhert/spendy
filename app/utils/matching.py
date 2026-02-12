@@ -1,6 +1,6 @@
 """Matching and deduplication utilities"""
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,7 +119,9 @@ async def find_matching_transactions(
     currency: str,
     posting_datetime: datetime | None,
     transaction_datetime: datetime | None,
-    merchant_norm: str | None = None
+    created_at: datetime,
+    merchant_norm: str | None = None,
+    days_delta: int = 1
 ) -> list[Transaction]:
     """
     Find matching transactions based on card_id, amount, currency, and date.
@@ -145,7 +147,8 @@ async def find_matching_transactions(
         date_field = Transaction.transaction_datetime
     else:
         # No date to match on
-        return []
+        match_date = created_at.date()
+        date_field = Transaction.created_at
     
     # Build query
     query = select(Transaction).where(
@@ -162,13 +165,17 @@ async def find_matching_transactions(
         or_(
             and_(
                 Transaction.posting_datetime.isnot(None),
-                Transaction.posting_datetime >= datetime.combine(match_date, datetime.min.time()),
+                Transaction.posting_datetime >= datetime.combine(match_date, datetime.min.time()) - timedelta(days=days_delta),
                 Transaction.posting_datetime < datetime.combine(match_date, datetime.max.time())
             ),
             and_(
                 Transaction.transaction_datetime.isnot(None),
-                Transaction.transaction_datetime >= datetime.combine(match_date, datetime.min.time()),
+                Transaction.transaction_datetime >= datetime.combine(match_date, datetime.min.time()) - timedelta(days=days_delta),
                 Transaction.transaction_datetime < datetime.combine(match_date, datetime.max.time())
+            ),
+            and_(
+                Transaction.created_at >= datetime.combine(match_date, datetime.min.time()) - timedelta(days=days_delta),
+                Transaction.created_at < datetime.combine(match_date, datetime.max.time())
             )
         )
     )

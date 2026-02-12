@@ -15,6 +15,24 @@ from app.utils.parsing import parse_text
 from app.utils.matching import find_matching_transactions, normalize_merchant, generate_fingerprint, find_card_by_last_four
 
 
+def _enrich_found_transaction_with_source(transaction: Transaction, source_event: SourceEvent) -> None:
+    """Update found transaction with parsed data from source_event when transaction has missing/inferior data."""
+    if transaction.location is None and source_event.parsed_location is not None:
+        transaction.location = source_event.parsed_location
+    if (not transaction.description or not transaction.description.strip()) and source_event.parsed_description:
+        transaction.description = source_event.parsed_description
+    if transaction.transaction_datetime is None and source_event.parsed_transaction_datetime is not None:
+        transaction.transaction_datetime = source_event.parsed_transaction_datetime
+    if transaction.posting_datetime is None and source_event.parsed_posting_datetime is not None:
+        transaction.posting_datetime = source_event.parsed_posting_datetime
+    if (
+        transaction.transaction_kind == "other"
+        and source_event.parsed_transaction_kind is not None
+        and source_event.parsed_transaction_kind != "other"
+    ):
+        transaction.transaction_kind = source_event.parsed_transaction_kind
+
+
 async def create_source_event_from_text(
     db: AsyncSession,
     source_data: SourceEventCreateText
@@ -73,18 +91,21 @@ async def create_source_event_from_text(
             currency=parsed["parsed_currency"],
             posting_datetime=parsed["parsed_posting_datetime"],
             transaction_datetime=parsed["parsed_transaction_datetime"],
+            created_at=source_event.created_at,
             merchant_norm=merchant_norm
         )
         
         if len(matching_transactions) == 1:
-            # Single match - link to it
+            # Single match - link to it and enrich transaction with parsed data when missing
+            found_transaction = matching_transactions[0]
             link = TransactionSourceLink(
-                transaction_id=matching_transactions[0].id,
+                transaction_id=found_transaction.id,
                 source_event_id=source_event.id,
                 match_confidence=1.0,
                 is_primary=False
             )
             db.add(link)
+            _enrich_found_transaction_with_source(found_transaction, source_event)
         elif len(matching_transactions) == 0:
             # No match - create new transaction
             fingerprint = generate_fingerprint(
@@ -454,6 +475,7 @@ async def reprocess_source_event(
             currency=source_event.parsed_currency,
             posting_datetime=source_event.parsed_posting_datetime,
             transaction_datetime=source_event.parsed_transaction_datetime,
+            created_at=source_event.created_at,
             merchant_norm=merchant_norm
         )
         
@@ -466,14 +488,16 @@ async def reprocess_source_event(
             await db.delete(link)
         
         if len(matching_transactions) == 1:
-            # Single match - link to it
+            # Single match - link to it and enrich transaction with parsed data when missing
+            found_transaction = matching_transactions[0]
             link = TransactionSourceLink(
-                transaction_id=matching_transactions[0].id,
+                transaction_id=found_transaction.id,
                 source_event_id=source_event.id,
                 match_confidence=1.0,
                 is_primary=False
             )
             db.add(link)
+            _enrich_found_transaction_with_source(found_transaction, source_event)
     
     await db.commit()
     await db.refresh(source_event)

@@ -7,7 +7,8 @@ from app.api.v1 import (
     transactions,
     source_events,
     dashboard,
-    meta
+    meta,
+    exchange_rates,
 )
 
 api_router = APIRouter()
@@ -20,3 +21,4 @@ api_router.include_router(transactions.router)
 api_router.include_router(source_events.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(meta.router)
+api_router.include_router(exchange_rates.router)

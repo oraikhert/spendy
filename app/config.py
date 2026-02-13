@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./spendy.db"
     
+    # Exchange Rate API (Open Access)
+    EXCHANGE_RATE_API_BASE_URL: str = "https://open.er-api.com"
+    EXCHANGE_RATE_CACHE_TTL_SECONDS: int = 3600
+
     # Security
     SECRET_KEY: str = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
     ALGORITHM: str = "HS256"

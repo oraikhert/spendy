@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import init_db
 from app.api.v1 import api_router
 from app.web import web_router
+from app.services.exchange_rate_service import exchange_rate_service
 
 
 @asynccontextmanager
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     print("Shutting down...")
+    await exchange_rate_service.aclose()
 
 
 # Create FastAPI application

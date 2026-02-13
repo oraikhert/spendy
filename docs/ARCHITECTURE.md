@@ -18,10 +18,10 @@ spendy/
 │   │   └── transaction_source_link.py  # Link transaction ↔ source_event
 │   │
 │   ├── schemas/             # Pydantic schemas (account, card, transaction, source_event, dashboard)
-│   ├── services/            # account, card, transaction, source_event, dashboard (+ user, auth)
-│   ├── utils/               # parsing (SMS/text), matching (fingerprint), canonicalization
+│   ├── services/            # account, card, transaction, source_event, dashboard, exchange_rate (+ user, auth)
+│   ├── utils/               # parsing (SMS/text), matching (fingerprint, amount/currency or orig), canonicalization
 │   │
-│   ├── api/v1/              # auth, accounts, cards, transactions, source_events, dashboard, meta
+│   ├── api/v1/              # auth, accounts, cards, transactions, source_events, dashboard, exchange_rates, meta
 │   ├── web/                 # Login/register, pages
 │   ├── templates/           # base, auth, dashboard
 │   ├── static/              # CSS
@@ -44,7 +44,7 @@ See `app/models/user.py`. Columns: id, email, username, hashed_password, full_na
 
 - **accounts** — id, institution, name, account_currency, created_at, updated_at.
 - **cards** — id, account_id (FK), card_masked_number, card_type (debit|credit), name; UNIQUE(account_id, card_masked_number). See `app/models/card.py`.
-- **transactions** — id, card_id (FK), amount, currency, transaction_datetime, posting_datetime, description, transaction_kind (purchase|topup|refund|other), optional FX fields, merchant_norm, fingerprint; indexes on (card_id, posting_datetime), (card_id, transaction_datetime), (card_id, amount, currency), fingerprint. See `app/models/transaction.py`.
+- **transactions** — id, card_id (FK), amount, currency, transaction_datetime, posting_datetime, description, transaction_kind (purchase|topup|refund|other), optional FX fields (original_amount, original_currency, fx_rate, fx_fee), merchant_norm, fingerprint; indexes on (card_id, posting_datetime), (card_id, transaction_datetime), (card_id, amount, currency), fingerprint. See `app/models/transaction.py`.
 - **source_events** — id, source_type (e.g. sms_text, pdf_statement), received_at, raw_text, file_path, raw_hash (unique), parsed_* fields (amount, currency, description, parsed_card_number, etc.), account_id/card_id (optional), parse_status (new|parsed|failed). See `app/models/source_event.py`.
 - **transaction_source_links** — composite PK (transaction_id, source_event_id), match_confidence, is_primary. See `app/models/transaction_source_link.py`.
 
@@ -366,8 +366,9 @@ get_current_active_user
 ### Implemented (transaction tracking)
 
 - **Models:** Account, Card, Transaction, SourceEvent, TransactionSourceLink.
-- **Services:** account_service, card_service, transaction_service, source_event_service, dashboard_service; utils: `app/utils/parsing.py` (SMS/text parsing), `app/utils/matching.py` (fingerprint, merchant_norm), `app/utils/canonicalization.py`.
-- **API:** `/api/v1/accounts`, `/api/v1/cards`, `/api/v1/transactions`, `/api/v1/source-events`, `/api/v1/dashboard/summary`, `/api/v1/meta/transaction-kinds`. Source events support text ingest, file upload, manual link, create-transaction-and-link, reprocess, download.
+- **Services:** account_service, card_service, transaction_service, source_event_service, dashboard_service, exchange_rate_service; utils: `app/utils/parsing.py` (SMS/text parsing), `app/utils/matching.py` (fingerprint, merchant_norm, find_matching_transactions with amount/currency or original_amount/original_currency), `app/utils/canonicalization.py`.
+- **API:** `/api/v1/accounts`, `/api/v1/cards`, `/api/v1/transactions`, `/api/v1/source-events`, `/api/v1/dashboard/summary`, `/api/v1/exchange-rates/rate`, `/api/v1/meta/transaction-kinds`. Source events support text ingest, file upload, manual link, create-transaction-and-link, reprocess, download.
+- **FX:** When creating a transaction from a source event, if parsed currency differs from account currency, the service converts via ExchangeRate-API (open.er-api.com), stores original_amount/original_currency/fx_rate on the transaction, and uses converted amount/currency for the canonical fields. Matching runs after FX resolution and matches on (amount, currency) or (original_amount, original_currency). Config: `EXCHANGE_RATE_API_BASE_URL`, `EXCHANGE_RATE_CACHE_TTL_SECONDS` in `app/config.py`.
 
 ### Planned (not yet implemented)
 

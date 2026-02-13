@@ -87,14 +87,15 @@ app/services/
 ├── account_service.py      # Account CRUD
 ├── card_service.py         # Card CRUD
 ├── transaction_service.py  # Transaction CRUD, list with filters, get sources
-├── source_event_service.py # Create from text/upload, link, create-and-link, reprocess
+├── source_event_service.py # Create from text/upload, link, create-and-link, reprocess; FX resolution before matching
+├── exchange_rate_service.py # get_rate (with in-memory TTL cache); used for FX conversion
 └── dashboard_service.py    # Summary (total_spent, total_income, by_kind)
 ```
 
 ```
 app/utils/
 ├── parsing.py              # parse_text (SMS bank notifications: amount, currency, merchant, card number)
-├── matching.py             # normalize_merchant, generate_fingerprint, find_matching_transactions
+├── matching.py             # normalize_merchant, generate_fingerprint, find_matching_transactions (amount/currency or orig_amount/orig_currency)
 └── canonicalization.py     # canonicalize_transaction (priority from linked source events)
 ```
 
@@ -311,10 +312,11 @@ async def test_create_user_duplicate_email(db_session):
 - **account_service** — create_account, get_account, get_accounts, update_account, delete_account. See `app/services/account_service.py`.
 - **card_service** — create_card, get_card, get_cards_by_account, update_card, delete_card. See `app/services/card_service.py`.
 - **transaction_service** — create_transaction (sets merchant_norm, fingerprint), get_transaction, get_transactions (filters: account_id, card_id, date_from/to, q, kind, min/max_amount, limit, offset), update_transaction, delete_transaction, get_transaction_sources. See `app/services/transaction_service.py`.
-- **source_event_service** — create_source_event_from_text (parse + optional auto-match), create_source_event_from_file (stores in data/uploads), get_source_event, get_source_events (filters), link_source_to_transaction, create_transaction_and_link, unlink_source_from_transaction, reprocess_source_event (re-parse + re-match). See `app/services/source_event_service.py`.
+- **source_event_service** — create_source_event_from_text (parse, resolve FX, then match or create transaction), create_source_event_from_file (stores in data/uploads), get_source_event, get_source_events (filters), link_source_to_transaction, create_transaction_and_link (auto-FX when source currency != account currency unless manual FX provided), unlink_source_from_transaction, reprocess_source_event (re-parse, resolve FX, re-match). Uses `_resolve_amount_currency_fx` (loads card/account, calls exchange_rate_service.get_rate when currencies differ). See `app/services/source_event_service.py`.
+- **exchange_rate_service** — get_rate(from_currency, to_currency) returns Decimal; in-memory TTL cache per base currency; uses ExchangeRate-API Open Access (open.er-api.com). See `app/services/exchange_rate_service.py`.
 - **dashboard_service** — get_dashboard_summary(date_from, date_to, account_id?, card_id?); returns total_spent, total_income, by_kind, count_transactions, last_updated_at. See `app/services/dashboard_service.py`.
 
-Utils: `parse_text` in `app/utils/parsing.py` returns parsed_amount, parsed_currency, parsed_description, parsed_card_number, parse_status. Matching and canonicalization are used inside source_event_service and transaction_service.
+Utils: `parse_text` in `app/utils/parsing.py` returns parsed_amount, parsed_currency, parsed_description, parsed_card_number, parse_status. `find_matching_transactions` in `app/utils/matching.py` takes optional orig_amount, orig_currency; matches transactions by (amount, currency) or (original_amount, original_currency). Canonicalization in `app/utils/canonicalization.py`.
 
 ## Adding new services
 

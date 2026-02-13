@@ -39,9 +39,9 @@ spendy/
 │   ├── database.py          # Database setup
 │   ├── models/              # SQLAlchemy models (User, Account, Card, Transaction, SourceEvent, TransactionSourceLink)
 │   ├── schemas/             # Pydantic schemas (validation)
-│   ├── services/            # Service layer (user, auth, account, card, transaction, source_event, dashboard)
+│   ├── services/            # Service layer (user, auth, account, card, transaction, source_event, dashboard, exchange_rate)
 │   ├── utils/               # Parsing, matching, canonicalization
-│   ├── api/v1/              # API routes (auth, accounts, cards, transactions, source-events, dashboard, meta)
+│   ├── api/v1/              # API routes (auth, accounts, cards, transactions, source-events, dashboard, meta, exchange-rates)
 │   ├── web/                 # Web routes (HTML)
 │   ├── templates/          # Jinja2 templates
 │   ├── static/              # CSS, JS, images
@@ -189,6 +189,7 @@ All endpoints except `/health` and auth login/register require `Authorization: B
 | Reprocess | POST | `/api/v1/source-events/{id}/reprocess` |
 | Download file | GET | `/api/v1/source-events/{id}/download` |
 | Dashboard | GET | `/api/v1/dashboard/summary` (query: date_from, date_to, account_id?, card_id?) |
+| Exchange rates | GET | `/api/v1/exchange-rates/rate` (query: from_currency, to_currency; no auth) |
 | Meta | GET | `/api/v1/meta/transaction-kinds` |
 
 Details: `app/api/v1/` and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -121,19 +121,24 @@ async def find_matching_transactions(
     transaction_datetime: datetime | None,
     created_at: datetime,
     merchant_norm: str | None = None,
+    orig_amount: Decimal | None = None,
+    orig_currency: str | None = None,
     days_delta: int = 1
 ) -> list[Transaction]:
     """
     Find matching transactions based on card_id, amount, currency, and date.
+    Matches on (amount, currency) or (orig_amount, orig_currency) when provided.
     
     Args:
         db: Database session
         card_id: Card ID
-        amount: Transaction amount
+        amount: Transaction amount (canonical, after FX conversion)
         currency: Transaction currency
         posting_datetime: Posting datetime
         transaction_datetime: Transaction datetime
         merchant_norm: Normalized merchant name (optional)
+        orig_amount: Original amount before FX (optional)
+        orig_currency: Original currency before FX (optional)
         
     Returns:
         List of matching transactions
@@ -149,13 +154,25 @@ async def find_matching_transactions(
         # No date to match on
         match_date = created_at.date()
         date_field = Transaction.created_at
-    
+
+    amount_currency_match = and_(
+        Transaction.amount == amount,
+        Transaction.currency == currency,
+    )
+    if orig_amount is not None and orig_currency is not None:
+        orig_match = and_(
+            Transaction.original_amount == orig_amount,
+            Transaction.original_currency == orig_currency,
+        )
+        amount_condition = or_(amount_currency_match, orig_match)
+    else:
+        amount_condition = amount_currency_match
+
     # Build query
     query = select(Transaction).where(
         and_(
             Transaction.card_id == card_id,
-            Transaction.amount == amount,
-            Transaction.currency == currency,
+            amount_condition,
         )
     )
     

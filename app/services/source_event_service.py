@@ -7,9 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
 
+from app.models.card import Card
 from app.models.source_event import SourceEvent
 from app.models.transaction import Transaction
 from app.models.transaction_source_link import TransactionSourceLink
+from app.services.exchange_rate_service import exchange_rate_service
 from app.schemas.source_event import SourceEventCreateText, TransactionCreateAndLink
 from app.utils.parsing import parse_text
 from app.utils.matching import find_matching_transactions, normalize_merchant, generate_fingerprint, find_card_by_last_four
@@ -31,6 +33,34 @@ def _enrich_found_transaction_with_source(transaction: Transaction, source_event
         and source_event.parsed_transaction_kind != "other"
     ):
         transaction.transaction_kind = source_event.parsed_transaction_kind
+
+
+async def _resolve_amount_currency_fx(
+    db: AsyncSession,
+    card_id: int,
+    source_amount: Decimal,
+    source_currency: str,
+    use_auto_fx: bool = True,
+) -> tuple[Decimal, str, Decimal | None, str | None, Decimal | None]:
+    """
+    If source_currency != account.currency and use_auto_fx: convert and return
+    (amount, currency, original_amount, original_currency, fx_rate).
+    Else: (source_amount, source_currency, None, None, None).
+    """
+    if not source_currency or not use_auto_fx:
+        return (source_amount, source_currency, None, None, None)
+    card_result = await db.execute(
+        select(Card).options(selectinload(Card.account)).where(Card.id == card_id)
+    )
+    card = card_result.scalar_one_or_none()
+    if not card or not card.account:
+        return (source_amount, source_currency, None, None, None)
+    account_currency = card.account.account_currency
+    if not account_currency or source_currency.upper() == account_currency.upper():
+        return (source_amount, source_currency, None, None, None)
+    fx_rate = await exchange_rate_service.get_rate(source_currency, account_currency)
+    amount = (source_amount * fx_rate).quantize(Decimal("0.01"))
+    return (amount, account_currency, source_amount, source_currency, fx_rate)
 
 
 async def create_source_event_from_text(
@@ -83,16 +113,20 @@ async def create_source_event_from_text(
     # Attempt matching if we have parsed amount and currency and a card
     if parsed["parsed_amount"] and parsed["parsed_currency"] and effective_card_id:
         merchant_norm = normalize_merchant(parsed["parsed_description"] or "")
-        
+        amount, currency, orig_amount, orig_currency, fx_rate = await _resolve_amount_currency_fx(
+            db, effective_card_id, parsed["parsed_amount"], parsed["parsed_currency"]
+        )
         matching_transactions = await find_matching_transactions(
             db=db,
             card_id=effective_card_id,
-            amount=parsed["parsed_amount"],
-            currency=parsed["parsed_currency"],
+            amount=amount,
+            currency=currency,
             posting_datetime=parsed["parsed_posting_datetime"],
             transaction_datetime=parsed["parsed_transaction_datetime"],
             created_at=source_event.created_at,
-            merchant_norm=merchant_norm
+            merchant_norm=merchant_norm,
+            orig_amount=orig_amount,
+            orig_currency=orig_currency,
         )
         
         if len(matching_transactions) == 1:
@@ -107,25 +141,28 @@ async def create_source_event_from_text(
             db.add(link)
             _enrich_found_transaction_with_source(found_transaction, source_event)
         elif len(matching_transactions) == 0:
-            # No match - create new transaction
+            # No match - create new transaction (amount, currency, orig_* already resolved above)
             fingerprint = generate_fingerprint(
                 card_id=effective_card_id,
-                amount=parsed["parsed_amount"],
-                currency=parsed["parsed_currency"],
+                amount=amount,
+                currency=currency,
                 posting_datetime=parsed["parsed_posting_datetime"],
                 transaction_datetime=parsed["parsed_transaction_datetime"],
                 merchant_norm=merchant_norm
             )
-            
             transaction = Transaction(
                 card_id=effective_card_id,
-                amount=parsed["parsed_amount"],
-                currency=parsed["parsed_currency"],
+                amount=amount,
+                currency=currency,
                 transaction_datetime=parsed["parsed_transaction_datetime"],
                 posting_datetime=parsed["parsed_posting_datetime"],
                 description=parsed["parsed_description"] or source_data.raw_text,
                 location=parsed.get("parsed_location"),
                 transaction_kind=parsed.get("parsed_transaction_kind") or "other",
+                original_amount=orig_amount,
+                original_currency=orig_currency,
+                fx_rate=fx_rate,
+                fx_fee=None,
                 merchant_norm=merchant_norm,
                 fingerprint=fingerprint
             )
@@ -372,6 +409,22 @@ async def create_transaction_and_link(
         or "other"
     )
     
+    # Auto-FX when source currency != account currency (skip if user provided manual FX)
+    use_auto_fx = (
+        transaction_data.original_amount is None
+        and transaction_data.fx_rate is None
+    )
+    if use_auto_fx:
+        amount, currency, orig_amount, orig_currency, fx_rate = await _resolve_amount_currency_fx(
+            db, card_id, amount, currency
+        )
+        fx_fee = None
+    else:
+        orig_amount = transaction_data.original_amount
+        orig_currency = transaction_data.original_currency
+        fx_rate = transaction_data.fx_rate
+        fx_fee = transaction_data.fx_fee
+    
     # Generate merchant_norm and fingerprint
     merchant_norm = normalize_merchant(description)
     fingerprint = generate_fingerprint(
@@ -393,10 +446,10 @@ async def create_transaction_and_link(
         description=description,
         location=location,
         transaction_kind=transaction_kind,
-        original_amount=transaction_data.original_amount,
-        original_currency=transaction_data.original_currency,
-        fx_rate=transaction_data.fx_rate,
-        fx_fee=transaction_data.fx_fee,
+        original_amount=orig_amount,
+        original_currency=orig_currency,
+        fx_rate=fx_rate,
+        fx_fee=fx_fee,
         merchant_norm=merchant_norm,
         fingerprint=fingerprint
     )
@@ -467,16 +520,20 @@ async def reprocess_source_event(
         merchant_norm = normalize_merchant(
             source_event.parsed_description or ""
         )
-        
+        amount, currency, orig_amount, orig_currency, fx_rate = await _resolve_amount_currency_fx(
+            db, source_event.card_id, source_event.parsed_amount, source_event.parsed_currency
+        )
         matching_transactions = await find_matching_transactions(
             db=db,
             card_id=source_event.card_id,
-            amount=source_event.parsed_amount,
-            currency=source_event.parsed_currency,
+            amount=amount,
+            currency=currency,
             posting_datetime=source_event.parsed_posting_datetime,
             transaction_datetime=source_event.parsed_transaction_datetime,
             created_at=source_event.created_at,
-            merchant_norm=merchant_norm
+            merchant_norm=merchant_norm,
+            orig_amount=orig_amount,
+            orig_currency=orig_currency,
         )
         
         # Remove existing links

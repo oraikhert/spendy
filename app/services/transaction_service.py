@@ -24,7 +24,9 @@ async def create_transaction(
         currency=transaction_data.currency,
         posting_datetime=transaction_data.posting_datetime,
         transaction_datetime=transaction_data.transaction_datetime,
-        merchant_norm=merchant_norm
+        merchant_norm=merchant_norm,
+        orig_amount=transaction_data.original_amount,
+        orig_currency=transaction_data.original_currency,
     )
     
     transaction = Transaction(
@@ -166,7 +168,9 @@ async def update_transaction(
         currency=transaction.currency,
         posting_datetime=transaction.posting_datetime,
         transaction_datetime=transaction.transaction_datetime,
-        merchant_norm=transaction.merchant_norm
+        merchant_norm=transaction.merchant_norm,
+        orig_amount=transaction.original_amount,
+        orig_currency=transaction.original_currency,
     )
     
     await db.commit()

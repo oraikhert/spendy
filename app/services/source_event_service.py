@@ -148,7 +148,9 @@ async def create_source_event_from_text(
                 currency=currency,
                 posting_datetime=parsed["parsed_posting_datetime"],
                 transaction_datetime=parsed["parsed_transaction_datetime"],
-                merchant_norm=merchant_norm
+                merchant_norm=merchant_norm,
+                orig_amount=orig_amount,
+                orig_currency=orig_currency,
             )
             transaction = Transaction(
                 card_id=effective_card_id,
@@ -433,7 +435,9 @@ async def create_transaction_and_link(
         currency=currency,
         posting_datetime=posting_datetime,
         transaction_datetime=transaction_datetime,
-        merchant_norm=merchant_norm
+        merchant_norm=merchant_norm,
+        orig_amount=orig_amount,
+        orig_currency=orig_currency,
     )
     
     # Create transaction

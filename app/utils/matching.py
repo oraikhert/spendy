@@ -80,35 +80,30 @@ def generate_fingerprint(
     currency: str,
     posting_datetime: datetime | None,
     transaction_datetime: datetime | None,
-    merchant_norm: str | None
+    merchant_norm: str | None,
+    orig_amount: Decimal | None = None,
+    orig_currency: str | None = None,
 ) -> str:
     """
     Generate fingerprint for transaction deduplication.
-    
-    Args:
-        card_id: Card ID
-        amount: Transaction amount
-        currency: Transaction currency
-        posting_datetime: Posting datetime
-        transaction_datetime: Transaction datetime
-        merchant_norm: Normalized merchant name
-        
-    Returns:
-        Fingerprint string
+    Uses original_amount and original_currency when both are not null (e.g. after FX);
+    otherwise uses amount and currency.
     """
-    # Use posting_date if available, otherwise transaction_date
     if posting_datetime:
         date_str = posting_datetime.date().isoformat()
     elif transaction_datetime:
         date_str = transaction_datetime.date().isoformat()
     else:
         date_str = "unknown"
-    
+
     merchant_str = merchant_norm or ""
-    
-    # Format: card_id|date|amount|currency|merchant_norm
-    fingerprint = f"{card_id}|{date_str}|{amount}|{currency}|{merchant_str}"
-    
+
+    if orig_amount is not None and orig_currency is not None:
+        amt, curr = orig_amount, orig_currency
+    else:
+        amt, curr = amount, currency
+
+    fingerprint = f"{card_id}|{date_str}|{amt}|{curr}|{merchant_str}"
     return fingerprint
 
 

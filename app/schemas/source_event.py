@@ -14,6 +14,7 @@ class SourceEventCreateText(SourceEventBase):
     raw_text: str
     account_id: int | None = None
     card_id: int | None = None
+    transaction_datetime: datetime | None = None
 
 
 class SourceEventResponse(SourceEventBase):

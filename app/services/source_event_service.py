@@ -97,10 +97,14 @@ async def create_source_event_from_text(
         )
         if card:
             effective_card_id = card.id
-    
+
+    # Resolve effective transaction datetime: parsed first, else manual param
+    effective_transaction_datetime = parsed.get("parsed_transaction_datetime") or source_data.transaction_datetime
+
     # Create source event
     source_event = SourceEvent(
         source_type=source_data.source_type,
+        received_at=effective_transaction_datetime,
         raw_text=source_data.raw_text,
         raw_hash=raw_hash,
         account_id=source_data.account_id,
@@ -122,7 +126,7 @@ async def create_source_event_from_text(
             amount=amount,
             currency=currency,
             posting_datetime=parsed["parsed_posting_datetime"],
-            transaction_datetime=parsed["parsed_transaction_datetime"],
+            transaction_datetime=effective_transaction_datetime,
             created_at=source_event.created_at,
             merchant_norm=merchant_norm,
             orig_amount=orig_amount,
@@ -147,7 +151,7 @@ async def create_source_event_from_text(
                 amount=amount,
                 currency=currency,
                 posting_datetime=parsed["parsed_posting_datetime"],
-                transaction_datetime=parsed["parsed_transaction_datetime"],
+                transaction_datetime=effective_transaction_datetime,
                 merchant_norm=merchant_norm,
                 orig_amount=orig_amount,
                 orig_currency=orig_currency,
@@ -156,7 +160,7 @@ async def create_source_event_from_text(
                 card_id=effective_card_id,
                 amount=amount,
                 currency=currency,
-                transaction_datetime=parsed["parsed_transaction_datetime"],
+                transaction_datetime=effective_transaction_datetime,
                 posting_datetime=parsed["parsed_posting_datetime"],
                 description=parsed["parsed_description"] or source_data.raw_text,
                 location=parsed.get("parsed_location"),

@@ -1,75 +1,71 @@
+{# /app/templates/auth/login.html #}
 {% extends "base.html" %}
 
 {% block title %}Login - Spendy{% endblock %}
 
 {% block content %}
-<div class="flex items-center justify-center min-h-screen p-4">
-    <div class="card w-full max-w-md bg-base-100 shadow-xl">
-        <div class="card-body">
-            <h2 class="card-title text-3xl font-bold text-center justify-center mb-6">
-                Login to Spendy
-            </h2>
-            
-            <!-- Error/Success Messages Container -->
-            <div id="messages" class="fade-in"></div>
-            
-            <!-- Login Form -->
-            <form hx-post="/auth/login" 
-                  hx-target="#messages" 
-                  hx-swap="innerHTML"
-                  class="space-y-4">
-                
-                <!-- Username/Email Field -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Username or Email</span>
-                    </label>
-                    <input 
-                        type="text" 
-                        name="username" 
-                        placeholder="Enter username or email" 
-                        class="input input-bordered w-full" 
-                        required
-                        autocomplete="username"
-                    />
-                </div>
-                
-                <!-- Password Field -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Password</span>
-                    </label>
-                    <input 
-                        type="password" 
-                        name="password" 
-                        placeholder="Enter password" 
-                        class="input input-bordered w-full" 
-                        required
-                        minlength="8"
-                        autocomplete="current-password"
-                    />
-                </div>
-                
-                <!-- Submit Button -->
-                <div class="form-control mt-6">
-                    <button type="submit" class="btn btn-primary w-full">
-                        <span class="htmx-indicator loading loading-spinner loading-sm"></span>
-                        <span>Log in</span>
-                    </button>
-                </div>
-            </form>
-            
-            <!-- Register Link -->
-            <div class="divider">or</div>
-            <div class="text-center">
-                <p class="text-sm">
-                    Don't have an account? 
-                    <a href="/auth/register" class="link link-primary font-semibold">
-                        Sign up
-                    </a>
-                </p>
-            </div>
+<div class="flex items-center justify-center min-h-[calc(100vh-160px)] p-4">
+  <div class="card w-full max-w-md bg-base-100 shadow-xl">
+    <div class="card-body">
+      <h2 class="card-title text-3xl font-bold text-center justify-center mb-6">
+        Login
+      </h2>
+
+      {% include "partials/_messages.html" %}
+
+      <form
+        hx-post="/auth/login"
+        hx-target="#messages"
+        hx-swap="innerHTML"
+        hx-disabled-elt="find button[type='submit']"
+        class="space-y-4"
+      >
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Username or Email</span>
+          </label>
+          <input
+            type="text"
+            name="username"
+            placeholder="Enter username or email"
+            class="input input-bordered w-full"
+            required
+            autocomplete="username"
+          />
         </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Password</span>
+          </label>
+          <input
+            type="password"
+            name="password"
+            placeholder="Enter password"
+            class="input input-bordered w-full"
+            required
+            minlength="8"
+            autocomplete="current-password"
+          />
+        </div>
+
+        <div class="form-control mt-6">
+          <button type="submit" class="btn btn-primary w-full">
+            <span class="htmx-indicator loading loading-spinner loading-sm"></span>
+            <span>Log in</span>
+          </button>
+        </div>
+      </form>
+
+      <div class="divider">or</div>
+
+      <div class="text-center">
+        <p class="text-sm">
+          Don't have an account?
+          <a href="/auth/register" class="link link-primary font-semibold">Sign up</a>
+        </p>
+      </div>
     </div>
+  </div>
 </div>
 {% endblock %}

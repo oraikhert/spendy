@@ -1,0 +1,37 @@
+{# app/templates/partials/_navbar.html #}
+{% set initial = (user.username[:1] if user and user.username else "U")|upper %}
+
+<div class="navbar bg-base-100 shadow">
+  <div class="flex-1">
+    <a href="/dashboard" class="btn btn-ghost text-xl">💰 Spendy</a>
+  </div>
+
+  <div class="flex-none gap-2">
+    {% if user %}
+      <div class="dropdown dropdown-end">
+        <button
+          type="button"
+          tabindex="0"
+          class="btn btn-ghost btn-circle avatar avatar-placeholder"
+          aria-label="User menu"
+        >
+          <div class="bg-neutral text-neutral-content w-12 rounded-full">
+            <span>{{ initial }}</span>
+          </div>
+        </button>
+
+        <ul
+          tabindex="0"
+          class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52"
+        >
+          <li class="menu-title"><span>{{ user.username }}</span></li>
+          <li><a href="/dashboard">Home</a></li>
+          <li><a href="/auth/logout">Log out</a></li>
+        </ul>
+      </div>
+    {% else %}
+      <a href="/auth/login" class="btn btn-ghost">Log in</a>
+      <a href="/auth/register" class="btn btn-primary btn-sm">Sign up</a>
+    {% endif %}
+  </div>
+</div>

@@ -1,155 +1,153 @@
+{# /app/templates/auth/register.html #}
 {% extends "base.html" %}
 
 {% block title %}Register - Spendy{% endblock %}
 
 {% block content %}
-<div class="flex items-center justify-center min-h-screen p-4">
-    <div class="card w-full max-w-md bg-base-100 shadow-xl">
-        <div class="card-body">
-            <h2 class="card-title text-3xl font-bold text-center justify-center mb-6">
-                Sign up
-            </h2>
-            
-            <!-- Error/Success Messages Container -->
-            <div id="messages" class="fade-in"></div>
-            
-            <!-- Registration Form -->
-            <form hx-post="/auth/register" 
-                  hx-target="#messages" 
-                  hx-swap="innerHTML"
-                  class="space-y-4"
-                  id="registerForm">
-                
-                <!-- Email Field -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Email</span>
-                    </label>
-                    <input 
-                        type="email" 
-                        name="email" 
-                        placeholder="example@mail.com" 
-                        class="input input-bordered w-full" 
-                        required
-                        autocomplete="email"
-                    />
-                </div>
-                
-                <!-- Username Field -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Username</span>
-                    </label>
-                    <input 
-                        type="text" 
-                        name="username" 
-                        placeholder="Enter username" 
-                        class="input input-bordered w-full" 
-                        required
-                        minlength="3"
-                        maxlength="100"
-                        autocomplete="username"
-                    />
-                    <label class="label">
-                        <span class="label-text-alt">3 to 100 characters</span>
-                    </label>
-                </div>
-                
-                <!-- Full Name Field (Optional) -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Full name (optional)</span>
-                    </label>
-                    <input 
-                        type="text" 
-                        name="full_name" 
-                        placeholder="John Doe" 
-                        class="input input-bordered w-full"
-                        autocomplete="name"
-                    />
-                </div>
-                
-                <!-- Password Field -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Password</span>
-                    </label>
-                    <input 
-                        type="password" 
-                        name="password" 
-                        id="password"
-                        placeholder="Enter password" 
-                        class="input input-bordered w-full" 
-                        required
-                        minlength="8"
-                        maxlength="72"
-                        autocomplete="new-password"
-                    />
-                    <label class="label">
-                        <span class="label-text-alt">8 to 72 characters</span>
-                    </label>
-                </div>
-                
-                <!-- Confirm Password Field -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Confirm password</span>
-                    </label>
-                    <input 
-                        type="password" 
-                        name="password_confirm" 
-                        id="password_confirm"
-                        placeholder="Repeat password" 
-                        class="input input-bordered w-full" 
-                        required
-                        minlength="8"
-                        maxlength="72"
-                        autocomplete="new-password"
-                    />
-                </div>
-                
-                <!-- Submit Button -->
-                <div class="form-control mt-6">
-                    <button type="submit" class="btn btn-primary w-full">
-                        <span class="htmx-indicator loading loading-spinner loading-sm"></span>
-                        <span>Sign up</span>
-                    </button>
-                </div>
-            </form>
-            
-            <!-- Login Link -->
-            <div class="divider">or</div>
-            <div class="text-center">
-                <p class="text-sm">
-                    Already have an account? 
-                    <a href="/auth/login" class="link link-primary font-semibold">
-                        Log in
-                    </a>
-                </p>
-            </div>
+<div class="flex items-center justify-center min-h-[calc(100vh-160px)] p-4">
+  <div class="card w-full max-w-md bg-base-100 shadow-xl">
+    <div class="card-body">
+      <h2 class="card-title text-3xl font-bold text-center justify-center mb-6">
+        Sign up
+      </h2>
+
+      {% include "partials/_messages.html" %}
+
+      <form
+        id="registerForm"
+        hx-post="/auth/register"
+        hx-target="#messages"
+        hx-swap="innerHTML"
+        hx-disabled-elt="find button[type='submit']"
+        class="space-y-4"
+      >
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Email</span>
+          </label>
+          <input
+            type="email"
+            name="email"
+            placeholder="example@mail.com"
+            class="input input-bordered w-full"
+            required
+            autocomplete="email"
+          />
         </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Username</span>
+          </label>
+          <input
+            type="text"
+            name="username"
+            placeholder="Enter username"
+            class="input input-bordered w-full"
+            required
+            minlength="3"
+            maxlength="100"
+            autocomplete="username"
+          />
+          <label class="label">
+            <span class="label-text-alt">3 to 100 characters</span>
+          </label>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Full name (optional)</span>
+          </label>
+          <input
+            type="text"
+            name="full_name"
+            placeholder="John Doe"
+            class="input input-bordered w-full"
+            autocomplete="name"
+          />
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Password</span>
+          </label>
+          <input
+            type="password"
+            name="password"
+            id="password"
+            placeholder="Enter password"
+            class="input input-bordered w-full"
+            required
+            minlength="8"
+            maxlength="72"
+            autocomplete="new-password"
+          />
+          <label class="label">
+            <span class="label-text-alt">8 to 72 characters</span>
+          </label>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Confirm password</span>
+          </label>
+          <input
+            type="password"
+            name="password_confirm"
+            id="password_confirm"
+            placeholder="Repeat password"
+            class="input input-bordered w-full"
+            required
+            minlength="8"
+            maxlength="72"
+            autocomplete="new-password"
+          />
+        </div>
+
+        <div class="form-control mt-6">
+          <button type="submit" class="btn btn-primary w-full">
+            <span class="htmx-indicator loading loading-spinner loading-sm"></span>
+            <span>Sign up</span>
+          </button>
+        </div>
+      </form>
+
+      <div class="divider">or</div>
+
+      <div class="text-center">
+        <p class="text-sm">
+          Already have an account?
+          <a href="/auth/login" class="link link-primary font-semibold">Log in</a>
+        </p>
+      </div>
     </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    // Client-side password confirmation validation
-    document.getElementById('registerForm').addEventListener('submit', function(e) {
-        const password = document.getElementById('password').value;
-        const passwordConfirm = document.getElementById('password_confirm').value;
-        
-        if (password !== passwordConfirm) {
-            e.preventDefault();
-            document.getElementById('messages').innerHTML = `
-                <div class="alert alert-error">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Passwords do not match</span>
-                </div>
-            `;
-        }
+  (function () {
+    const form = document.getElementById("registerForm");
+    const pwd = document.getElementById("password");
+    const pwd2 = document.getElementById("password_confirm");
+
+    function validateMatch() {
+      const ok = pwd.value === pwd2.value;
+      pwd2.setCustomValidity(ok ? "" : "Passwords do not match");
+      return ok;
+    }
+
+    pwd.addEventListener("input", validateMatch);
+    pwd2.addEventListener("input", validateMatch);
+
+    form.addEventListener("submit", function (e) {
+      if (!validateMatch()) {
+        e.preventDefault();
+        document.getElementById("messages").innerHTML =
+          '<div class="alert alert-error sp-fade-in"><span>Passwords do not match</span></div>';
+      }
     });
+  })();
 </script>
 {% endblock %}

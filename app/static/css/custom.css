@@ -1,37 +1,40 @@
-/* Custom CSS for Spendy */
+/* Spendy custom CSS
+   Keep this file small: prefer daisyUI + Tailwind utilities.
+*/
 
-/* Additional styles can be added here as needed */
-
-/* Example: Custom animations for HTMX transitions */
-.fade-in-fast {
-    animation: fadeIn 0.2s ease-in;
+/* HTMX indicator helpers */
+.htmx-indicator {
+  display: none;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline-block;
 }
 
-.slide-in {
-    animation: slideIn 0.3s ease-out;
+/* Simple enter animation for swapped fragments */
+.sp-fade-in {
+  animation: spFadeIn 0.25s ease-in;
 }
 
-@keyframes slideIn {
-    from {
-        transform: translateY(-10px);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
+@keyframes spFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-/* Loading spinner styles (if needed beyond DaisyUI) */
-.spinner {
-    animation: spin 1s linear infinite;
+/* Optional: slide-in for alerts/blocks */
+.sp-slide-in {
+  animation: spSlideIn 0.25s ease-out;
 }
 
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+@keyframes spSlideIn {
+  from { transform: translateY(-8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Accessibility: respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .sp-fade-in,
+  .sp-slide-in {
+    animation: none !important;
+  }
 }

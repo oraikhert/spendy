@@ -1,88 +1,38 @@
 <!DOCTYPE html>
-<html lang="ru" data-theme="light">
+<html lang="en" data-theme="light">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Spendy{% endblock %}</title>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- DaisyUI Configuration -->
-    <script>
-        tailwind.config = {
-            plugins: [
-                {
-                    handler: function({ addComponents }) {
-                        // DaisyUI components will be loaded via CDN link below
-                    }
-                }
-            ]
-        }
-    </script>
-    
-    <!-- DaisyUI CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet" type="text/css" />
-    
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    
-    <!-- Custom CSS -->
-    <style>
-        .htmx-indicator {
-            display: none;
-        }
-        
-        .htmx-request .htmx-indicator {
-            display: inline-block;
-        }
-        
-        .htmx-request.htmx-indicator {
-            display: inline-block;
-        }
-        
-        /* Smooth transitions for HTMX */
-        .fade-in {
-            animation: fadeIn 0.3s ease-in;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-    </style>
-    
-    {% block extra_head %}{% endblock %}
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Spendy{% endblock %}</title>
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+  <!-- daisyUI (CDN) -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/daisyui@5"
+    rel="stylesheet"
+    type="text/css"
+  />
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+
+  <!-- Project CSS -->
+  <link rel="stylesheet" href="/static/css/custom.css" />
+
+  {% block extra_head %}{% endblock %}
 </head>
+
 <body class="bg-base-200 min-h-screen">
+  {% include "partials/_navbar.html" %}
+
+  <main class="container mx-auto p-4">
     {% block content %}{% endblock %}
-    
-    <!-- HTMX Loading Indicator -->
-    <script>
-        // Show loading state for forms
-        document.body.addEventListener('htmx:beforeRequest', function(evt) {
-            const form = evt.detail.elt;
-            if (form.tagName === 'FORM') {
-                const button = form.querySelector('button[type="submit"]');
-                if (button) {
-                    button.disabled = true;
-                    button.classList.add('loading');
-                }
-            }
-        });
-        
-        document.body.addEventListener('htmx:afterRequest', function(evt) {
-            const form = evt.detail.elt;
-            if (form.tagName === 'FORM') {
-                const button = form.querySelector('button[type="submit"]');
-                if (button) {
-                    button.disabled = false;
-                    button.classList.remove('loading');
-                }
-            }
-        });
-    </script>
-    
-    {% block scripts %}{% endblock %}
+  </main>
+
+  {% include "partials/_footer.html" %}
+
+  {% block scripts %}{% endblock %}
 </body>
 </html>

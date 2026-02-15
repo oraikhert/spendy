@@ -1,0 +1,25 @@
+{# app/templates/macros/ui.html #}
+
+{% macro alert(kind="info", text="", extra_classes="") -%}
+  {# kind: info | success | warning | error #}
+  <div class="alert alert-{{ kind }} sp-fade-in {{ extra_classes|e }}">
+    <span>{{ text }}</span>
+  </div>
+{%- endmacro %}
+
+{% macro info_row(label, value, value_title=None) -%}
+  <div class="flex justify-between gap-3">
+    <span class="text-base-content/70">{{ label }}</span>
+    <span class="font-semibold truncate max-w-[60%]" {% if value_title %}title="{{ value_title|e }}"{% endif %}>
+      {{ value }}
+    </span>
+  </div>
+{%- endmacro %}
+
+{% macro badge_bool(value, true_kind="success", false_kind="error", true_text="Yes", false_text="No") -%}
+  {% if value %}
+    <span class="badge badge-{{ true_kind }}">{{ true_text }}</span>
+  {% else %}
+    <span class="badge badge-{{ false_kind }}">{{ false_text }}</span>
+  {% endif %}
+{%- endmacro %}

@@ -20,7 +20,6 @@ class SourceEventCreateText(SourceEventBase):
 class SourceEventResponse(SourceEventBase):
     """Schema for source event response"""
     id: int
-    received_at: datetime
     raw_text: str | None = None
     file_path: str | None = None
     raw_hash: str
@@ -34,6 +33,7 @@ class SourceEventResponse(SourceEventBase):
     parsed_location: str | None = None
     account_id: int | None = None
     card_id: int | None = None
+    transaction_datetime: datetime | None = None
     parse_status: str
     parse_error: str | None = None
     created_at: datetime

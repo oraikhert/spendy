@@ -18,7 +18,6 @@ class SourceEvent(Base):
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)  # telegram_text | sms_text | sms_screenshot | bank_screenshot | pdf_statement | manual
-    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     
     # Raw payload
     raw_text: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -38,6 +37,7 @@ class SourceEvent(Base):
     # Context (optional)
     account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
     card_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("cards.id"), nullable=True)
+    transaction_datetime: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Parsing status
     parse_status: Mapped[str] = mapped_column(String(50), nullable=False, default="new")  # new | parsed | failed
@@ -59,7 +59,7 @@ class SourceEvent(Base):
     )
     
     __table_args__ = (
-        Index("ix_source_events_type_received", "source_type", "received_at"),
+        Index("ix_source_events_type_transaction_datetime", "source_type", "transaction_datetime"),
     )
     
     def __repr__(self) -> str:

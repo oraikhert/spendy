@@ -98,17 +98,14 @@ async def create_source_event_from_text(
         if card:
             effective_card_id = card.id
 
-    # Resolve effective transaction datetime: parsed first, else manual param
-    effective_transaction_datetime = parsed.get("parsed_transaction_datetime") or source_data.transaction_datetime
-
     # Create source event
     source_event = SourceEvent(
         source_type=source_data.source_type,
-        received_at=effective_transaction_datetime,
         raw_text=source_data.raw_text,
         raw_hash=raw_hash,
         account_id=source_data.account_id,
         card_id=effective_card_id,
+        transaction_datetime=source_data.transaction_datetime,
         **parsed
     )
     db.add(source_event)
@@ -120,6 +117,7 @@ async def create_source_event_from_text(
         amount, currency, orig_amount, orig_currency, fx_rate = await _resolve_amount_currency_fx(
             db, effective_card_id, parsed["parsed_amount"], parsed["parsed_currency"]
         )
+        effective_transaction_datetime = parsed.get("parsed_transaction_datetime") or source_data.transaction_datetime
         matching_transactions = await find_matching_transactions(
             db=db,
             card_id=effective_card_id,
@@ -260,8 +258,8 @@ async def get_source_events(
     db: AsyncSession,
     source_type: str | None = None,
     parse_status: str | None = None,
-    received_from: datetime | None = None,
-    received_to: datetime | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     has_transaction: bool | None = None,
     limit: int = 100,
     offset: int = 0
@@ -285,11 +283,11 @@ async def get_source_events(
     if parse_status:
         filters.append(SourceEvent.parse_status == parse_status)
     
-    if received_from:
-        filters.append(SourceEvent.received_at >= received_from)
+    if date_from:
+        filters.append(SourceEvent.transaction_datetime >= date_from)
     
-    if received_to:
-        filters.append(SourceEvent.received_at <= received_to)
+    if date_to:
+        filters.append(SourceEvent.transaction_datetime <= date_to)
     
     if has_transaction is not None:
         # Need to check if there are any links
@@ -322,7 +320,7 @@ async def get_source_events(
     total = total_result.scalar_one()
     
     # Apply pagination and ordering
-    query = query.order_by(SourceEvent.received_at.desc())
+    query = query.order_by(SourceEvent.transaction_datetime.desc())
     query = query.limit(limit).offset(offset)
     
     result = await db.execute(query)

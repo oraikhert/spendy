@@ -90,8 +90,8 @@ async def get_source_events(
         db=db,
         source_type=source_type,
         parse_status=parse_status,
-        received_from=received_from,
-        received_to=received_to,
+        date_from=received_from,
+        date_to=received_to,
         has_transaction=has_transaction,
         limit=limit,
         offset=offset

@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16
+    container_name: spendy-db
+    environment:
+      POSTGRES_DB: spendy
+      POSTGRES_USER: spendy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - spendy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spendy -d spendy"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: spendy-app
+    environment:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"   # только localhost, наружу не торчит
+    volumes:
+      - ./data/uploads:/app/data/uploads
+    restart: unless-stopped
+
+volumes:
+  spendy_pgdata:

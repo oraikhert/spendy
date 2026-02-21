@@ -41,6 +41,13 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Initialize database - create all tables"""
+    """
+    Initialize database for local SQLite dev only.
+
+    In Postgres environment, schema must be managed by Alembic migrations.
+    """
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        return
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

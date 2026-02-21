@@ -38,7 +38,9 @@ class SourceEvent(Base):
     account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
     card_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("cards.id"), nullable=True)
     transaction_datetime: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    
+    recipients: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sender: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     # Parsing status
     parse_status: Mapped[str] = mapped_column(String(50), nullable=False, default="new")  # new | parsed | failed
     parse_error: Mapped[str | None] = mapped_column(String, nullable=True)

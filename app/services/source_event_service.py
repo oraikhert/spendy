@@ -106,6 +106,8 @@ async def create_source_event_from_text(
         account_id=source_data.account_id,
         card_id=effective_card_id,
         transaction_datetime=source_data.transaction_datetime,
+        recipients=source_data.recipients,
+        sender=source_data.sender,
         **parsed
     )
     db.add(source_event)

@@ -15,6 +15,8 @@ class SourceEventCreateText(SourceEventBase):
     account_id: int | None = None
     card_id: int | None = None
     transaction_datetime: datetime | None = None
+    recipients: str | None = None
+    sender: str | None = None
 
 
 class SourceEventResponse(SourceEventBase):
@@ -34,6 +36,8 @@ class SourceEventResponse(SourceEventBase):
     account_id: int | None = None
     card_id: int | None = None
     transaction_datetime: datetime | None = None
+    recipients: str | None = None
+    sender: str | None = None
     parse_status: str
     parse_error: str | None = None
     created_at: datetime

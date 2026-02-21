@@ -13,6 +13,7 @@ Update only the existing structure. **NEVER** create new `.md` files without exp
 - **Service Layer:** @docs/SERVICE_LAYER.md (Business logic rules, usage, function reference)
 - **Operations:** @docs/TROUBLESHOOTING.md (Common issues, install/run fixes)
 - **Database:** @docs/MIGRATIONS.md (Alembic workflow, migration history)
+- **Deployment Guide:** @docs/DEPLOYMENT.md (VDS, Docker, Nginx, Let’s Encrypt)
 
 ## 2. Content Standards
 - **Simple English:** Write clearly and concisely to minimize token usage.

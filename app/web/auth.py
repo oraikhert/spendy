@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import escape
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate
@@ -56,7 +57,10 @@ async def login_page(
     """Display login page. Redirects to dashboard if already authenticated."""
     if user:
         return RedirectResponse(url="/dashboard", status_code=303)
-    return templates.TemplateResponse("auth/login.html", {"request": request})
+    return templates.TemplateResponse(
+        "auth/login.html",
+        {"request": request, "registration_enabled": settings.REGISTRATION_ENABLED},
+    )
 
 
 @router.post("/login")
@@ -81,6 +85,8 @@ async def register_page(
     user: Annotated[User | None, Depends(get_current_user_from_cookie)],
 ):
     """Display registration page. Redirects to dashboard if already authenticated."""
+    if not settings.REGISTRATION_ENABLED:
+        return RedirectResponse(url="/auth/login", status_code=303)
     if user:
         return RedirectResponse(url="/dashboard", status_code=303)
     return templates.TemplateResponse("auth/register.html", {"request": request})
@@ -97,6 +103,8 @@ async def register_post(
     db: AsyncSession = Depends(get_db),
 ):
     """Process registration form submission (HTMX)."""
+    if not settings.REGISTRATION_ENABLED:
+        return _render_alert(request, "Registration is disabled.", kind="error")
     try:
         if password != password_confirm:
             raise ValueError("Passwords do not match")

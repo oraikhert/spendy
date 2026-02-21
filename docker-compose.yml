@@ -20,7 +20,7 @@ services:
   app:
     build: .
     container_name: spendy-app
-    environment:
+    env_file:
       - .env
     depends_on:
       db:

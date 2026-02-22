@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Transaction #{{ transaction.id }} - Spendy{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <header class="flex items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <a href="/transactions" class="btn btn-outline btn-sm">&larr; Back</a>
+      <div>
+        <h1 class="text-2xl font-semibold">Transaction details</h1>
+        <p class="text-sm text-base-content/70">Canonical record with linked source events.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-outline btn-sm" disabled>Delete</button>
+    </div>
+  </header>
+
+  <section class="card bg-base-100 shadow-sm">
+    <div class="card-body p-4 gap-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-2xl font-semibold {{ transaction_summary.amount_class }}">{{ transaction_summary.amount }} {{ transaction_summary.currency }}</span>
+        <span class="badge badge-ghost">{{ transaction_summary.kind|capitalize }}</span>
+        <span class="badge badge-outline">{{ transaction_summary.source_count }} sources</span>
+        <span class="badge {{ transaction_summary.parse_status_class }}">{{ transaction_summary.parse_status_label }}</span>
+      </div>
+      <p class="font-medium">{{ transaction_summary.description }}</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-base-content/80">
+        <p><span class="font-medium">Card:</span> {{ transaction_summary.card }}</p>
+        <p><span class="font-medium">Account:</span> {{ transaction_summary.account }}</p>
+        <p><span class="font-medium">Transaction datetime:</span> {{ transaction_summary.transaction_datetime }}</p>
+        <p><span class="font-medium">Posting datetime:</span> {{ transaction_summary.posting_datetime }}</p>
+      </div>
+    </div>
+  </section>
+
+  <nav class="tabs tabs-box lg:hidden" aria-label="Mobile sections">
+    <a role="tab" class="tab" href="#details-section">Details</a>
+    <a role="tab" class="tab" href="#sources-section">Sources ({{ transaction_summary.source_count }})</a>
+  </nav>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <section id="details-section" aria-label="Canonical transaction form">
+      {% include "transactions/partials/_canonical_form.html" %}
+    </section>
+
+    <section id="sources-section" aria-label="Linked sources">
+      <article class="card bg-base-100 shadow-sm">
+        <div class="card-body p-4">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <h2 class="card-title text-lg">Sources</h2>
+            <span class="badge badge-outline">{{ transaction_summary.source_count }}</span>
+          </div>
+
+          <div
+            id="sources-container"
+            hx-get="/transactions/{{ transaction.id }}/sources"
+            hx-trigger="load"
+            hx-swap="innerHTML"
+            hx-indicator="#sources-loading"
+            aria-live="polite"
+          >
+            <div class="flex items-center gap-2 text-sm text-base-content/70">
+              <span id="sources-loading" class="htmx-indicator loading loading-spinner loading-sm"></span>
+              <span class="htmx-indicator">Loading sources...</span>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </div>
+</div>
+{% endblock %}

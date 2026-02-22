@@ -1,0 +1,59 @@
+<div class="space-y-4">
+  <section class="card bg-base-100 shadow-sm">
+    <div class="card-body p-4">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="badge badge-outline">{{ summary.count }} tx</span>
+          <span class="badge badge-error badge-outline">Out {{ summary.outflow }}{% if filters.currency %} {{ filters.currency }}{% endif %}</span>
+          <span class="badge badge-success badge-outline">In {{ summary.inflow }}{% if filters.currency %} {{ filters.currency }}{% endif %}</span>
+        </div>
+        <div class="text-xs text-base-content/70">
+          Sorted by primary date: posting -> transaction -> created
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-sm text-base-content/70">
+        <span id="transactions-loading" class="htmx-indicator loading loading-spinner loading-sm"></span>
+        <span class="htmx-indicator">Loading...</span>
+      </div>
+    </div>
+  </section>
+
+  {% if error_message %}
+    {% include "transactions/partials/_error_state.html" %}
+  {% elif not items %}
+    {% include "transactions/partials/_empty_state.html" %}
+  {% else %}
+    <section class="hidden lg:block card bg-base-100 shadow-sm" aria-label="Transactions table">
+      <div class="card-body p-0">
+        <div class="overflow-x-auto">
+          <table class="table table-zebra">
+            <caption class="sr-only">Transactions list</caption>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Card</th>
+                <th>Kind</th>
+                <th class="text-right">Amount</th>
+                <th>Sources</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in items %}
+                {% include "transactions/partials/_transaction_row.html" %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="lg:hidden space-y-3" aria-label="Transactions cards">
+      {% for item in items %}
+        {% include "transactions/partials/_transaction_card.html" %}
+      {% endfor %}
+    </section>
+
+    {% include "transactions/partials/_pagination.html" %}
+  {% endif %}
+</div>

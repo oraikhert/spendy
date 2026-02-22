@@ -1,0 +1,11 @@
+{% if not source_items %}
+<div class="alert alert-info">
+  <span>No linked sources for this transaction yet.</span>
+</div>
+{% else %}
+<div class="space-y-3">
+  {% for source in source_items %}
+    {% include "transactions/partials/_source_card.html" %}
+  {% endfor %}
+</div>
+{% endif %}

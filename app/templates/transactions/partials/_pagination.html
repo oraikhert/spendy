@@ -1,0 +1,52 @@
+{% if pagination.show %}
+<nav class="flex items-center justify-center" aria-label="Transactions pagination">
+  <div class="join">
+    {% if pagination.prev_url %}
+    <a
+      class="join-item btn"
+      href="{{ pagination.prev_url }}"
+      hx-get="{{ pagination.prev_url }}"
+      hx-target="#transactions-results"
+      hx-swap="innerHTML"
+      hx-indicator="#transactions-loading"
+      aria-label="Previous page"
+    >
+      Prev
+    </a>
+    {% else %}
+    <button class="join-item btn btn-disabled" type="button" aria-label="Previous page">Prev</button>
+    {% endif %}
+
+    {% for page in pagination.pages %}
+    <a
+      class="join-item btn {% if page.active %}btn-primary{% endif %}"
+      href="{{ page.url }}"
+      hx-get="{{ page.url }}"
+      hx-target="#transactions-results"
+      hx-swap="innerHTML"
+      hx-indicator="#transactions-loading"
+      aria-label="Page {{ page.page }}"
+      aria-current="{% if page.active %}page{% else %}false{% endif %}"
+    >
+      {{ page.page }}
+    </a>
+    {% endfor %}
+
+    {% if pagination.next_url %}
+    <a
+      class="join-item btn"
+      href="{{ pagination.next_url }}"
+      hx-get="{{ pagination.next_url }}"
+      hx-target="#transactions-results"
+      hx-swap="innerHTML"
+      hx-indicator="#transactions-loading"
+      aria-label="Next page"
+    >
+      Next
+    </a>
+    {% else %}
+    <button class="join-item btn btn-disabled" type="button" aria-label="Next page">Next</button>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}

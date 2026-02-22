@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions - Spendy{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <header class="flex items-center justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold">Transactions</h1>
+      <p class="text-sm text-base-content/70">Canonical view across all linked sources.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="btn btn-outline btn-sm" type="button" disabled>Import</button>
+      <button class="btn btn-primary btn-sm" type="button" disabled>Add</button>
+      <label for="transactions-filters-drawer" class="btn btn-square btn-outline btn-sm lg:hidden" aria-label="Open filters">
+        <span aria-hidden="true">&#9776;</span>
+      </label>
+    </div>
+  </header>
+
+  <div class="drawer lg:drawer-open">
+    <input id="transactions-filters-drawer" type="checkbox" class="drawer-toggle" />
+
+    <div class="drawer-content">
+      <div class="grid grid-cols-1 lg:grid-cols-[22rem_minmax(0,1fr)] gap-4">
+        <section class="hidden lg:block" aria-label="Filters">
+          {% set panel_id = "desktop-filters-panel" %}
+          {% set form_id = "desktop-filters-form" %}
+          {% set scope = "desktop" %}
+          {% include "transactions/partials/_filters.html" %}
+        </section>
+
+        <section id="transactions-results" class="space-y-4" aria-live="polite" aria-label="Transactions results">
+          {% include "transactions/partials/_results.html" %}
+        </section>
+      </div>
+    </div>
+
+    <div class="drawer-side lg:hidden z-40">
+      <label for="transactions-filters-drawer" class="drawer-overlay" aria-label="Close filters"></label>
+      <div class="w-80 max-w-full bg-base-200 min-h-full p-3">
+        {% set panel_id = "mobile-filters-panel" %}
+        {% set form_id = "mobile-filters-form" %}
+        {% set scope = "mobile" %}
+        {% include "transactions/partials/_filters.html" %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

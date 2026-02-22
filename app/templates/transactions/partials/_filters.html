@@ -1,0 +1,187 @@
+<aside id="{{ panel_id }}" class="card bg-base-100 shadow-sm {% if scope == 'mobile' %}h-full{% endif %}">
+  <div class="card-body p-4">
+    <div class="flex items-center justify-between">
+      <h2 class="card-title text-lg">Filters</h2>
+      {% if scope == "mobile" %}
+      <label for="transactions-filters-drawer" class="btn btn-ghost btn-sm" aria-label="Close filters">Close</label>
+      {% endif %}
+    </div>
+
+    <form
+      id="{{ form_id }}"
+      action="/transactions"
+      method="get"
+      hx-get="/transactions"
+      hx-target="#transactions-results"
+      hx-swap="innerHTML"
+      hx-indicator="#transactions-loading"
+      class="space-y-4"
+    >
+      <input type="hidden" name="offset" value="0" />
+      <input type="hidden" name="limit" value="{{ filters.limit }}" />
+
+      <div>
+        <label class="label" for="{{ scope }}_account_id">
+          <span class="label-text">Account</span>
+        </label>
+        <select
+          id="{{ scope }}_account_id"
+          name="account_id"
+          class="select select-bordered w-full"
+          hx-get="/transactions"
+          hx-trigger="change"
+          hx-include="closest form"
+          hx-target="#{{ panel_id }}"
+          hx-swap="outerHTML"
+          hx-indicator="#transactions-loading"
+          hx-vals='{"fragment":"filters","scope":"{{ scope }}"}'
+        >
+          <option value="">All accounts</option>
+          {% for account in accounts %}
+          <option value="{{ account.id }}" {% if filters.account_id == account.id %}selected{% endif %}>
+            {{ account.institution }} - {{ account.name }} ({{ account.account_currency }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="label" for="{{ scope }}_card_id">
+          <span class="label-text">Card</span>
+        </label>
+        <select
+          id="{{ scope }}_card_id"
+          name="card_id"
+          class="select select-bordered w-full"
+          {% if not filters.account_id %}disabled{% endif %}
+        >
+          <option value="">All cards</option>
+          {% for card in cards %}
+          <option value="{{ card.id }}" {% if filters.card_id == card.id %}selected{% endif %}>
+            {{ card.name }} - {{ card.card_masked_number }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <fieldset>
+        <legend class="label">
+          <span class="label-text">Period</span>
+        </legend>
+        <div class="join w-full mb-2">
+          <button type="submit" name="preset" value="today" class="btn join-item flex-1 {% if filters.preset == 'today' %}btn-primary{% else %}btn-outline{% endif %}">Today</button>
+          <button type="submit" name="preset" value="week" class="btn join-item flex-1 {% if filters.preset == 'week' %}btn-primary{% else %}btn-outline{% endif %}">Week</button>
+          <button type="submit" name="preset" value="month" class="btn join-item flex-1 {% if filters.preset == 'month' %}btn-primary{% else %}btn-outline{% endif %}">Month</button>
+          <button type="submit" name="preset" value="custom" class="btn join-item flex-1 {% if filters.preset == 'custom' %}btn-primary{% else %}btn-outline{% endif %}">Custom</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <label class="form-control">
+            <span class="label-text text-xs">Date from</span>
+            <input id="{{ scope }}_date_from" type="date" name="date_from" value="{{ filters.date_from }}" class="input input-bordered w-full" />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs">Date to</span>
+            <input id="{{ scope }}_date_to" type="date" name="date_to" value="{{ filters.date_to }}" class="input input-bordered w-full" />
+          </label>
+        </div>
+      </fieldset>
+
+      <div>
+        <label class="label" for="{{ scope }}_search_q">
+          <span class="label-text">Search</span>
+        </label>
+        <input
+          id="{{ scope }}_search_q"
+          type="search"
+          name="q"
+          value="{{ filters.q }}"
+          class="input input-bordered w-full"
+          placeholder="merchant, memo, location"
+        />
+      </div>
+
+      <div>
+        <label class="label" for="{{ scope }}_kind">
+          <span class="label-text">Transaction kind</span>
+        </label>
+        <select id="{{ scope }}_kind" name="kind" class="select select-bordered w-full">
+          <option value="">All kinds</option>
+          {% for kind_value in kinds %}
+          <option value="{{ kind_value }}" {% if filters.kind == kind_value %}selected{% endif %}>{{ kind_value|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <fieldset>
+        <legend class="label">
+          <span class="label-text">Direction</span>
+        </legend>
+        <div class="flex flex-wrap gap-3">
+          <label class="label cursor-pointer gap-2">
+            <input type="radio" class="radio radio-sm" name="direction" value="all" {% if filters.direction == 'all' %}checked{% endif %} />
+            <span class="label-text">All</span>
+          </label>
+          <label class="label cursor-pointer gap-2">
+            <input type="radio" class="radio radio-sm" name="direction" value="out" {% if filters.direction == 'out' %}checked{% endif %} />
+            <span class="label-text">Outflow</span>
+          </label>
+          <label class="label cursor-pointer gap-2">
+            <input type="radio" class="radio radio-sm" name="direction" value="in" {% if filters.direction == 'in' %}checked{% endif %} />
+            <span class="label-text">Inflow</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="grid grid-cols-2 gap-2">
+        <fieldset>
+          <label class="label" for="{{ scope }}_min_amount"><span class="label-text">Min amount</span></label>
+          <input
+            id="{{ scope }}_min_amount"
+            type="number"
+            name="min_amount"
+            step="0.01"
+            value="{{ filters.min_amount if filters.min_amount is not none else '' }}"
+            class="input input-bordered validator w-full"
+            placeholder="0.00"
+          />
+          <p class="validator-hint">Use 2 decimals</p>
+        </fieldset>
+
+        <fieldset>
+          <label class="label" for="{{ scope }}_max_amount"><span class="label-text">Max amount</span></label>
+          <input
+            id="{{ scope }}_max_amount"
+            type="number"
+            name="max_amount"
+            step="0.01"
+            value="{{ filters.max_amount if filters.max_amount is not none else '' }}"
+            class="input input-bordered validator w-full"
+            placeholder="0.00"
+          />
+          <p class="validator-hint">Must be >= min amount</p>
+        </fieldset>
+      </div>
+
+      <div>
+        <label class="label" for="{{ scope }}_currency">
+          <span class="label-text">Currency</span>
+        </label>
+        <select id="{{ scope }}_currency" name="currency" class="select select-bordered w-full">
+          <option value="">All currencies</option>
+          {% for currency_code in currencies %}
+          <option value="{{ currency_code }}" {% if filters.currency == currency_code %}selected{% endif %}>{{ currency_code }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="flex items-center gap-2 pt-2">
+        <button type="submit" class="btn btn-primary flex-1">
+          <span class="htmx-indicator loading loading-spinner loading-sm"></span>
+          <span>Apply</span>
+        </button>
+        <a class="btn btn-outline flex-1" href="/transactions">Reset</a>
+      </div>
+    </form>
+  </div>
+</aside>

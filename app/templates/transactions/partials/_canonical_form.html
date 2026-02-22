@@ -1,0 +1,200 @@
+<article id="canonical-form-panel" class="card bg-base-100 shadow-sm">
+  <div class="card-body p-4">
+    <h2 class="card-title text-lg">Canonical transaction</h2>
+
+    {% if form_success %}
+    <div class="alert alert-success"><span>{{ form_success }}</span></div>
+    {% endif %}
+
+    {% if form_errors %}
+    <div class="alert alert-error">
+      <div>
+        <p class="font-semibold">Validation failed:</p>
+        <ul class="list-disc ml-5">
+          {% for error in form_errors %}
+          <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+
+    <form
+      action="/transactions/{{ transaction.id }}"
+      method="post"
+      hx-patch="/transactions/{{ transaction.id }}"
+      hx-target="#canonical-form-panel"
+      hx-swap="outerHTML"
+      hx-disabled-elt="find button[type='submit']"
+      class="space-y-4"
+    >
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <fieldset>
+          <label class="label" for="details_card_id"><span class="label-text">Card</span></label>
+          <select id="details_card_id" name="card_id" class="select select-bordered validator w-full" required>
+            <option value="">Select card</option>
+            {% for option in card_options %}
+            <option value="{{ option.id }}" {% if form_values.card_id == option.id %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+          <p class="validator-hint">Card is required</p>
+        </fieldset>
+
+        <fieldset>
+          <label class="label" for="details_kind"><span class="label-text">Kind</span></label>
+          <select id="details_kind" name="transaction_kind" class="select select-bordered validator w-full" required>
+            <option value="">Select kind</option>
+            {% for kind_value in kinds %}
+            <option value="{{ kind_value }}" {% if form_values.transaction_kind == kind_value %}selected{% endif %}>{{ kind_value|capitalize }}</option>
+            {% endfor %}
+          </select>
+          <p class="validator-hint">Kind is required</p>
+        </fieldset>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <fieldset>
+          <label class="label" for="details_amount"><span class="label-text">Amount</span></label>
+          <input
+            id="details_amount"
+            name="amount"
+            type="number"
+            step="0.01"
+            required
+            value="{{ form_values.amount }}"
+            class="input input-bordered validator w-full"
+          />
+          <p class="validator-hint">Amount is required, step 0.01</p>
+        </fieldset>
+
+        <fieldset>
+          <label class="label" for="details_currency"><span class="label-text">Currency</span></label>
+          <select id="details_currency" name="currency" class="select select-bordered validator w-full" required>
+            <option value="">Select currency</option>
+            {% for currency_code in currency_options %}
+            <option value="{{ currency_code }}" {% if form_values.currency == currency_code %}selected{% endif %}>{{ currency_code }}</option>
+            {% endfor %}
+          </select>
+          <p class="validator-hint">Use 3-letter uppercase currency</p>
+        </fieldset>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <fieldset>
+          <label class="label" for="details_transaction_datetime"><span class="label-text">Transaction datetime</span></label>
+          <input
+            id="details_transaction_datetime"
+            name="transaction_datetime"
+            type="datetime-local"
+            value="{{ form_values.transaction_datetime }}"
+            class="input input-bordered w-full"
+          />
+        </fieldset>
+
+        <fieldset>
+          <label class="label" for="details_posting_datetime"><span class="label-text">Posting datetime</span></label>
+          <input
+            id="details_posting_datetime"
+            name="posting_datetime"
+            type="datetime-local"
+            value="{{ form_values.posting_datetime }}"
+            class="input input-bordered w-full"
+          />
+          <p class="validator-hint">Posting must be >= transaction when both set</p>
+        </fieldset>
+      </div>
+
+      <fieldset>
+        <label class="label" for="details_description"><span class="label-text">Description</span></label>
+        <textarea
+          id="details_description"
+          name="description"
+          class="textarea textarea-bordered validator w-full"
+          required
+          maxlength="1000"
+          rows="3"
+        >{{ form_values.description }}</textarea>
+        <p class="validator-hint">Description is required</p>
+      </fieldset>
+
+      <fieldset>
+        <label class="label" for="details_location"><span class="label-text">Location</span></label>
+        <input
+          id="details_location"
+          name="location"
+          type="text"
+          class="input input-bordered w-full"
+          value="{{ form_values.location }}"
+          maxlength="200"
+        />
+      </fieldset>
+
+      <div class="divider my-2">FX (optional)</div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <fieldset>
+          <label class="label" for="details_original_amount"><span class="label-text">Original amount</span></label>
+          <input
+            id="details_original_amount"
+            name="original_amount"
+            type="number"
+            step="0.01"
+            value="{{ form_values.original_amount }}"
+            class="input input-bordered validator w-full"
+          />
+          <p class="validator-hint">Set together with original currency</p>
+        </fieldset>
+
+        <fieldset>
+          <label class="label" for="details_original_currency"><span class="label-text">Original currency</span></label>
+          <select id="details_original_currency" name="original_currency" class="select select-bordered validator w-full">
+            <option value="">Select currency</option>
+            {% for currency_code in currency_options %}
+            <option value="{{ currency_code }}" {% if form_values.original_currency == currency_code %}selected{% endif %}>{{ currency_code }}</option>
+            {% endfor %}
+          </select>
+          <p class="validator-hint">Set together with original amount</p>
+        </fieldset>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <fieldset>
+          <label class="label" for="details_fx_rate"><span class="label-text">FX rate</span></label>
+          <input
+            id="details_fx_rate"
+            name="fx_rate"
+            type="number"
+            step="0.000001"
+            value="{{ form_values.fx_rate }}"
+            class="input input-bordered w-full"
+          />
+        </fieldset>
+
+        <fieldset>
+          <label class="label" for="details_fx_fee"><span class="label-text">FX fee</span></label>
+          <input
+            id="details_fx_fee"
+            name="fx_fee"
+            type="number"
+            step="0.01"
+            value="{{ form_values.fx_fee }}"
+            class="input input-bordered w-full"
+          />
+        </fieldset>
+      </div>
+
+      <section class="rounded-box bg-base-200 p-3 space-y-2">
+        <h3 class="font-medium">Debug fields (read-only)</h3>
+        <p class="text-xs"><span class="badge badge-outline mr-2">merchant_norm</span><code>{{ transaction.merchant_norm or '-' }}</code></p>
+        <p class="text-xs"><span class="badge badge-outline mr-2">fingerprint</span><code>{{ transaction.fingerprint or '-' }}</code></p>
+      </section>
+
+      <div class="pt-2">
+        <button type="submit" class="btn btn-primary">
+          <span class="htmx-indicator loading loading-spinner loading-sm"></span>
+          <span>Save changes</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</article>

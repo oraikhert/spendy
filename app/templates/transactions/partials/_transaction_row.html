@@ -1,0 +1,27 @@
+<tr class="hover">
+  <td>
+    <div class="flex items-center gap-2">
+      <span>{{ item.primary_date }}</span>
+      <span class="badge badge-outline" title="{{ item.date_badge_title }} date">{{ item.date_badge }}</span>
+    </div>
+  </td>
+  <td>
+    <a href="{{ item.details_url }}" class="link link-hover font-medium" title="{{ item.primary_date_title }}">
+      {{ item.description }}
+    </a>
+    {% if item.location %}
+    <div class="text-xs text-base-content/70">{{ item.location }}</div>
+    {% endif %}
+  </td>
+  <td class="text-sm">{{ item.card_label }}</td>
+  <td><span class="badge badge-ghost">{{ item.kind|capitalize }}</span></td>
+  <td class="text-right">
+    <span class="font-semibold {{ item.amount_class }}">{{ item.amount }} {{ item.currency }}</span>
+  </td>
+  <td>
+    <div class="flex items-center gap-2">
+      <span class="badge badge-outline">{{ item.source_count }} sources</span>
+      <span class="badge {{ item.parse_status_class }}">{{ item.parse_status_label }}</span>
+    </div>
+  </td>
+</tr>

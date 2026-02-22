@@ -1,0 +1,66 @@
+<article class="card bg-base-200 shadow-sm">
+  <div class="card-body p-4">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="badge badge-ghost">{{ source.source_type }}</span>
+        <span class="badge {{ source.parse_status_class }}">{{ source.parse_status_label }}</span>
+        {% if source.is_primary %}
+        <span class="badge badge-outline">PRIMARY</span>
+        {% endif %}
+      </div>
+      <div class="text-xs text-base-content/70">
+        <span>Confidence: {{ source.confidence }}</span>
+      </div>
+    </div>
+
+    <p class="text-sm text-base-content/80">Created: {{ source.created_at }}</p>
+    <p class="text-sm">{{ source.preview or "No preview available" }}</p>
+
+    {% if source.file_name %}
+    <div class="text-sm">
+      <span class="font-medium">File:</span>
+      <a class="link link-primary" href="{{ source.file_download_url }}">{{ source.file_name }}</a>
+    </div>
+    {% endif %}
+
+    {% if source.parse_error %}
+    <div class="alert alert-error py-2">
+      <span>{{ source.parse_error }}</span>
+    </div>
+    {% endif %}
+
+    <div class="flex flex-wrap items-center gap-2">
+      <button type="button" class="btn btn-sm" disabled>Set primary</button>
+      <button type="button" class="btn btn-sm btn-outline" disabled>Reprocess</button>
+      <button type="button" class="btn btn-sm btn-ghost" disabled>Unlink</button>
+    </div>
+
+    <details class="collapse collapse-arrow bg-base-100">
+      <summary class="collapse-title text-sm font-semibold">Raw / Parsed details</summary>
+      <div class="collapse-content space-y-3">
+        <section>
+          <h4 class="font-medium text-sm mb-1">Parsed fields</h4>
+          <div class="overflow-x-auto">
+            <table class="table table-xs">
+              <tbody>
+                {% for label, value in source.parsed_items %}
+                <tr>
+                  <th class="w-44">{{ label }}</th>
+                  <td>{{ value }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {% if source.raw_text %}
+        <section>
+          <h4 class="font-medium text-sm mb-1">Raw text</h4>
+          <pre class="bg-base-200 rounded-box p-3 text-xs overflow-x-auto whitespace-pre-wrap">{{ source.raw_text }}</pre>
+        </section>
+        {% endif %}
+      </div>
+    </details>
+  </div>
+</article>

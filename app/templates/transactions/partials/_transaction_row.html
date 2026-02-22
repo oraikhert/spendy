@@ -1,0 +1,77 @@
+{#
+  transactions/partials/_transaction_row.html
+  Desktop table row for a single transaction `tx`.
+
+  Canonicalization:
+    primary_date = tx.posting_datetime ?? tx.transaction_datetime ?? tx.created_at
+    date_badge   = "P" | "T" | "C"
+#}
+{% set primary_date = tx.posting_datetime or tx.transaction_datetime or tx.created_at %}
+{% set date_badge   = "P" if tx.posting_datetime else ("T" if tx.transaction_datetime else "C") %}
+{% set is_negative  = tx.amount < 0 %}
+{% set source_count = tx.source_links | length %}
+
+<tr class="hover cursor-pointer" onclick="location.href='/transactions/{{ tx.id }}'">
+
+  {# Date #}
+  <td class="whitespace-nowrap">
+    <div class="flex flex-col gap-0.5">
+      <span class="text-sm font-medium">
+        {{ primary_date.strftime('%d %b %Y') if primary_date else '—' }}
+      </span>
+      <span class="badge badge-xs badge-ghost" title="{{ 'Posting' if date_badge == 'P' else ('Transaction' if date_badge == 'T' else 'Created') }}">{{ date_badge }}</span>
+    </div>
+  </td>
+
+  {# Description + location #}
+  <td>
+    <div class="font-medium truncate max-w-[20rem]">{{ tx.description }}</div>
+    {% if tx.location %}
+      <div class="text-xs text-base-content/60 truncate">{{ tx.location }}</div>
+    {% endif %}
+    {# FX indicator #}
+    {% if tx.original_currency and tx.original_currency != tx.currency %}
+      <div class="text-xs text-base-content/50">
+        {{ tx.original_amount }} {{ tx.original_currency }}
+        {% if tx.fx_rate %}@ {{ tx.fx_rate }}{% endif %}
+      </div>
+    {% endif %}
+  </td>
+
+  {# Card #}
+  <td class="whitespace-nowrap">
+    {% if tx.card %}
+      <span class="text-sm">{{ tx.card.card_masked_number }}</span>
+      <div class="text-xs text-base-content/50">{{ tx.card.name }}</div>
+    {% else %}
+      <span class="text-base-content/40">—</span>
+    {% endif %}
+  </td>
+
+  {# Kind #}
+  <td>
+    {% set kind_color = {'purchase': 'badge-primary', 'topup': 'badge-success', 'refund': 'badge-warning', 'other': 'badge-ghost'} %}
+    <span class="badge badge-sm {{ kind_color.get(tx.transaction_kind, 'badge-ghost') }}">
+      {{ tx.transaction_kind }}
+    </span>
+  </td>
+
+  {# Amount #}
+  <td class="text-right font-mono font-semibold whitespace-nowrap">
+    <span class="{{ 'text-error' if is_negative else 'text-success' }}">
+      {{ "%.2f"|format(tx.amount|float) }} {{ tx.currency }}
+    </span>
+  </td>
+
+  {# Sources count #}
+  <td class="text-center">
+    {% if source_count > 0 %}
+      <span class="badge badge-sm {{ 'badge-info' if source_count > 1 else 'badge-ghost' }}">
+        {{ source_count }}
+      </span>
+    {% else %}
+      <span class="text-base-content/30 text-xs">—</span>
+    {% endif %}
+  </td>
+
+</tr>

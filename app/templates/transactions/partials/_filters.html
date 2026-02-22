@@ -1,0 +1,196 @@
+{# transactions/partials/_filters.html
+   Rendered inside both desktop sidebar and mobile drawer.
+   All inputs submit via the parent form targeting #results-region.
+#}
+<form
+  id="filter-form"
+  hx-get="/transactions"
+  hx-target="#results-region"
+  hx-push-url="true"
+  hx-indicator="#results-loading"
+  class="flex flex-col gap-4"
+>
+
+  {# Account #}
+  <fieldset class="fieldset p-0">
+    <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Account</legend>
+    <select
+      name="account_id"
+      id="filter-account"
+      class="select select-bordered w-full"
+      hx-get="/transactions/cards-for-account"
+      hx-target="#filter-card-options"
+      hx-trigger="change"
+      hx-include="[name='account_id']"
+    >
+      <option value="">All accounts</option>
+      {% for acct in accounts %}
+        <option value="{{ acct.id }}"
+          {% if filters.account_id == acct.id %}selected{% endif %}>
+          {{ acct.institution }} • {{ acct.name }} ({{ acct.account_currency }})
+        </option>
+      {% endfor %}
+    </select>
+  </fieldset>
+
+  {# Card – options refreshed via HTMX when account changes #}
+  <fieldset class="fieldset p-0">
+    <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Card</legend>
+    <select
+      name="card_id"
+      id="filter-card"
+      class="select select-bordered w-full"
+    >
+      <option value="">All cards</option>
+      <span id="filter-card-options">
+        {% for card in cards %}
+          {% if not filters.account_id or card.account_id == filters.account_id %}
+            <option value="{{ card.id }}"
+              {% if filters.card_id == card.id %}selected{% endif %}>
+              {{ card.name }} • {{ card.card_masked_number }}
+            </option>
+          {% endif %}
+        {% endfor %}
+      </span>
+    </select>
+  </fieldset>
+
+  {# Period quick presets #}
+  <fieldset class="fieldset p-0">
+    <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Period</legend>
+    <div class="join w-full mb-2">
+      <button type="button" class="join-item btn btn-sm flex-1"
+        onclick="setDateRange('today')">Today</button>
+      <button type="button" class="join-item btn btn-sm flex-1"
+        onclick="setDateRange('week')">Week</button>
+      <button type="button" class="join-item btn btn-sm flex-1"
+        onclick="setDateRange('month')">Month</button>
+    </div>
+    <div class="flex gap-2">
+      <div class="flex-1">
+        <label class="text-xs text-base-content/60 mb-0.5 block">From</label>
+        <input
+          type="date"
+          name="date_from"
+          value="{{ filters.date_from }}"
+          class="input input-bordered w-full input-sm"
+        />
+      </div>
+      <div class="flex-1">
+        <label class="text-xs text-base-content/60 mb-0.5 block">To</label>
+        <input
+          type="date"
+          name="date_to"
+          value="{{ filters.date_to }}"
+          class="input input-bordered w-full input-sm"
+        />
+      </div>
+    </div>
+  </fieldset>
+
+  {# Search #}
+  <fieldset class="fieldset p-0">
+    <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Search</legend>
+    <input
+      type="search"
+      name="q"
+      value="{{ filters.q }}"
+      placeholder="Description, merchant…"
+      class="input input-bordered w-full"
+    />
+  </fieldset>
+
+  {# Transaction kind #}
+  <fieldset class="fieldset p-0">
+    <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Kind</legend>
+    <select name="kind" class="select select-bordered w-full">
+      <option value="" {% if not filters.kind %}selected{% endif %}>All kinds</option>
+      <option value="purchase" {% if filters.kind == 'purchase' %}selected{% endif %}>Purchase</option>
+      <option value="topup"    {% if filters.kind == 'topup'    %}selected{% endif %}>Top-up</option>
+      <option value="refund"   {% if filters.kind == 'refund'   %}selected{% endif %}>Refund</option>
+      <option value="other"    {% if filters.kind == 'other'    %}selected{% endif %}>Other</option>
+    </select>
+  </fieldset>
+
+  {# Direction #}
+  <fieldset class="fieldset p-0">
+    <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Direction</legend>
+    <div class="flex gap-4">
+      {% for val, label in [('all', 'All'), ('out', 'Outflow'), ('in', 'Inflow')] %}
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="direction" value="{{ val }}" class="radio radio-sm"
+            {% if filters.direction == val %}checked{% endif %} />
+          <span class="text-sm">{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  {# Amount range #}
+  <fieldset class="fieldset p-0">
+    <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Amount</legend>
+    <div class="flex gap-2">
+      <div class="flex-1">
+        <label class="text-xs text-base-content/60 mb-0.5 block">Min</label>
+        <input
+          type="number"
+          name="min_amount"
+          value="{{ filters.min_amount }}"
+          step="0.01"
+          placeholder="0.00"
+          class="input input-bordered w-full input-sm validator"
+        />
+        <div class="validator-hint hidden">Must be ≤ max</div>
+      </div>
+      <div class="flex-1">
+        <label class="text-xs text-base-content/60 mb-0.5 block">Max</label>
+        <input
+          type="number"
+          name="max_amount"
+          value="{{ filters.max_amount }}"
+          step="0.01"
+          placeholder="0.00"
+          class="input input-bordered w-full input-sm validator"
+        />
+        <div class="validator-hint hidden">Must be ≥ min</div>
+      </div>
+    </div>
+  </fieldset>
+
+  {# Currency #}
+  <fieldset class="fieldset p-0">
+    <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Currency</legend>
+    <input
+      type="text"
+      name="currency"
+      value="{{ filters.currency }}"
+      placeholder="e.g. AED"
+      maxlength="3"
+      pattern="[A-Za-z]{3}"
+      class="input input-bordered w-full validator"
+    />
+    <div class="validator-hint">3-letter ISO code (e.g. AED, USD)</div>
+  </fieldset>
+
+  {# Submit / reset #}
+  <div class="flex gap-2 pt-2">
+    <button type="submit" class="btn btn-primary flex-1">Apply</button>
+    <a href="/transactions" class="btn btn-ghost flex-1">Reset</a>
+  </div>
+
+</form>
+
+<script>
+function setDateRange(preset) {
+  const today = new Date();
+  const fmt = d => d.toISOString().slice(0, 10);
+  let from = today, to = today;
+  if (preset === 'week') {
+    from = new Date(today); from.setDate(today.getDate() - 6);
+  } else if (preset === 'month') {
+    from = new Date(today.getFullYear(), today.getMonth(), 1);
+  }
+  document.querySelector('[name="date_from"]').value = fmt(from);
+  document.querySelector('[name="date_to"]').value = fmt(to);
+}
+</script>

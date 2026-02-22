@@ -1,0 +1,252 @@
+{#
+  transactions/partials/_canonical_form.html
+  Canonical transaction edit form.
+  Variables: `transaction`, `cards`, `save_success`, `save_error`.
+
+  Submit uses hx-patch → server returns HX-Redirect on success,
+  or re-renders this partial (status 422) on error.
+#}
+<section id="canonical-section" class="flex flex-col gap-4">
+
+  <div class="flex items-center justify-between">
+    <h2 class="text-lg font-semibold">Canonical Fields</h2>
+  </div>
+
+  {# Success / error banners #}
+  {% if save_success %}
+    <div role="alert" class="alert alert-success text-sm sp-fade-in">
+      <span>Changes saved successfully.</span>
+    </div>
+  {% endif %}
+  {% if save_error %}
+    <div role="alert" class="alert alert-error text-sm sp-fade-in">
+      <span>{{ save_error }}</span>
+    </div>
+  {% endif %}
+
+  <form
+    id="canonical-form"
+    hx-patch="/transactions/{{ transaction.id }}"
+    hx-target="#canonical-section"
+    hx-swap="outerHTML"
+    hx-indicator="#canonical-loading"
+    class="card bg-base-100 border border-base-200 shadow-sm"
+    novalidate
+  >
+    <div class="card-body p-4 gap-4">
+
+      {# ── Card ──────────────────────────────────────────────────── #}
+      <fieldset class="fieldset p-0">
+        <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Card <span class="text-error">*</span></legend>
+        <select name="card_id" class="select select-bordered w-full validator" required>
+          <option value="">— select card —</option>
+          {% for card in cards %}
+            <option value="{{ card.id }}"
+              {% if transaction.card_id == card.id %}selected{% endif %}>
+              {{ card.name }} • {{ card.card_masked_number }}
+              {% if card.account %} ({{ card.account.institution }}){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <div class="validator-hint">Select a card.</div>
+      </fieldset>
+
+      {# ── Kind ─────────────────────────────────────────────────── #}
+      <fieldset class="fieldset p-0">
+        <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Kind <span class="text-error">*</span></legend>
+        <select name="transaction_kind" class="select select-bordered w-full validator" required>
+          {% for k in ['purchase', 'topup', 'refund', 'other'] %}
+            <option value="{{ k }}" {% if transaction.transaction_kind == k %}selected{% endif %}>
+              {{ k | capitalize }}
+            </option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      {# ── Amount + Currency ─────────────────────────────────────── #}
+      <div class="flex gap-3">
+        <fieldset class="fieldset p-0 flex-1">
+          <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Amount <span class="text-error">*</span></legend>
+          <input
+            type="number"
+            name="amount"
+            value="{{ transaction.amount }}"
+            step="0.01"
+            required
+            class="input input-bordered w-full validator"
+          />
+          <div class="validator-hint">Required — use negative for outflow.</div>
+        </fieldset>
+        <fieldset class="fieldset p-0 w-28">
+          <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Currency <span class="text-error">*</span></legend>
+          <input
+            type="text"
+            name="currency"
+            value="{{ transaction.currency }}"
+            required
+            maxlength="3"
+            pattern="[A-Za-z]{3}"
+            class="input input-bordered w-full validator"
+          />
+          <div class="validator-hint">3-letter ISO (e.g. AED)</div>
+        </fieldset>
+      </div>
+
+      {# ── Datetimes ─────────────────────────────────────────────── #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <fieldset class="fieldset p-0">
+          <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Transaction datetime</legend>
+          <input
+            type="datetime-local"
+            name="transaction_datetime"
+            value="{{ transaction.transaction_datetime.strftime('%Y-%m-%dT%H:%M') if transaction.transaction_datetime else '' }}"
+            class="input input-bordered w-full"
+          />
+        </fieldset>
+        <fieldset class="fieldset p-0">
+          <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Posting datetime</legend>
+          <input
+            type="datetime-local"
+            name="posting_datetime"
+            value="{{ transaction.posting_datetime.strftime('%Y-%m-%dT%H:%M') if transaction.posting_datetime else '' }}"
+            class="input input-bordered w-full"
+          />
+          <div class="validator-hint text-base-content/50">Should be ≥ transaction datetime.</div>
+        </fieldset>
+      </div>
+
+      {# ── Description ───────────────────────────────────────────── #}
+      <fieldset class="fieldset p-0">
+        <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Description <span class="text-error">*</span></legend>
+        <textarea
+          name="description"
+          required
+          maxlength="1000"
+          rows="2"
+          class="textarea textarea-bordered w-full validator"
+        >{{ transaction.description }}</textarea>
+        <div class="validator-hint">Required. Max 1000 characters.</div>
+      </fieldset>
+
+      {# ── Location ──────────────────────────────────────────────── #}
+      <fieldset class="fieldset p-0">
+        <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Location</legend>
+        <input
+          type="text"
+          name="location"
+          value="{{ transaction.location or '' }}"
+          maxlength="200"
+          placeholder="Optional"
+          class="input input-bordered w-full"
+        />
+      </fieldset>
+
+      {# ── FX section (toggle) ───────────────────────────────────── #}
+      <details {% if transaction.original_amount %}open{% endif %} class="rounded border border-base-200">
+        <summary class="px-3 py-2 cursor-pointer text-sm font-medium text-base-content/70 hover:text-base-content select-none">
+          FX / Multi-currency (optional)
+        </summary>
+        <div class="p-3 pt-0 grid grid-cols-2 gap-3">
+
+          <fieldset class="fieldset p-0 col-span-1">
+            <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Original amount</legend>
+            <input
+              type="number"
+              name="original_amount"
+              value="{{ transaction.original_amount or '' }}"
+              step="0.01"
+              id="original_amount_field"
+              class="input input-bordered w-full validator"
+            />
+          </fieldset>
+
+          <fieldset class="fieldset p-0 col-span-1">
+            <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">Original currency</legend>
+            <input
+              type="text"
+              name="original_currency"
+              value="{{ transaction.original_currency or '' }}"
+              maxlength="3"
+              pattern="[A-Za-z]{0}|[A-Za-z]{3}"
+              id="original_currency_field"
+              class="input input-bordered w-full validator"
+            />
+            <div class="validator-hint">Required if original amount is set.</div>
+          </fieldset>
+
+          <fieldset class="fieldset p-0">
+            <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">FX rate</legend>
+            <input
+              type="number"
+              name="fx_rate"
+              value="{{ transaction.fx_rate or '' }}"
+              step="any"
+              class="input input-bordered w-full"
+            />
+          </fieldset>
+
+          <fieldset class="fieldset p-0">
+            <legend class="fieldset-legend text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-1">FX fee</legend>
+            <input
+              type="number"
+              name="fx_fee"
+              value="{{ transaction.fx_fee or '' }}"
+              step="0.01"
+              class="input input-bordered w-full"
+            />
+          </fieldset>
+
+        </div>
+      </details>
+
+      {# ── Read-only debug ───────────────────────────────────────── #}
+      {% if transaction.merchant_norm or transaction.fingerprint %}
+        <details class="rounded border border-base-200">
+          <summary class="px-3 py-2 cursor-pointer text-xs font-medium text-base-content/50 select-none">
+            Debug / dedup info
+          </summary>
+          <div class="p-3 pt-0 space-y-1 text-xs">
+            {% if transaction.merchant_norm %}
+              <div class="flex gap-2 items-start">
+                <span class="badge badge-ghost badge-xs shrink-0">merchant_norm</span>
+                <code class="font-mono break-all">{{ transaction.merchant_norm }}</code>
+              </div>
+            {% endif %}
+            {% if transaction.fingerprint %}
+              <div class="flex gap-2 items-start">
+                <span class="badge badge-ghost badge-xs shrink-0">fingerprint</span>
+                <code class="font-mono break-all text-base-content/40">{{ transaction.fingerprint }}</code>
+              </div>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
+
+      {# ── Submit ────────────────────────────────────────────────── #}
+      <div class="card-actions justify-end gap-2 pt-2">
+        <div id="canonical-loading" class="htmx-indicator">
+          <span class="loading loading-spinner loading-sm text-primary"></span>
+        </div>
+        <button type="submit" class="btn btn-primary">Save changes</button>
+      </div>
+
+    </div>{# /card-body #}
+  </form>
+
+</section>
+
+<script>
+(function () {
+  const origAmt = document.getElementById('original_amount_field');
+  const origCur = document.getElementById('original_currency_field');
+  if (!origAmt || !origCur) return;
+  function syncRequired() {
+    const hasAmt = origAmt.value.trim() !== '';
+    origCur.required = hasAmt;
+    origAmt.required = origCur.value.trim() !== '';
+  }
+  origAmt.addEventListener('input', syncRequired);
+  origCur.addEventListener('input', syncRequired);
+  syncRequired();
+})();
+</script>

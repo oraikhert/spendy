@@ -1,0 +1,54 @@
+{#
+  transactions/partials/_transaction_card.html
+  Mobile card for a single transaction `tx`.
+#}
+{% set primary_date = tx.posting_datetime or tx.transaction_datetime or tx.created_at %}
+{% set date_badge   = "P" if tx.posting_datetime else ("T" if tx.transaction_datetime else "C") %}
+{% set is_negative  = tx.amount < 0 %}
+{% set source_count = tx.source_links | length %}
+{% set kind_color   = {'purchase': 'badge-primary', 'topup': 'badge-success', 'refund': 'badge-warning', 'other': 'badge-ghost'} %}
+
+<a href="/transactions/{{ tx.id }}" class="card bg-base-100 shadow-sm border border-base-200 hover:shadow-md transition-shadow">
+  <div class="card-body p-4 gap-1">
+
+    {# Top row: date + amount #}
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex items-center gap-1.5">
+        <span class="font-semibold text-sm">
+          {{ primary_date.strftime('%d %b') if primary_date else '—' }}
+        </span>
+        <span class="badge badge-xs badge-ghost">{{ date_badge }}</span>
+      </div>
+      <span class="font-mono font-bold text-sm {{ 'text-error' if is_negative else 'text-success' }} whitespace-nowrap">
+        {{ "%.2f"|format(tx.amount|float) }} {{ tx.currency }}
+      </span>
+    </div>
+
+    {# Description #}
+    <div class="font-medium text-sm truncate">{{ tx.description }}</div>
+    {% if tx.location %}
+      <div class="text-xs text-base-content/60 truncate">{{ tx.location }}</div>
+    {% endif %}
+
+    {# Meta row: card, kind, sources #}
+    <div class="flex flex-wrap items-center gap-1.5 mt-1">
+      {% if tx.card %}
+        <span class="text-xs text-base-content/60">{{ tx.card.card_masked_number }}</span>
+      {% endif %}
+      <span class="badge badge-xs {{ kind_color.get(tx.transaction_kind, 'badge-ghost') }}">
+        {{ tx.transaction_kind }}
+      </span>
+      {% if source_count > 0 %}
+        <span class="badge badge-xs {{ 'badge-info' if source_count > 1 else 'badge-ghost' }}">
+          {{ source_count }} source{{ 's' if source_count != 1 }}
+        </span>
+      {% endif %}
+      {% if tx.original_currency and tx.original_currency != tx.currency %}
+        <span class="text-xs text-base-content/50">
+          {{ tx.original_amount }} {{ tx.original_currency }}
+        </span>
+      {% endif %}
+    </div>
+
+  </div>
+</a>

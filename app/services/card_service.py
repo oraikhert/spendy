@@ -1,9 +1,18 @@
 """Card service"""
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.models.card import Card
 from app.schemas.card import CardCreate, CardUpdate
+
+
+async def get_all_cards(db: AsyncSession) -> list[Card]:
+    """Get all cards with account relationship loaded."""
+    result = await db.execute(
+        select(Card).options(selectinload(Card.account))
+    )
+    return list(result.scalars().all())
 
 
 async def create_card(

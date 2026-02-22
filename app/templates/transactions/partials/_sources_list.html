@@ -1,0 +1,32 @@
+{#
+  transactions/partials/_sources_list.html
+  Full sources list. Used as HTMX swap target for set-primary / reprocess.
+  Variables: `sources` (list[TransactionSourceLink]), `transaction`.
+#}
+<section id="sources-section" class="flex flex-col gap-4">
+
+  <div class="flex items-center justify-between">
+    <h2 class="text-lg font-semibold">
+      Sources
+      {% if sources %}
+        <span class="badge badge-sm badge-info ml-1">{{ sources | length }}</span>
+      {% endif %}
+    </h2>
+  </div>
+
+  {% if not sources %}
+    <div role="alert" class="alert alert-info text-sm">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z"/>
+      </svg>
+      <span>No sources linked to this transaction.</span>
+    </div>
+  {% else %}
+    {# Primary first, then rest sorted by created_at desc #}
+    {% set sorted_sources = sources | sort(attribute='is_primary', reverse=True) %}
+    {% for link in sorted_sources %}
+      {% include "transactions/partials/_source_card.html" %}
+    {% endfor %}
+  {% endif %}
+
+</section>

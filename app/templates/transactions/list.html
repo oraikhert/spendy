@@ -1,0 +1,57 @@
+{# transactions/list.html #}
+{% extends "base.html" %}
+
+{% block title %}Transactions – Spendy{% endblock %}
+
+{% block content %}
+{#
+  Layout: daisyUI drawer
+  - lg:drawer-open  → sidebar always visible on desktop
+  - mobile          → triggered via checkbox label
+#}
+<div class="drawer lg:drawer-open min-h-[calc(100vh-4rem)]">
+  <input id="filter-drawer" type="checkbox" class="drawer-toggle" />
+
+  {# ── Main content ──────────────────────────────────────────────── #}
+  <div class="drawer-content flex flex-col p-2 lg:p-4 gap-4">
+
+    {# Page header #}
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <label for="filter-drawer" class="btn btn-ghost btn-sm lg:hidden" aria-label="Open filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+          </svg>
+          Filters
+        </label>
+        <h1 class="text-2xl font-bold">Transactions</h1>
+      </div>
+      <div class="flex gap-2">
+        <a href="/source-events" class="btn btn-outline btn-sm">Import</a>
+      </div>
+    </div>
+
+    {# HTMX results region #}
+    <div id="results-region">
+      {% include "transactions/partials/_transactions_results.html" %}
+    </div>
+
+  </div>{# /drawer-content #}
+
+  {# ── Sidebar / drawer-side ─────────────────────────────────────── #}
+  <div class="drawer-side z-20">
+    <label for="filter-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+    <aside class="bg-base-100 border-r border-base-200 w-72 min-h-full flex flex-col p-4 gap-4">
+      <div class="flex items-center justify-between lg:hidden">
+        <span class="font-semibold text-lg">Filters</span>
+        <label for="filter-drawer" class="btn btn-ghost btn-xs" aria-label="Close">✕</label>
+      </div>
+      <div class="hidden lg:block font-semibold text-sm uppercase tracking-wider text-base-content/60">
+        Filters
+      </div>
+      {% include "transactions/partials/_filters.html" %}
+    </aside>
+  </div>
+
+</div>{# /drawer #}
+{% endblock %}

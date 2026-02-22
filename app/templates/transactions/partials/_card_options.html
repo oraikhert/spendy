@@ -1,0 +1,4 @@
+{# Partial: card <option> elements for cascade account→card filter #}
+{% for card in cards %}
+  <option value="{{ card.id }}">{{ card.name }} • {{ card.card_masked_number }}</option>
+{% endfor %}

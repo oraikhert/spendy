@@ -1,0 +1,134 @@
+{#
+  transactions/partials/_transactions_results.html
+  HTMX swap target — returned for both full-page and HTMX requests.
+  Contains: summary bar, desktop table, mobile cards, pagination.
+
+  Canonicalization:
+    display_date = posting_datetime ?? transaction_datetime ?? created_at
+    date_badge   = "P" | "T" | "C"
+#}
+<div id="results-region" class="flex flex-col gap-4">
+
+  {# ── Loading indicator ───────────────────────────────────────────── #}
+  <div id="results-loading" class="htmx-indicator flex justify-center py-4">
+    <span class="loading loading-spinner loading-md text-primary"></span>
+  </div>
+
+  {# ── Summary bar ─────────────────────────────────────────────────── #}
+  <div class="flex flex-wrap items-center gap-3 text-sm">
+    <span class="font-semibold">{{ total }} transaction{{ 's' if total != 1 }}</span>
+    {% if total_out %}
+      <span class="badge badge-error badge-outline">
+        Out: {{ "%.2f"|format(total_out|float) }}
+      </span>
+    {% endif %}
+    {% if total_in %}
+      <span class="badge badge-success badge-outline">
+        In: +{{ "%.2f"|format(total_in|float) }}
+      </span>
+    {% endif %}
+  </div>
+
+  {# ── Empty state ─────────────────────────────────────────────────── #}
+  {% if not transactions %}
+    <div role="alert" class="alert alert-info">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z"/>
+      </svg>
+      <span>No transactions found. Adjust your filters or import data.</span>
+    </div>
+  {% else %}
+
+    {# ── Desktop: table (lg+) ──────────────────────────────────────── #}
+    <div class="hidden lg:block overflow-x-auto rounded-box border border-base-200">
+      <table class="table table-zebra table-sm w-full">
+        <thead>
+          <tr class="bg-base-200 text-xs uppercase tracking-wider">
+            <th class="w-32">Date</th>
+            <th>Description</th>
+            <th class="w-36">Card</th>
+            <th class="w-24">Kind</th>
+            <th class="w-32 text-right">Amount</th>
+            <th class="w-20 text-center">Sources</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tx in transactions %}
+            {% include "transactions/partials/_transaction_row.html" %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# ── Mobile: cards (< lg) ──────────────────────────────────────── #}
+    <div class="lg:hidden flex flex-col gap-3">
+      {% for tx in transactions %}
+        {% include "transactions/partials/_transaction_card.html" %}
+      {% endfor %}
+    </div>
+
+  {% endif %}
+
+  {# ── Pagination ──────────────────────────────────────────────────── #}
+  {% if total_pages > 1 %}
+    {% set qs_base %}account_id={{ filters.account_id or '' }}&card_id={{ filters.card_id or '' }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}&q={{ filters.q }}&kind={{ filters.kind }}&direction={{ filters.direction }}&min_amount={{ filters.min_amount }}&max_amount={{ filters.max_amount }}&currency={{ filters.currency }}&per_page={{ per_page }}{% endset %}
+    <div class="flex justify-center">
+      <div class="join">
+
+        {# Prev #}
+        {% if page > 1 %}
+          <button class="join-item btn btn-sm"
+            hx-get="/transactions?{{ qs_base }}&page={{ page - 1 }}"
+            hx-target="#results-region"
+            hx-push-url="true"
+            hx-swap="outerHTML">«</button>
+        {% else %}
+          <button class="join-item btn btn-sm btn-disabled" disabled>«</button>
+        {% endif %}
+
+        {# Page window #}
+        {% set window_start = [1, page - 2] | max %}
+        {% set window_end   = [total_pages, page + 2] | min %}
+        {% if window_start > 1 %}
+          <button class="join-item btn btn-sm"
+            hx-get="/transactions?{{ qs_base }}&page=1"
+            hx-target="#results-region"
+            hx-push-url="true"
+            hx-swap="outerHTML">1</button>
+          {% if window_start > 2 %}<button class="join-item btn btn-sm btn-disabled" disabled>…</button>{% endif %}
+        {% endif %}
+        {% for p in range(window_start, window_end + 1) %}
+          <button class="join-item btn btn-sm {% if p == page %}btn-active{% endif %}"
+            hx-get="/transactions?{{ qs_base }}&page={{ p }}"
+            hx-target="#results-region"
+            hx-push-url="true"
+            hx-swap="outerHTML">{{ p }}</button>
+        {% endfor %}
+        {% if window_end < total_pages %}
+          {% if window_end < total_pages - 1 %}<button class="join-item btn btn-sm btn-disabled" disabled>…</button>{% endif %}
+          <button class="join-item btn btn-sm"
+            hx-get="/transactions?{{ qs_base }}&page={{ total_pages }}"
+            hx-target="#results-region"
+            hx-push-url="true"
+            hx-swap="outerHTML">{{ total_pages }}</button>
+        {% endif %}
+
+        {# Next #}
+        {% if page < total_pages %}
+          <button class="join-item btn btn-sm"
+            hx-get="/transactions?{{ qs_base }}&page={{ page + 1 }}"
+            hx-target="#results-region"
+            hx-push-url="true"
+            hx-swap="outerHTML">»</button>
+        {% else %}
+          <button class="join-item btn btn-sm btn-disabled" disabled>»</button>
+        {% endif %}
+
+      </div>
+    </div>
+    <p class="text-center text-xs text-base-content/50">
+      Page {{ page }} of {{ total_pages }} &nbsp;·&nbsp; {{ total }} total
+    </p>
+  {% endif %}
+
+</div>{# /results-region #}

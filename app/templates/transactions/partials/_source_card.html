@@ -1,0 +1,144 @@
+{#
+  transactions/partials/_source_card.html
+  Single source event card. Variables: `link` (TransactionSourceLink), `transaction`.
+  `link.source_event` is the SourceEvent.
+#}
+{% set se = link.source_event %}
+{% set parse_badge = {
+    'parsed': ('badge-success', 'parsed'),
+    'failed':  ('badge-error',   'failed'),
+    'new':     ('badge-warning', 'new'),
+  }.get(se.parse_status, ('badge-ghost', se.parse_status)) %}
+{% set type_badge = {
+    'telegram_text':   'badge-primary',
+    'sms_text':        'badge-secondary',
+    'sms_screenshot':  'badge-accent',
+    'bank_screenshot': 'badge-info',
+    'pdf_statement':   'badge-neutral',
+    'manual':          'badge-ghost',
+  }.get(se.source_type, 'badge-ghost') %}
+
+<div id="source-card-{{ se.id }}" class="card bg-base-100 border border-base-200 shadow-sm">
+  <div class="card-body p-4 gap-3">
+
+    {# Header row: badges + confidence #}
+    <div class="flex flex-wrap items-center gap-2">
+      {% if link.is_primary %}
+        <span class="badge badge-outline badge-sm font-semibold">PRIMARY</span>
+      {% endif %}
+      <span class="badge badge-sm {{ type_badge }}">{{ se.source_type | replace('_', ' ') }}</span>
+      <span class="badge badge-sm {{ parse_badge[0] }}">{{ parse_badge[1] }}</span>
+      {% if link.match_confidence is not none %}
+        <span class="text-xs text-base-content/60 ml-auto">
+          confidence: {{ "%.0f"|format(link.match_confidence * 100) }}%
+        </span>
+      {% endif %}
+    </div>
+
+    {# Created at #}
+    <div class="text-xs text-base-content/50">
+      Created {{ se.created_at.strftime('%Y-%m-%d %H:%M') if se.created_at else '—' }}
+      {% if se.sender %} · from {{ se.sender }}{% endif %}
+    </div>
+
+    {# Raw text preview #}
+    {% if se.raw_text %}
+      <div class="bg-base-200 rounded p-2 text-xs font-mono text-base-content/80 line-clamp-3 break-all">
+        {{ se.raw_text[:300] }}{% if se.raw_text|length > 300 %}…{% endif %}
+      </div>
+    {% elif se.file_path %}
+      <div class="text-sm text-base-content/60">
+        📎 {{ se.file_path.split('/')[-1] }}
+      </div>
+    {% endif %}
+
+    {# Parse error #}
+    {% if se.parse_status == 'failed' and se.parse_error %}
+      <div role="alert" class="alert alert-error py-2 text-xs">
+        <span>{{ se.parse_error }}</span>
+      </div>
+    {% endif %}
+
+    {# Expand: parsed fields #}
+    {% if se.parse_status == 'parsed' %}
+      <details class="group">
+        <summary class="cursor-pointer text-xs text-primary font-medium list-none flex items-center gap-1">
+          <svg class="h-3 w-3 transition-transform group-open:rotate-90" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+          Parsed details
+        </summary>
+        <div class="mt-2 rounded bg-base-200 p-3 text-xs space-y-1">
+          {% if se.parsed_amount %}
+            <div class="flex gap-2"><span class="text-base-content/60 w-36">Amount</span><span class="font-mono">{{ se.parsed_amount }} {{ se.parsed_currency or '' }}</span></div>
+          {% endif %}
+          {% if se.parsed_transaction_datetime %}
+            <div class="flex gap-2"><span class="text-base-content/60 w-36">Txn datetime</span><span>{{ se.parsed_transaction_datetime.strftime('%Y-%m-%d %H:%M') }}</span></div>
+          {% endif %}
+          {% if se.parsed_posting_datetime %}
+            <div class="flex gap-2"><span class="text-base-content/60 w-36">Posting datetime</span><span>{{ se.parsed_posting_datetime.strftime('%Y-%m-%d %H:%M') }}</span></div>
+          {% endif %}
+          {% if se.parsed_description %}
+            <div class="flex gap-2"><span class="text-base-content/60 w-36">Description</span><span>{{ se.parsed_description }}</span></div>
+          {% endif %}
+          {% if se.parsed_card_number %}
+            <div class="flex gap-2"><span class="text-base-content/60 w-36">Card last 4</span><span class="font-mono">****{{ se.parsed_card_number }}</span></div>
+          {% endif %}
+          {% if se.parsed_transaction_kind %}
+            <div class="flex gap-2"><span class="text-base-content/60 w-36">Kind</span><span>{{ se.parsed_transaction_kind }}</span></div>
+          {% endif %}
+          {% if se.parsed_location %}
+            <div class="flex gap-2"><span class="text-base-content/60 w-36">Location</span><span>{{ se.parsed_location }}</span></div>
+          {% endif %}
+          {% if se.recipients %}
+            <div class="flex gap-2"><span class="text-base-content/60 w-36">Recipients</span><span>{{ se.recipients }}</span></div>
+          {% endif %}
+        </div>
+      </details>
+    {% endif %}
+
+    {# Actions #}
+    <div class="card-actions justify-end gap-2 flex-wrap pt-1">
+      {% if not link.is_primary %}
+        <form method="POST"
+          action="/transactions/{{ transaction.id }}/sources/{{ se.id }}/set-primary"
+          hx-post="/transactions/{{ transaction.id }}/sources/{{ se.id }}/set-primary"
+          hx-target="#sources-section"
+          hx-swap="outerHTML"
+          class="inline">
+          <button type="submit" class="btn btn-sm btn-primary">Set primary</button>
+        </form>
+      {% endif %}
+      <form method="POST"
+        action="/transactions/{{ transaction.id }}/sources/{{ se.id }}/reprocess"
+        hx-post="/transactions/{{ transaction.id }}/sources/{{ se.id }}/reprocess"
+        hx-target="#source-card-{{ se.id }}"
+        hx-swap="outerHTML"
+        hx-indicator="#source-card-{{ se.id }} .source-loading"
+        class="inline">
+        <button type="submit" class="btn btn-sm btn-outline">Reprocess</button>
+      </form>
+
+      {# Full raw text modal trigger #}
+      {% if se.raw_text and se.raw_text|length > 300 %}
+        <button class="btn btn-sm btn-ghost"
+          onclick="document.getElementById('raw-modal-{{ se.id }}').showModal()">
+          Full text
+        </button>
+        <dialog id="raw-modal-{{ se.id }}" class="modal">
+          <div class="modal-box max-w-2xl">
+            <h3 class="font-bold text-lg mb-3">Raw text — source #{{ se.id }}</h3>
+            <pre class="bg-base-200 rounded p-3 text-xs whitespace-pre-wrap break-all overflow-auto max-h-96">{{ se.raw_text }}</pre>
+          </div>
+          <form method="dialog" class="modal-backdrop"><button>close</button></form>
+        </dialog>
+      {% endif %}
+    </div>
+
+    {# Loading indicator for reprocess #}
+    <div class="source-loading htmx-indicator flex justify-center">
+      <span class="loading loading-spinner loading-sm text-primary"></span>
+    </div>
+
+  </div>
+</div>

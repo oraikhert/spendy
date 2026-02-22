@@ -2,10 +2,12 @@
 from decimal import Decimal
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, func, and_, or_, case
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.models.transaction import Transaction
+from app.models.card import Card
+from app.models.account import Account
 from app.models.transaction_source_link import TransactionSourceLink
 from app.schemas.transaction import TransactionCreate, TransactionUpdate
 from app.utils.matching import normalize_merchant, generate_fingerprint
@@ -40,12 +42,82 @@ async def create_transaction(
     return transaction
 
 
-async def get_transaction(db: AsyncSession, transaction_id: int) -> Transaction | None:
-    """Get transaction by ID"""
-    result = await db.execute(
-        select(Transaction).where(Transaction.id == transaction_id)
-    )
-    return result.scalar_one_or_none()
+async def get_transaction(
+    db: AsyncSession,
+    transaction_id: int,
+    load_relations: bool = False,
+) -> Transaction | None:
+    """Get transaction by ID, optionally eager-loading card/account/source_links."""
+    query = select(Transaction).where(Transaction.id == transaction_id)
+    if load_relations:
+        query = query.options(
+            joinedload(Transaction.card).joinedload(Card.account),
+            selectinload(Transaction.source_links),
+        )
+    result = await db.execute(query)
+    return result.unique().scalar_one_or_none()
+
+
+def _build_filters(
+    account_id: int | None = None,
+    card_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    q: str | None = None,
+    kind: str | None = None,
+    direction: str | None = None,
+    currency: str | None = None,
+    min_amount: Decimal | None = None,
+    max_amount: Decimal | None = None,
+):
+    """Build common filter clauses. Returns (filters list, needs_card_join bool)."""
+    filters = []
+    needs_card_join = False
+
+    if card_id:
+        filters.append(Transaction.card_id == card_id)
+
+    if account_id:
+        needs_card_join = True
+        filters.append(Card.account_id == account_id)
+
+    if date_from:
+        filters.append(
+            or_(
+                and_(Transaction.posting_datetime.isnot(None), Transaction.posting_datetime >= date_from),
+                and_(Transaction.posting_datetime.is_(None), Transaction.transaction_datetime >= date_from),
+            )
+        )
+
+    if date_to:
+        filters.append(
+            or_(
+                and_(Transaction.posting_datetime.isnot(None), Transaction.posting_datetime <= date_to),
+                and_(Transaction.posting_datetime.is_(None), Transaction.transaction_datetime <= date_to),
+            )
+        )
+
+    if q:
+        filters.append(Transaction.description.ilike(f"%{q}%"))
+
+    if kind:
+        filters.append(Transaction.transaction_kind == kind)
+
+    if direction == "out":
+        filters.append(Transaction.amount < 0)
+    elif direction == "in":
+        filters.append(Transaction.amount > 0)
+
+    if currency:
+        filters.append(Transaction.currency == currency)
+
+    if min_amount is not None:
+        filters.append(func.abs(Transaction.amount) >= min_amount)
+
+    if max_amount is not None:
+        filters.append(func.abs(Transaction.amount) <= max_amount)
+
+    return filters, needs_card_join
 
 
 async def get_transactions(
@@ -56,92 +128,93 @@ async def get_transactions(
     date_to: datetime | None = None,
     q: str | None = None,
     kind: str | None = None,
+    direction: str | None = None,
+    currency: str | None = None,
     min_amount: Decimal | None = None,
     max_amount: Decimal | None = None,
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    load_relations: bool = False,
 ) -> tuple[list[Transaction], int]:
-    """
-    Get transactions with filters.
-    
-    Returns:
-        Tuple of (transactions list, total count)
-    """
-    # Base query
+    """Get transactions with filters. Returns (transactions, total_count)."""
     query = select(Transaction)
     count_query = select(func.count(Transaction.id))
-    
-    # Apply filters
-    filters = []
-    
-    if card_id:
-        filters.append(Transaction.card_id == card_id)
-    
-    if account_id:
-        # Need to join with Card to filter by account_id
-        from app.models.card import Card
+
+    filters, needs_card_join = _build_filters(
+        account_id=account_id, card_id=card_id, date_from=date_from,
+        date_to=date_to, q=q, kind=kind, direction=direction,
+        currency=currency, min_amount=min_amount, max_amount=max_amount,
+    )
+
+    if needs_card_join:
         query = query.join(Card, Transaction.card_id == Card.id)
         count_query = count_query.join(Card, Transaction.card_id == Card.id)
-        filters.append(Card.account_id == account_id)
-    
-    if date_from:
-        # Filter by posting_datetime if exists, else transaction_datetime
-        filters.append(
-            or_(
-                and_(
-                    Transaction.posting_datetime.isnot(None),
-                    Transaction.posting_datetime >= date_from
-                ),
-                and_(
-                    Transaction.posting_datetime.is_(None),
-                    Transaction.transaction_datetime >= date_from
-                )
-            )
+
+    if load_relations:
+        query = query.options(
+            joinedload(Transaction.card).joinedload(Card.account),
+            selectinload(Transaction.source_links),
         )
-    
-    if date_to:
-        filters.append(
-            or_(
-                and_(
-                    Transaction.posting_datetime.isnot(None),
-                    Transaction.posting_datetime <= date_to
-                ),
-                and_(
-                    Transaction.posting_datetime.is_(None),
-                    Transaction.transaction_datetime <= date_to
-                )
-            )
-        )
-    
-    if q:
-        # Search in description
-        filters.append(Transaction.description.ilike(f"%{q}%"))
-    
-    if kind:
-        filters.append(Transaction.transaction_kind == kind)
-    
-    if min_amount is not None:
-        filters.append(Transaction.amount >= min_amount)
-    
-    if max_amount is not None:
-        filters.append(Transaction.amount <= max_amount)
-    
+
     if filters:
         query = query.where(and_(*filters))
         count_query = count_query.where(and_(*filters))
-    
-    # Get total count
+
     total_result = await db.execute(count_query)
     total = total_result.scalar_one()
-    
-    # Apply pagination and ordering
-    query = query.order_by(Transaction.posting_datetime.desc().nullslast(), Transaction.transaction_datetime.desc().nullslast())
+
+    query = query.order_by(
+        Transaction.posting_datetime.desc().nullslast(),
+        Transaction.transaction_datetime.desc().nullslast(),
+    )
     query = query.limit(limit).offset(offset)
-    
+
     result = await db.execute(query)
-    transactions = list(result.scalars().all())
-    
+    transactions = list(result.unique().scalars().all())
+
     return transactions, total
+
+
+async def get_transactions_summary(
+    db: AsyncSession,
+    account_id: int | None = None,
+    card_id: int | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    q: str | None = None,
+    kind: str | None = None,
+    direction: str | None = None,
+    currency: str | None = None,
+    min_amount: Decimal | None = None,
+    max_amount: Decimal | None = None,
+) -> dict:
+    """Aggregate summary (count, total_out, total_in) for filtered transactions."""
+    query = select(
+        func.count(Transaction.id).label("count"),
+        func.coalesce(
+            func.sum(case((Transaction.amount < 0, Transaction.amount), else_=Decimal("0"))),
+            Decimal("0"),
+        ).label("total_out"),
+        func.coalesce(
+            func.sum(case((Transaction.amount > 0, Transaction.amount), else_=Decimal("0"))),
+            Decimal("0"),
+        ).label("total_in"),
+    )
+
+    filters, needs_card_join = _build_filters(
+        account_id=account_id, card_id=card_id, date_from=date_from,
+        date_to=date_to, q=q, kind=kind, direction=direction,
+        currency=currency, min_amount=min_amount, max_amount=max_amount,
+    )
+
+    if needs_card_join:
+        query = query.join(Card, Transaction.card_id == Card.id)
+
+    if filters:
+        query = query.where(and_(*filters))
+
+    row = (await db.execute(query)).one()
+    return {"count": row.count, "total_out": row.total_out, "total_in": row.total_in}
 
 
 async def update_transaction(

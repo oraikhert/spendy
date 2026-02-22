@@ -1,0 +1,150 @@
+{# Filter controls — rendered inside drawer sidebar #}
+<form id="filters-form"
+      hx-get="/transactions"
+      hx-target="#results-container"
+      hx-push-url="true"
+      class="space-y-4">
+
+  <div class="flex items-center justify-between">
+    <h2 class="text-lg font-semibold">Filters</h2>
+    <label for="filters-drawer" class="btn btn-sm btn-ghost lg:hidden" aria-label="Close">✕</label>
+  </div>
+
+  {# Account #}
+  <fieldset class="form-control">
+    <label class="label"><span class="label-text">Account</span></label>
+    <select name="account_id"
+            class="select select-bordered w-full"
+            hx-get="/transactions/filter-cards"
+            hx-target="#card-select"
+            hx-swap="innerHTML"
+            hx-include="this">
+      <option value="">All accounts</option>
+      {% for acct in accounts|default([]) %}
+      <option value="{{ acct.id }}" {{ 'selected' if filters.account_id == acct.id }}>
+        {{ acct.institution }} &bull; {{ acct.name }} {{ acct.account_currency }}
+      </option>
+      {% endfor %}
+    </select>
+  </fieldset>
+
+  {# Card (dependent on account) #}
+  <fieldset class="form-control">
+    <label class="label"><span class="label-text">Card</span></label>
+    <select name="card_id"
+            id="card-select"
+            class="select select-bordered w-full"
+            {{ 'disabled' if not filters.account_id }}>
+      <option value="">All cards</option>
+      {% for card in cards|default([]) %}
+      <option value="{{ card.id }}" {{ 'selected' if filters.card_id == card.id }}>
+        {{ card.name }} &bull; ****{{ card.card_masked_number[-4:] }}
+      </option>
+      {% endfor %}
+    </select>
+  </fieldset>
+
+  {# Period presets #}
+  <fieldset class="form-control">
+    <label class="label"><span class="label-text">Period</span></label>
+    <div class="join w-full">
+      {% for p_val, p_label in [("today","Today"),("week","Week"),("month","Month")] %}
+      <input type="radio" name="period" value="{{ p_val }}"
+             class="join-item btn btn-sm"
+             aria-label="{{ p_label }}"
+             {{ 'checked' if period == p_val }} />
+      {% endfor %}
+      <input type="radio" name="period" value=""
+             class="join-item btn btn-sm"
+             aria-label="Custom"
+             {{ 'checked' if not period }} />
+    </div>
+  </fieldset>
+
+  {# Custom date range #}
+  <div class="grid grid-cols-2 gap-2">
+    <fieldset class="form-control">
+      <label class="label"><span class="label-text text-xs">From</span></label>
+      <input type="date" name="date_from"
+             value="{{ filters.date_from.strftime('%Y-%m-%d') if filters.date_from else '' }}"
+             class="input input-bordered input-sm w-full" />
+    </fieldset>
+    <fieldset class="form-control">
+      <label class="label"><span class="label-text text-xs">To</span></label>
+      <input type="date" name="date_to"
+             value="{{ filters.date_to.strftime('%Y-%m-%d') if filters.date_to else '' }}"
+             class="input input-bordered input-sm w-full" />
+    </fieldset>
+  </div>
+
+  {# Search (desktop) #}
+  <fieldset class="form-control hidden lg:block">
+    <label class="label"><span class="label-text">Search</span></label>
+    <input type="search" name="q" value="{{ filters.q or '' }}"
+           placeholder="Description, amount…"
+           class="input input-bordered w-full" />
+  </fieldset>
+
+  {# Kind #}
+  <fieldset class="form-control">
+    <label class="label"><span class="label-text">Kind</span></label>
+    <select name="kind" class="select select-bordered w-full">
+      <option value="">All</option>
+      {% for k in ["purchase","topup","refund","other"] %}
+      <option value="{{ k }}" {{ 'selected' if filters.kind == k }}>{{ k|title }}</option>
+      {% endfor %}
+    </select>
+  </fieldset>
+
+  {# Direction #}
+  <fieldset class="form-control">
+    <label class="label"><span class="label-text">Direction</span></label>
+    <div class="flex gap-3">
+      {% for d_val, d_label in [("","All"),("out","Out"),("in","In")] %}
+      <label class="label cursor-pointer gap-1">
+        <input type="radio" name="direction" value="{{ d_val }}"
+               class="radio radio-sm"
+               {{ 'checked' if (filters.direction or '') == d_val }} />
+        <span class="label-text">{{ d_label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  {# Amount range #}
+  <fieldset class="form-control">
+    <label class="label"><span class="label-text">Amount range</span></label>
+    <div class="grid grid-cols-2 gap-2">
+      <input type="number" name="min_amount" step="0.01" min="0"
+             value="{{ filters.min_amount or '' }}"
+             placeholder="Min"
+             class="input input-bordered input-sm w-full" />
+      <input type="number" name="max_amount" step="0.01" min="0"
+             value="{{ filters.max_amount or '' }}"
+             placeholder="Max"
+             class="input input-bordered input-sm w-full" />
+    </div>
+  </fieldset>
+
+  {# Currency #}
+  <fieldset class="form-control">
+    <label class="label"><span class="label-text">Currency</span></label>
+    <select name="currency" class="select select-bordered w-full">
+      <option value="">All</option>
+      {% for cur in ["AED","USD","EUR","GBP"] %}
+      <option value="{{ cur }}" {{ 'selected' if filters.currency == cur }}>{{ cur }}</option>
+      {% endfor %}
+    </select>
+  </fieldset>
+
+  {# Actions #}
+  <div class="flex gap-2 pt-2">
+    <button type="submit" class="btn btn-primary btn-sm flex-1">Apply</button>
+    <a href="/transactions"
+       hx-get="/transactions"
+       hx-target="#results-container"
+       hx-push-url="true"
+       class="btn btn-outline btn-sm flex-1">Reset</a>
+  </div>
+
+</form>

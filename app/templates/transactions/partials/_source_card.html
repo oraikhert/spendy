@@ -1,0 +1,111 @@
+{# Single source event card — expects `link` (TransactionSourceLink with source_event) and `transaction_id` #}
+{% set src = link.source_event %}
+{% set status_color = {"parsed": "badge-success", "new": "badge-warning", "failed": "badge-error"} %}
+
+<div class="card bg-base-100 shadow-sm border border-base-300">
+  <div class="card-body p-4">
+
+    {# Header: badges + confidence #}
+    <div class="flex flex-wrap items-center gap-2 mb-2">
+      <span class="badge badge-sm">{{ src.source_type }}</span>
+      <span class="badge badge-sm {{ status_color.get(src.parse_status, 'badge-ghost') }}">
+        {{ src.parse_status }}
+      </span>
+      {% if link.is_primary %}
+      <span class="badge badge-outline badge-sm badge-primary">PRIMARY</span>
+      {% endif %}
+      {% if link.match_confidence is not none %}
+      <span class="text-xs text-base-content/60">
+        confidence: {{ "%.2f"|format(link.match_confidence) }}
+      </span>
+      {% endif %}
+      <span class="text-xs text-base-content/50 ml-auto">
+        #{{ src.id }} &bull; {{ src.created_at.strftime('%Y-%m-%d %H:%M') }}
+      </span>
+    </div>
+
+    {# Preview #}
+    {% if src.raw_text %}
+    <p class="text-sm font-mono bg-base-200 rounded p-2 line-clamp-2 mb-2">{{ src.raw_text[:200] }}</p>
+    {% elif src.file_path %}
+    <p class="text-sm mb-2">
+      File: <code class="text-xs">{{ src.file_path.split('/')[-1] }}</code>
+      <a href="/api/v1/source-events/{{ src.id }}/download"
+         target="_blank" class="link link-primary text-xs ml-1">View</a>
+    </p>
+    {% endif %}
+
+    {# Actions #}
+    <div class="flex flex-wrap gap-2">
+      {% if not link.is_primary %}
+      <button class="btn btn-sm btn-primary"
+              hx-patch="/transactions/{{ transaction_id }}/sources/{{ src.id }}/primary"
+              hx-target="#sources-container"
+              hx-swap="innerHTML">
+        Set primary
+      </button>
+      {% endif %}
+      <button class="btn btn-sm btn-outline"
+              hx-post="/transactions/{{ transaction_id }}/sources/{{ src.id }}/reprocess"
+              hx-target="#sources-container"
+              hx-swap="innerHTML">
+        Reprocess
+      </button>
+    </div>
+
+    {# Expandable parsed details #}
+    {% if src.parse_status == "parsed" %}
+    <details class="mt-3">
+      <summary class="cursor-pointer text-sm font-medium text-base-content/70">
+        Parsed details
+      </summary>
+      <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        {% if src.parsed_amount is not none %}
+        <span class="text-base-content/60">Amount:</span>
+        <span>{{ src.parsed_amount }} {{ src.parsed_currency or '' }}</span>
+        {% endif %}
+        {% if src.parsed_description %}
+        <span class="text-base-content/60">Description:</span>
+        <span>{{ src.parsed_description }}</span>
+        {% endif %}
+        {% if src.parsed_card_number %}
+        <span class="text-base-content/60">Card last4:</span>
+        <span>****{{ src.parsed_card_number }}</span>
+        {% endif %}
+        {% if src.parsed_transaction_kind %}
+        <span class="text-base-content/60">Kind:</span>
+        <span>{{ src.parsed_transaction_kind }}</span>
+        {% endif %}
+        {% if src.parsed_transaction_datetime %}
+        <span class="text-base-content/60">Txn datetime:</span>
+        <span>{{ src.parsed_transaction_datetime.strftime('%Y-%m-%d %H:%M') }}</span>
+        {% endif %}
+        {% if src.parsed_posting_datetime %}
+        <span class="text-base-content/60">Posting datetime:</span>
+        <span>{{ src.parsed_posting_datetime.strftime('%Y-%m-%d %H:%M') }}</span>
+        {% endif %}
+        {% if src.parsed_location %}
+        <span class="text-base-content/60">Location:</span>
+        <span>{{ src.parsed_location }}</span>
+        {% endif %}
+        {% if src.sender %}
+        <span class="text-base-content/60">Sender:</span>
+        <span>{{ src.sender }}</span>
+        {% endif %}
+        {% if src.recipients %}
+        <span class="text-base-content/60">Recipients:</span>
+        <span>{{ src.recipients }}</span>
+        {% endif %}
+      </div>
+    </details>
+    {% endif %}
+
+    {# Parse error #}
+    {% if src.parse_error %}
+    <div class="alert alert-error mt-2 text-sm p-2">
+      <span>{{ src.parse_error }}</span>
+    </div>
+    {% endif %}
+
+  </div>
+</div>

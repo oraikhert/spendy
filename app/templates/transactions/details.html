@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Transaction {{ tx.id if tx else '' }} - Spendy{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="alert alert-error mb-4">
+  <span>{{ error }}</span>
+</div>
+<a href="/transactions" class="btn btn-outline btn-sm">&larr; Back to list</a>
+{% elif tx %}
+
+{# ===== Header ===== #}
+<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+  <div class="flex items-center gap-2">
+    <a href="/transactions" class="btn btn-ghost btn-sm">&larr; Back</a>
+    <h1 class="text-xl font-bold">Transaction #{{ tx.id }}</h1>
+  </div>
+  <div class="flex gap-2">
+    <div class="dropdown dropdown-end lg:hidden">
+      <label tabindex="0" class="btn btn-ghost btn-sm">&#8942;</label>
+      <ul tabindex="0" class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-40 z-10">
+        <li><a href="/api/v1/transactions/{{ tx.id }}" target="_blank">View JSON</a></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+{# ===== Summary card ===== #}
+<div class="card bg-base-100 shadow mb-6">
+  <div class="card-body p-4 lg:p-6">
+    <div class="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+      <span class="text-2xl font-mono font-bold {{ 'text-error' if tx.amount < 0 else 'text-success' }}">
+        {{ "{:,.2f}".format(tx.amount) }} {{ tx.currency }}
+      </span>
+      {% if tx.original_currency and tx.original_currency != tx.currency %}
+      <span class="text-sm text-base-content/60">
+        ({{ "{:,.2f}".format(tx.original_amount) }} {{ tx.original_currency }})
+      </span>
+      {% endif %}
+      <span class="badge badge-outline">{{ tx.transaction_kind }}</span>
+    </div>
+    <p class="text-lg mt-1">{{ tx.description }}</p>
+    {% if tx.location %}
+    <p class="text-sm text-base-content/60">{{ tx.location }}</p>
+    {% endif %}
+    <div class="flex flex-wrap gap-x-6 gap-y-1 text-sm mt-2 text-base-content/70">
+      {% if tx.card %}
+      <span>{{ tx.card.name }} &bull; ****{{ tx.card.card_masked_number[-4:] }}</span>
+      {% endif %}
+      {% if tx.transaction_datetime %}
+      <span>Txn: {{ tx.transaction_datetime.strftime('%d %b %Y %H:%M') }}</span>
+      {% endif %}
+      {% if tx.posting_datetime %}
+      <span>Post: {{ tx.posting_datetime.strftime('%d %b %Y %H:%M') }}</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ===== Mobile tabs (below lg) ===== #}
+<div class="lg:hidden mb-4">
+  <div role="tablist" class="tabs tabs-box">
+    <a role="tab" class="tab tab-active" id="tab-details-btn"
+       onclick="document.getElementById('panel-details').classList.remove('hidden');document.getElementById('panel-sources').classList.add('hidden');this.classList.add('tab-active');document.getElementById('tab-sources-btn').classList.remove('tab-active');">
+      Details
+    </a>
+    <a role="tab" class="tab" id="tab-sources-btn"
+       onclick="document.getElementById('panel-sources').classList.remove('hidden');document.getElementById('panel-details').classList.add('hidden');this.classList.add('tab-active');document.getElementById('tab-details-btn').classList.remove('tab-active');">
+      Sources ({{ sources|length }})
+    </a>
+  </div>
+</div>
+
+{# ===== Two-column layout (desktop) / Tabbed panels (mobile) ===== #}
+<div class="flex flex-col lg:flex-row gap-6">
+
+  {# Left: Canonical form #}
+  <div id="panel-details" class="flex-1 min-w-0">
+    <div id="canonical-section">
+      {% include "transactions/partials/_canonical_form.html" %}
+    </div>
+  </div>
+
+  {# Right: Sources #}
+  <div id="panel-sources" class="flex-1 min-w-0 hidden lg:block">
+    <div id="sources-container"
+         hx-get="/transactions/{{ tx.id }}/sources"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      {% include "transactions/partials/_sources_list.html" %}
+    </div>
+  </div>
+
+</div>
+
+{% endif %}
+{% endblock %}

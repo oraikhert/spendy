@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Transactions - Spendy{% endblock %}
+
+{% block content %}
+<div class="drawer lg:drawer-open">
+  <input id="filters-drawer" type="checkbox" class="drawer-toggle" />
+
+  {# --- Main content (results) --- #}
+  <div class="drawer-content flex flex-col">
+
+    {# Header bar #}
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl font-bold">Transactions</h1>
+      <div class="flex gap-2">
+        <label for="filters-drawer" class="btn btn-outline btn-sm lg:hidden" aria-label="Open filters">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          Filters
+        </label>
+        <a href="/transactions" class="btn btn-primary btn-sm">+ Add</a>
+      </div>
+    </div>
+
+    {# Mobile search + period (visible < lg) #}
+    <div class="lg:hidden space-y-3 mb-4">
+      <form hx-get="/transactions"
+            hx-target="#results-container"
+            hx-push-url="true"
+            hx-include="#filters-form"
+            class="flex gap-2">
+        <input type="search" name="q" value="{{ filters.q or '' }}"
+               placeholder="Search transactions…"
+               class="input input-bordered input-sm flex-1" />
+        <button type="submit" class="btn btn-sm btn-ghost">Search</button>
+      </form>
+      <div class="flex flex-wrap gap-1">
+        {% for p_val, p_label in [("today","Today"),("week","Week"),("month","Month")] %}
+        <button class="btn btn-xs join-item {{ 'btn-active' if period == p_val else 'btn-outline' }}"
+                hx-get="/transactions"
+                hx-target="#results-container"
+                hx-push-url="true"
+                hx-vals='{"period":"{{ p_val }}"}'>
+          {{ p_label }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# Results area (HTMX swap target) #}
+    <div id="results-container">
+      {% include "transactions/partials/_results.html" %}
+    </div>
+
+  </div>
+
+  {# --- Drawer sidebar (filters) --- #}
+  <div class="drawer-side z-20">
+    <label for="filters-drawer" aria-label="Close filters" class="drawer-overlay"></label>
+    <div class="bg-base-100 min-h-full w-80 p-4 shadow-lg">
+      {% include "transactions/partials/_filters.html" %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

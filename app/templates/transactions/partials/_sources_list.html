@@ -1,0 +1,17 @@
+{# Sources list container — HTMX target: #sources-container #}
+<div class="space-y-4">
+  <h2 class="text-lg font-semibold">
+    Sources
+    <span class="badge badge-sm badge-primary ml-1">{{ sources|length }}</span>
+  </h2>
+
+  {% if sources|length == 0 %}
+  <div class="alert alert-info">
+    <span>No source events linked to this transaction.</span>
+  </div>
+  {% else %}
+    {% for link in sources %}
+      {% include "transactions/partials/_source_card.html" %}
+    {% endfor %}
+  {% endif %}
+</div>

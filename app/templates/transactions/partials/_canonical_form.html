@@ -1,0 +1,156 @@
+{# Canonical transaction edit form — HTMX target: #canonical-section #}
+<div class="card bg-base-100 shadow" id="canonical-section">
+  <div class="card-body p-4 lg:p-6">
+    <h2 class="card-title text-lg mb-4">Canonical Transaction</h2>
+
+    {% if save_success is defined and save_success %}
+    <div class="alert alert-success mb-4">
+      <span>Changes saved.</span>
+    </div>
+    {% endif %}
+
+    <form hx-patch="/transactions/{{ tx.id }}"
+          hx-target="#canonical-section"
+          hx-swap="outerHTML"
+          class="space-y-4">
+
+      {# Card #}
+      <fieldset class="form-control">
+        <label class="label"><span class="label-text">Card</span></label>
+        <select name="card_id" class="select select-bordered w-full" required>
+          {% for card in cards|default([]) %}
+          <option value="{{ card.id }}" {{ 'selected' if tx.card_id == card.id }}>
+            {{ card.name }} &bull; ****{{ card.card_masked_number[-4:] }}
+          </option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      {# Kind #}
+      <fieldset class="form-control">
+        <label class="label"><span class="label-text">Kind</span></label>
+        <select name="transaction_kind" class="select select-bordered w-full" required>
+          {% for k in ["purchase","topup","refund","other"] %}
+          <option value="{{ k }}" {{ 'selected' if tx.transaction_kind == k }}>{{ k|title }}</option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      {# Amount + Currency #}
+      <div class="grid grid-cols-2 gap-3">
+        <fieldset class="form-control">
+          <label class="label"><span class="label-text">Amount</span></label>
+          <input type="number" name="amount" step="0.01"
+                 value="{{ tx.amount }}"
+                 class="input input-bordered validator w-full" required />
+          <div class="validator-hint">Enter a valid amount</div>
+        </fieldset>
+        <fieldset class="form-control">
+          <label class="label"><span class="label-text">Currency</span></label>
+          <select name="currency" class="select select-bordered validator w-full" required>
+            {% for cur in ["AED","USD","EUR","GBP","SAR","BHD","QAR","KWD","OMR"] %}
+            <option value="{{ cur }}" {{ 'selected' if tx.currency == cur }}>{{ cur }}</option>
+            {% endfor %}
+          </select>
+          <div class="validator-hint">Required (3-letter code)</div>
+        </fieldset>
+      </div>
+
+      {# Transaction datetime #}
+      <fieldset class="form-control">
+        <label class="label"><span class="label-text">Transaction datetime</span></label>
+        <input type="datetime-local" name="transaction_datetime"
+               value="{{ tx.transaction_datetime.strftime('%Y-%m-%dT%H:%M') if tx.transaction_datetime else '' }}"
+               class="input input-bordered w-full" />
+      </fieldset>
+
+      {# Posting datetime #}
+      <fieldset class="form-control">
+        <label class="label"><span class="label-text">Posting datetime</span></label>
+        <input type="datetime-local" name="posting_datetime"
+               value="{{ tx.posting_datetime.strftime('%Y-%m-%dT%H:%M') if tx.posting_datetime else '' }}"
+               class="input input-bordered w-full" />
+      </fieldset>
+
+      {# Description #}
+      <fieldset class="form-control">
+        <label class="label"><span class="label-text">Description</span></label>
+        <textarea name="description" rows="3"
+                  class="textarea textarea-bordered validator w-full"
+                  required>{{ tx.description }}</textarea>
+        <div class="validator-hint">Description is required</div>
+      </fieldset>
+
+      {# Location #}
+      <fieldset class="form-control">
+        <label class="label"><span class="label-text">Location</span></label>
+        <input type="text" name="location"
+               value="{{ tx.location or '' }}"
+               class="input input-bordered w-full" />
+      </fieldset>
+
+      {# FX section (collapsible) #}
+      {% set has_fx = tx.original_amount or tx.original_currency %}
+      <details class="collapse collapse-arrow bg-base-200 rounded-box" {{ 'open' if has_fx }}>
+        <summary class="collapse-title font-medium text-sm">FX details (optional)</summary>
+        <div class="collapse-content space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <fieldset class="form-control">
+              <label class="label"><span class="label-text text-xs">Original amount</span></label>
+              <input type="number" name="original_amount" step="0.01"
+                     value="{{ tx.original_amount or '' }}"
+                     class="input input-bordered input-sm w-full" />
+            </fieldset>
+            <fieldset class="form-control">
+              <label class="label"><span class="label-text text-xs">Original currency</span></label>
+              <select name="original_currency" class="select select-bordered select-sm w-full">
+                <option value="">—</option>
+                {% for cur in ["AED","USD","EUR","GBP","SAR","BHD","QAR","KWD","OMR"] %}
+                <option value="{{ cur }}" {{ 'selected' if tx.original_currency == cur }}>{{ cur }}</option>
+                {% endfor %}
+              </select>
+            </fieldset>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <fieldset class="form-control">
+              <label class="label"><span class="label-text text-xs">FX rate</span></label>
+              <input type="number" name="fx_rate" step="0.000001"
+                     value="{{ tx.fx_rate or '' }}"
+                     class="input input-bordered input-sm w-full" />
+            </fieldset>
+            <fieldset class="form-control">
+              <label class="label"><span class="label-text text-xs">FX fee</span></label>
+              <input type="number" name="fx_fee" step="0.01"
+                     value="{{ tx.fx_fee or '' }}"
+                     class="input input-bordered input-sm w-full" />
+            </fieldset>
+          </div>
+        </div>
+      </details>
+
+      {# Read-only debug fields #}
+      {% if tx.merchant_norm or tx.fingerprint %}
+      <div class="pt-2 space-y-2 text-xs">
+        {% if tx.merchant_norm %}
+        <div class="flex items-center gap-2">
+          <span class="badge badge-ghost badge-sm">merchant_norm</span>
+          <code class="font-mono truncate">{{ tx.merchant_norm }}</code>
+        </div>
+        {% endif %}
+        {% if tx.fingerprint %}
+        <div class="flex items-center gap-2">
+          <span class="badge badge-ghost badge-sm">fingerprint</span>
+          <code class="font-mono truncate">{{ tx.fingerprint[:40] }}…</code>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {# Submit #}
+      <div class="pt-2">
+        <button type="submit" class="btn btn-primary w-full">Save changes</button>
+      </div>
+
+    </form>
+  </div>
+</div>

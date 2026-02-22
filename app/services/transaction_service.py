@@ -42,8 +42,15 @@ async def create_transaction(
 
 async def get_transaction(db: AsyncSession, transaction_id: int) -> Transaction | None:
     """Get transaction by ID"""
+    from sqlalchemy.orm import selectinload
+    from app.models.card import Card
     result = await db.execute(
-        select(Transaction).where(Transaction.id == transaction_id)
+        select(Transaction)
+        .where(Transaction.id == transaction_id)
+        .options(
+            selectinload(Transaction.card).selectinload(Card.account),
+            selectinload(Transaction.source_links).selectinload(TransactionSourceLink.source_event)
+        )
     )
     return result.scalar_one_or_none()
 
@@ -67,8 +74,14 @@ async def get_transactions(
     Returns:
         Tuple of (transactions list, total count)
     """
+    from sqlalchemy.orm import selectinload
+    from app.models.card import Card
+    
     # Base query
-    query = select(Transaction)
+    query = select(Transaction).options(
+        selectinload(Transaction.card),
+        selectinload(Transaction.source_links).selectinload(TransactionSourceLink.source_event)
+    )
     count_query = select(func.count(Transaction.id))
     
     # Apply filters

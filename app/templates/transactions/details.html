@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Transaction {{ transaction.id }} - Spendy{% endblock %}
+
+{% block extra_head %}
+<style>
+@media (max-width: 768px) {
+  .desktop-only { display: none !important; }
+}
+@media (min-width: 769px) {
+  .mobile-only { display: none !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mt-4 space-y-4">
+  
+  <!-- Back Link + Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div class="flex items-center gap-2">
+      <a href="/transactions" class="btn btn-ghost btn-sm btn-circle">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+      </a>
+      <h1 class="text-xl font-bold">Transaction Details</h1>
+    </div>
+    <div class="flex gap-2">
+      <button 
+        class="btn btn-primary btn-sm"
+        hx-get="/transactions/{{ transaction.id }}/partials/form"
+        hx-target="#transaction-form-container"
+        hx-swap="innerHTML"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+        </svg>
+        Edit
+      </button>
+      <button class="btn btn-error btn-outline btn-sm" disabled title="Coming soon">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+        Delete
+      </button>
+    </div>
+  </div>
+
+  <!-- Quick Summary Card -->
+  <div class="card bg-base-100 shadow">
+    <div class="card-body p-4">
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="text-2xl font-mono font-bold {% if transaction.amount < 0 %}text-error{% else %}text-success{% endif %}">
+          {{ "%.2f"|format(transaction.amount) }} {{ transaction.currency }}
+        </div>
+        <div class="flex-1"></div>
+        <div class="flex flex-wrap gap-2 text-sm">
+          <span class="badge badge-lg 
+            {% if transaction.transaction_kind == 'purchase' %}badge-warning
+            {% elif transaction.transaction_kind == 'topup' %}badge-info
+            {% elif transaction.transaction_kind == 'refund' %}badge-success
+            {% else %}badge-ghost{% endif %}">
+            {{ transaction.transaction_kind }}
+          </span>
+          {% if transaction.card %}
+          <span class="badge badge-lg badge-ghost">
+            {{ transaction.card.name }} • ****{{ transaction.card.card_masked_number[-4:] if transaction.card.card_masked_number else '0000' }}
+          </span>
+          {% endif %}
+          {% if transaction.card and transaction.card.account %}
+          <span class="badge badge-lg badge-outline">
+            {{ transaction.card.account.institution }} • {{ transaction.card.account.account_currency }}
+          </span>
+          {% endif %}
+        </div>
+      </div>
+      
+      <div class="divider my-2"></div>
+      
+      <h2 class="text-lg font-semibold">{{ transaction.description }}</h2>
+      {% if transaction.location %}
+      <p class="text-base-content/70">{{ transaction.location }}</p>
+      {% endif %}
+      
+      <div class="flex flex-wrap gap-4 mt-2 text-sm text-base-content/70">
+        {% set primary_date = transaction.posting_datetime or transaction.transaction_datetime or transaction.created_at %}
+        <div>
+          <span class="font-medium">Date:</span> 
+          {{ primary_date.strftime('%d %b %Y %H:%M') if primary_date else '—' }}
+          <span class="badge badge-xs badge-ghost ml-1">
+            {% if transaction.posting_datetime %}Posting{% elif transaction.transaction_datetime %}Transaction{% else %}Created{% endif %}
+          </span>
+        </div>
+        {% if transaction.transaction_datetime and transaction.posting_datetime %}
+        <div>
+          <span class="font-medium">Posted:</span> 
+          {{ transaction.posting_datetime.strftime('%d %b %Y %H:%M') if transaction.posting_datetime else '—' }}
+        </div>
+        {% endif %}
+        <div>
+          <span class="font-medium">Sources:</span> {{ source_count }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Desktop Layout: Form + Sources -->
+  <div class="flex flex-col lg:flex-row gap-4 desktop-only">
+    
+    <!-- Transaction Form -->
+    <div class="flex-1" id="transaction-form-container">
+      {% include "transactions/_transaction_form.html" %}
+    </div>
+    
+    <!-- Sources List -->
+    <div class="lg:w-96" id="sources-container">
+      {% include "transactions/_sources_list.html" %}
+    </div>
+  </div>
+
+  <!-- Mobile Tabs -->
+  <div class="mobile-only">
+    <div class="tabs tabs-boxed w-full">
+      <a 
+        class="tab flex-1 tab-active" 
+        onclick="switchTab('details')"
+      >
+        Details
+      </a>
+      <a 
+        class="tab flex-1" 
+        hx-get="/transactions/{{ transaction.id }}/sources"
+        hx-target="#mobile-tab-content"
+        hx-swap="innerHTML"
+        onclick="switchTab('sources')"
+      >
+        Sources ({{ source_count }})
+      </a>
+    </div>
+
+    <div id="mobile-tab-content" class="mt-4">
+      <!-- Default: show form -->
+      <div id="details-content">
+        {% include "transactions/_transaction_form.html" %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function switchTab(tabName) {
+  // Update tab active state
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.classList.remove('tab-active');
+  });
+  event.target.classList.add('tab-active');
+  
+  // Show/hide content
+  if (tabName === 'details') {
+    document.getElementById('details-content').style.display = 'block';
+    document.getElementById('sources-content').style.display = 'none';
+  } else {
+    document.getElementById('details-content').style.display = 'none';
+    document.getElementById('sources-content').style.display = 'block';
+  }
+}
+</script>
+{% endblock %}

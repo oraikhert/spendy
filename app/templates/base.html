@@ -17,6 +17,21 @@
 
   <!-- HTMX -->
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script>
+    // HTMX configuration
+    document.addEventListener('htmx:configRequest', (event) => {
+      // Add CSRF token if needed
+    });
+    
+    // Show loading indicator on requests
+    document.body.addEventListener('htmx:beforeRequest', function(event) {
+      document.body.classList.add('htmx-request');
+    });
+    
+    document.body.addEventListener('htmx:afterRequest', function(event) {
+      document.body.classList.remove('htmx-request');
+    });
+  </script>
 
   <!-- Project CSS -->
   <link rel="stylesheet" href="/static/css/custom.css" />

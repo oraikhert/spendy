@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions - Spendy{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Custom responsive overrides */
+@media (max-width: 768px) {
+  .desktop-only { display: none !important; }
+}
+@media (min-width: 769px) {
+  .mobile-only { display: none !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mt-4 space-y-4">
+  
+  <!-- Page Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <h1 class="text-2xl font-bold">Transactions</h1>
+    <div class="flex gap-2">
+      <button class="btn btn-primary btn-sm" disabled title="Coming soon">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Add
+      </button>
+      <button class="btn btn-outline btn-sm" disabled title="Coming soon">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        Import
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile Period Quick Filters -->
+  <div class="card bg-base-100 shadow mobile-only">
+    <div class="card-body p-4">
+      <div class="flex items-center justify-between">
+        <span class="text-sm font-medium">Period:</span>
+        <select class="select select-bordered select-sm w-32" 
+                hx-get="/transactions" 
+                hx-include="[data-filter]"
+                hx-push-url="true">
+          <option value="">Custom</option>
+          <option value="today" {% if filters.date_from %}selected{% endif %}>Today</option>
+          <option value="week">This Week</option>
+          <option value="month" selected>This Month</option>
+        </select>
+      </div>
+      <div class="join mt-2 w-full">
+        <button class="btn btn-sm join-item flex-1">Today</button>
+        <button class="btn btn-sm join-item flex-1">Week</button>
+        <button class="btn btn-sm join-item flex-1 btn-primary">Month</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Search -->
+  <div class="mobile-only">
+    <div class="join w-full">
+      <input 
+        type="search" 
+        name="q" 
+        placeholder="Search: carrefour / 120 / taxi..." 
+        class="input input-bordered join-item flex-1"
+        value="{{ filters.q or '' }}"
+        hx-get="/transactions"
+        hx-include="[data-filter]"
+        hx-trigger="keyup changed delay:300ms"
+        hx-push-url="true"
+      />
+      <button class="btn btn-ghost btn-square join-item lg:hidden" onclick="document.getElementById('mobile-filters').showModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Summary Bar -->
+  <div class="card bg-base-100 shadow">
+    <div class="card-body p-4">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="text-sm">
+          <span class="text-base-content/70">{{ total }} transactions</span>
+        </div>
+        <div class="flex gap-4 text-sm">
+          <span class="text-error">Out: {{ "%.2f"|format(total_out|abs) }} {{ transactions[0].currency if transactions else 'AED' }}</span>
+          <span class="text-success">In: +{{ "%.2f"|format(total_in) }} {{ transactions[0].currency if transactions else 'AED' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content: Filters + Table -->
+  <div class="flex flex-col lg:flex-row gap-4">
+    
+    <!-- Desktop Filters Sidebar -->
+    <div class="w-full lg:w-72 desktop-only">
+      <div class="card bg-base-100 shadow">
+        <div class="card-body p-4">
+          <h2 class="card-title text-lg">Filters</h2>
+          
+          <form 
+            id="filter-form"
+            hx-get="/transactions" 
+            hx-target="#transactions-container"
+            hx-push-url="true"
+            hx-indicator="#loading"
+          >
+            <!-- Account -->
+            <fieldset class="form-control">
+              <label class="label pb-1">
+                <span class="label-text">Account</span>
+              </label>
+              <select name="account_id" class="select select-bordered w-full">
+                <option value="">All accounts</option>
+                {% for account in accounts %}
+                <option value="{{ account.id }}" {% if filters.account_id == account.id %}selected{% endif %}>
+                  {{ account.institution }} • {{ account.name }} {{ account.account_currency }}
+                </option>
+                {% endfor %}
+              </select>
+            </fieldset>
+
+            <!-- Card -->
+            <fieldset class="form-control mt-3">
+              <label class="label pb-1">
+                <span class="label-text">Card</span>
+              </label>
+              <select name="card_id" class="select select-bordered w-full" {% if not filters.account_id %}disabled{% endif %}>
+                <option value="">All cards</option>
+                {% for card in cards %}
+                <option value="{{ card.id }}" {% if filters.card_id == card.id %}selected{% endif %}>
+                  {{ card.name }} • ****{{ card.card_masked_number[-4:] if card.card_masked_number else '0000' }}
+                </option>
+                {% endfor %}
+              </select>
+            </fieldset>
+
+            <!-- Period -->
+            <fieldset class="form-control mt-3">
+              <label class="label pb-1">
+                <span class="label-text">Period</span>
+              </label>
+              <div class="join w-full">
+                <input 
+                  type="date" 
+                  name="date_from" 
+                  class="input input-bordered input-sm join-item flex-1"
+                  value="{{ filters.date_from or '' }}"
+                />
+                <input 
+                  type="date" 
+                  name="date_to" 
+                  class="input input-bordered input-sm join-item flex-1"
+                  value="{{ filters.date_to or '' }}"
+                />
+              </div>
+            </fieldset>
+
+            <!-- Search -->
+            <fieldset class="form-control mt-3">
+              <label class="label pb-1">
+                <span class="label-text">Search</span>
+              </label>
+              <input 
+                type="search" 
+                name="q" 
+                class="input input-bordered input-sm w-full"
+                placeholder="Description..."
+                value="{{ filters.q or '' }}"
+              />
+            </fieldset>
+
+            <!-- Kind -->
+            <fieldset class="form-control mt-3">
+              <label class="label pb-1">
+                <span class="label-text">Kind</span>
+              </label>
+              <select name="kind" class="select select-bordered select-sm w-full">
+                <option value="">All kinds</option>
+                <option value="purchase" {% if filters.kind == 'purchase' %}selected{% endif %}>Purchase</option>
+                <option value="topup" {% if filters.kind == 'topup' %}selected{% endif %}>Top-up</option>
+                <option value="refund" {% if filters.kind == 'refund' %}selected{% endif %}>Refund</option>
+                <option value="other" {% if filters.kind == 'other' %}selected{% endif %}>Other</option>
+              </select>
+            </fieldset>
+
+            <!-- Direction -->
+            <fieldset class="form-control mt-3">
+              <label class="label pb-1">
+                <span class="label-text">Direction</span>
+              </label>
+              <div class="join w-full">
+                <input type="radio" name="direction" class="radio join-item" value="" {% if not filters.direction %}checked{% endif %} />
+                <label class="btn btn-sm join-item flex-1">All</label>
+                
+                <input type="radio" name="direction" class="radio join-item" value="out" {% if filters.direction == 'out' %}checked{% endif %} />
+                <label class="btn btn-sm join-item flex-1">Out</label>
+                
+                <input type="radio" name="direction" class="radio join-item" value="in" {% if filters.direction == 'in' %}checked{% endif %} />
+                <label class="btn btn-sm join-item flex-1">In</label>
+              </div>
+            </fieldset>
+
+            <!-- Amount Range -->
+            <fieldset class="form-control mt-3">
+              <label class="label pb-1">
+                <span class="label-text">Amount Range</span>
+              </label>
+              <div class="join w-full">
+                <input 
+                  type="number" 
+                  name="min_amount" 
+                  class="input input-bordered input-sm join-item flex-1" 
+                  placeholder="Min"
+                  step="0.01"
+                  value="{{ filters.min_amount or '' }}"
+                />
+                <input 
+                  type="number" 
+                  name="max_amount" 
+                  class="input input-bordered input-sm join-item flex-1" 
+                  placeholder="Max"
+                  step="0.01"
+                  value="{{ filters.max_amount or '' }}"
+                />
+              </div>
+            </fieldset>
+
+            <!-- Actions -->
+            <div class="flex gap-2 mt-4">
+              <button type="submit" class="btn btn-primary btn-sm flex-1">Apply</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="window.location.href='/transactions'">Reset</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Container -->
+    <div class="flex-1">
+      <!-- Loading Indicator -->
+      <div id="loading" class="htmx-indicator flex justify-center py-8">
+        <span class="loading loading-spinner loading-lg"></span>
+      </div>
+
+      <!-- Transactions Table (Desktop) -->
+      <div id="transactions-container" class="desktop-only">
+        {% if transactions %}
+        <div class="card bg-base-100 shadow overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Card</th>
+                <th>Kind</th>
+                <th class="text-right">Amount</th>
+                <th>Sources</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for tx in transactions %}
+              {% set primary_date = tx.posting_datetime or tx.transaction_datetime or tx.created_at %}
+              <tr class="hover cursor-pointer" onclick="window.location.href='/transactions/{{ tx.id }}'">
+                <td>
+                  <div class="flex flex-col">
+                    <span class="font-medium">{{ primary_date.strftime('%Y-%m-%d') if primary_date else '—' }}</span>
+                    <span class="text-xs text-base-content/60">
+                      {% if tx.posting_datetime %}P{% elif tx.transaction_datetime %}T{% else %}C{% endif %}
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex flex-col">
+                    <span class="font-medium truncate max-w-xs">{{ tx.description }}</span>
+                    {% if tx.location %}
+                    <span class="text-xs text-base-content/60 truncate max-w-xs">{{ tx.location }}</span>
+                    {% endif %}
+                  </div>
+                </td>
+                <td>
+                  {% if tx.card %}
+                  <span class="badge badge-ghost">****{{ tx.card.card_masked_number[-4:] if tx.card.card_masked_number else '0000' }}</span>
+                  {% else %}
+                  —
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="badge badge-sm 
+                    {% if tx.transaction_kind == 'purchase' %}badge-warning
+                    {% elif tx.transaction_kind == 'topup' %}badge-info
+                    {% elif tx.transaction_kind == 'refund' %}badge-success
+                    {% else %}badge-ghost{% endif %}">
+                    {{ tx.transaction_kind }}
+                  </span>
+                </td>
+                <td class="text-right">
+                  <span class="font-mono font-medium {% if tx.amount < 0 %}text-error{% else %}text-success{% endif %}">
+                    {{ "%.2f"|format(tx.amount) }}
+                  </span>
+                  <span class="text-xs">{{ tx.currency }}</span>
+                  {% if tx.original_amount %}
+                  <div class="text-xs text-base-content/60">
+                    {{ "%.2f"|format(tx.original_amount) }} {{ tx.original_currency }}
+                  </div>
+                  {% endif %}
+                </td>
+                <td>
+                  {% set source_count = tx.source_count|default(0) %}
+                  <span class="badge {% if source_count > 1 %}badge-primary{% else %}badge-ghost{% endif %}">
+                    {{ source_count }} source{{ 's' if source_count != 1 else '' }}
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Desktop Pagination -->
+        {% include "transactions/_pagination.html" %}
+
+        {% else %}
+        <div class="card bg-base-100 shadow">
+          <div class="card-body items-center text-center py-12">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <h3 class="font-semibold mt-4">No transactions found</h3>
+            <p class="text-base-content/60">Try adjusting your filters or add some transactions.</p>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Mobile Cards -->
+      <div id="transactions-mobile" class="mobile-only space-y-2">
+        {% if transactions %}
+          {% for tx in transactions %}
+          {% set primary_date = tx.posting_datetime or tx.transaction_datetime or tx.created_at %}
+          <a href="/transactions/{{ tx.id }}" class="card bg-base-100 shadow hover:shadow-md transition-shadow">
+            <div class="card-body p-4">
+              <div class="flex justify-between items-start">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium">{{ primary_date.strftime('%d %b') if primary_date else '—' }}</span>
+                    <span class="badge badge-sm badge-ghost">****{{ tx.card.card_masked_number[-4:] if tx.card and tx.card.card_masked_number else '0000' }}</span>
+                  </div>
+                  <h3 class="font-medium truncate mt-1">{{ tx.description }}</h3>
+                  <div class="flex items-center gap-2 mt-1">
+                    <span class="text-xs text-base-content/60">{{ tx.transaction_kind }}</span>
+                    <span class="text-xs text-base-content/60">•</span>
+                    <span class="text-xs text-base-content/60">
+                      {{ tx.source_count|default(0) }} source{{ 's' if tx.source_count|default(0) != 1 else '' }}
+                    </span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="font-mono font-medium {% if tx.amount < 0 %}text-error{% else %}text-success{% endif %}">
+                    {{ "%.2f"|format(tx.amount) }}
+                  </span>
+                  <div class="text-xs text-base-content/60">{{ tx.currency }}</div>
+                </div>
+              </div>
+            </div>
+          </a>
+          {% endfor %}
+        {% else %}
+        <div class="card bg-base-100 shadow">
+          <div class="card-body items-center text-center py-12">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <h3 class="font-semibold mt-4">No transactions found</h3>
+            <p class="text-base-content/60">Try adjusting your filters.</p>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Mobile Filters Drawer -->
+<dialog id="mobile-filters" class="modal">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">Filters</h3>
+    <form 
+      hx-get="/transactions" 
+      hx-target="#transactions-mobile"
+      hx-push-url="true"
+    >
+      <div class="py-4 space-y-4">
+        <!-- Account -->
+        <fieldset class="form-control">
+          <label class="label">
+            <span class="label-text">Account</span>
+          </label>
+          <select name="account_id" class="select select-bordered w-full">
+            <option value="">All accounts</option>
+            {% for account in accounts %}
+            <option value="{{ account.id }}">{{ account.institution }} • {{ account.name }}</option>
+            {% endfor %}
+          </select>
+        </fieldset>
+
+        <!-- Card -->
+        <fieldset class="form-control">
+          <label class="label">
+            <span class="label-text">Card</span>
+          </label>
+          <select name="card_id" class="select select-bordered w-full">
+            <option value="">All cards</option>
+          </select>
+        </fieldset>
+
+        <!-- Kind -->
+        <fieldset class="form-control">
+          <label class="label">
+            <span class="label-text">Kind</span>
+          </label>
+          <select name="kind" class="select select-bordered w-full">
+            <option value="">All</option>
+            <option value="purchase">Purchase</option>
+            <option value="topup">Top-up</option>
+            <option value="refund">Refund</option>
+            <option value="other">Other</option>
+          </select>
+        </fieldset>
+
+        <!-- Direction -->
+        <fieldset class="form-control">
+          <label class="label">
+            <span class="label-text">Direction</span>
+          </label>
+          <div class="join w-full">
+            <input type="radio" name="direction" class="radio join-item" value="" checked />
+            <label class="btn btn-sm join-item flex-1">All</label>
+            <input type="radio" name="direction" class="radio join-item" value="out" />
+            <label class="btn btn-sm join-item flex-1">Out</label>
+            <input type="radio" name="direction" class="radio join-item" value="in" />
+            <label class="btn btn-sm join-item flex-1">In</label>
+          </div>
+        </fieldset>
+
+        <!-- Amount -->
+        <fieldset class="form-control">
+          <label class="label">
+            <span class="label-text">Amount</span>
+          </label>
+          <div class="join w-full">
+            <input type="number" name="min_amount" class="input input-bordered join-item flex-1" placeholder="Min" step="0.01" />
+            <input type="number" name="max_amount" class="input input-bordered join-item flex-1" placeholder="Max" step="0.01" />
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="modal-action">
+        <button type="submit" class="btn btn-primary">Apply</button>
+        <button type="button" class="btn" onclick="document.getElementById('mobile-filters').close()">Close</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button>close</button>
+  </form>
+</dialog>
+{% endblock %}

@@ -1,0 +1,224 @@
+{# Transaction edit form partial #}
+<form 
+  hx-patch="/transactions/{{ transaction.id }}"
+  hx-target="#transaction-form-container"
+  hx-swap="outerHTML"
+  hx-indicator="#form-saving"
+>
+  <div class="card bg-base-100 shadow">
+    <div class="card-body p-4">
+      <h3 class="card-title text-base">Canonical Transaction</h3>
+
+      <!-- Success/Error Messages -->
+      {% if success %}
+      <div class="alert alert-success text-sm py-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+        <span>Transaction updated successfully</span>
+      </div>
+      {% endif %}
+
+      <!-- Loading indicator -->
+      <div id="form-saving" class="htmx-indicator">
+        <span class="loading loading-spinner loading-sm"></span> Saving...
+      </div>
+
+      <!-- Card -->
+      <fieldset class="form-control">
+        <label class="label">
+          <span class="label-text">Card <span class="text-error">*</span></span>
+        </label>
+        <select name="card_id" class="select select-bordered w-full" required>
+          {% for card in cards %}
+          <option value="{{ card.id }}" {% if transaction.card_id == card.id %}selected{% endif %}>
+            {{ card.name }} • ****{{ card.card_masked_number[-4:] if card.card_masked_number else '0000' }}
+            ({{ card.card_type }})
+          </option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      <!-- Kind + Currency Row -->
+      <div class="flex gap-2">
+        <fieldset class="form-control flex-1">
+          <label class="label">
+            <span class="label-text">Kind <span class="text-error">*</span></span>
+          </label>
+          <select name="transaction_kind" class="select select-bordered w-full" required>
+            <option value="purchase" {% if transaction.transaction_kind == 'purchase' %}selected{% endif %}>Purchase</option>
+            <option value="topup" {% if transaction.transaction_kind == 'topup' %}selected{% endif %}>Top-up</option>
+            <option value="refund" {% if transaction.transaction_kind == 'refund' %}selected{% endif %}>Refund</option>
+            <option value="other" {% if transaction.transaction_kind == 'other' %}selected{% endif %}>Other</option>
+          </select>
+        </fieldset>
+
+        <fieldset class="form-control flex-1">
+          <label class="label">
+            <span class="label-text">Currency <span class="text-error">*</span></span>
+          </label>
+          <select name="currency" class="select select-bordered w-full" required>
+            <option value="AED" {% if transaction.currency == 'AED' %}selected{% endif %}>AED</option>
+            <option value="USD" {% if transaction.currency == 'USD' %}selected{% endif %}>USD</option>
+            <option value="EUR" {% if transaction.currency == 'EUR' %}selected{% endif %}>EUR</option>
+            <option value="GBP" {% if transaction.currency == 'GBP' %}selected{% endif %}>GBP</option>
+          </select>
+        </fieldset>
+      </div>
+
+      <!-- Amount -->
+      <fieldset class="form-control">
+        <label class="label">
+          <span class="label-text">Amount <span class="text-error">*</span></span>
+        </label>
+        <input 
+          type="number" 
+          name="amount" 
+          class="input input-bordered w-full validator" 
+          required 
+          step="0.01"
+          value="{{ transaction.amount }}"
+        />
+        <div class="validator-hint">Enter a valid amount (e.g., -120.50)</div>
+      </fieldset>
+
+      <!-- Datetime Row -->
+      <div class="flex gap-2">
+        <fieldset class="form-control flex-1">
+          <label class="label">
+            <span class="label-text">Transaction datetime</span>
+          </label>
+          <input 
+            type="datetime-local" 
+            name="transaction_datetime" 
+            class="input input-bordered w-full"
+            value="{{ transaction.transaction_datetime.strftime('%Y-%m-%dT%H:%M') if transaction.transaction_datetime else '' }}"
+          />
+        </fieldset>
+
+        <fieldset class="form-control flex-1">
+          <label class="label">
+            <span class="label-text">Posting datetime</span>
+          </label>
+          <input 
+            type="datetime-local" 
+            name="posting_datetime" 
+            class="input input-bordered w-full"
+            value="{{ transaction.posting_datetime.strftime('%Y-%m-%dT%H:%M') if transaction.posting_datetime else '' }}"
+          />
+        </fieldset>
+      </div>
+
+      <!-- Description -->
+      <fieldset class="form-control">
+        <label class="label">
+          <span class="label-text">Description <span class="text-error">*</span></span>
+        </label>
+        <textarea 
+          name="description" 
+          class="textarea textarea-bordered w-full validator" 
+          required
+          rows="2"
+        >{{ transaction.description }}</textarea>
+      </fieldset>
+
+      <!-- Location -->
+      <fieldset class="form-control">
+        <label class="label">
+          <span class="label-text">Location</span>
+        </label>
+        <input 
+          type="text" 
+          name="location" 
+          class="input input-bordered w-full"
+          value="{{ transaction.location or '' }}"
+        />
+      </fieldset>
+
+      <!-- FX Section (collapsible) -->
+      <div class="collapse collapse-arrow border border-base-300 rounded-box">
+        <input type="checkbox" id="fx-toggle" {% if transaction.original_amount %}checked{% endif %} />
+        <div class="collapse-title text-sm font-medium">
+          FX (optional)
+        </div>
+        <div class="collapse-content">
+          <div class="grid grid-cols-2 gap-2">
+            <fieldset class="form-control">
+              <label class="label py-1">
+                <span class="label-text-alt">Original amount</span>
+              </label>
+              <input 
+                type="number" 
+                name="original_amount" 
+                class="input input-bordered input-sm w-full" 
+                step="0.01"
+                value="{{ transaction.original_amount or '' }}"
+              />
+            </fieldset>
+
+            <fieldset class="form-control">
+              <label class="label py-1">
+                <span class="label-text-alt">Original currency</span>
+              </label>
+              <select name="original_currency" class="select select-bordered select-sm w-full">
+                <option value="">Select</option>
+                <option value="USD" {% if transaction.original_currency == 'USD' %}selected{% endif %}>USD</option>
+                <option value="EUR" {% if transaction.original_currency == 'EUR' %}selected{% endif %}>EUR</option>
+                <option value="GBP" {% if transaction.original_currency == 'GBP' %}selected{% endif %}>GBP</option>
+              </select>
+            </fieldset>
+
+            <fieldset class="form-control">
+              <label class="label py-1">
+                <span class="label-text-alt">FX rate</span>
+              </label>
+              <input 
+                type="number" 
+                name="fx_rate" 
+                class="input input-bordered input-sm w-full" 
+                step="0.000001"
+                value="{{ transaction.fx_rate or '' }}"
+              />
+            </fieldset>
+
+            <fieldset class="form-control">
+              <label class="label py-1">
+                <span class="label-text-alt">FX fee</span>
+              </label>
+              <input 
+                type="number" 
+                name="fx_fee" 
+                class="input input-bordered input-sm w-full" 
+                step="0.01"
+                value="{{ transaction.fx_fee or '' }}"
+              />
+            </fieldset>
+          </div>
+        </div>
+      </div>
+
+      <!-- Read-only debug fields -->
+      <div class="flex flex-wrap gap-2 mt-2">
+        {% if transaction.merchant_norm %}
+        <div class="badge badge-outline gap-1">
+          <span class="text-xs">merchant:</span>
+          <code class="text-xs">{{ transaction.merchant_norm[:20] }}...</code>
+        </div>
+        {% endif %}
+        {% if transaction.fingerprint %}
+        <div class="badge badge-outline gap-1">
+          <span class="text-xs">fingerprint:</span>
+          <code class="text-xs">{{ transaction.fingerprint[:12] }}...</code>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-end gap-2 mt-4">
+        <button type="submit" class="btn btn-primary btn-sm">
+          Save changes
+        </button>
+      </div>
+    </div>
+  </div>
+</form>

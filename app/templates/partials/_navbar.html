@@ -4,6 +4,9 @@
 <div class="navbar bg-base-100 shadow">
   <div class="flex-1">
     <a href="/dashboard" class="btn btn-ghost text-xl">💰 Spendy</a>
+    {% if user %}
+    <a href="/transactions" class="btn btn-ghost btn-sm">Transactions</a>
+    {% endif %}
   </div>
 
   <div class="flex-none gap-2">
@@ -26,6 +29,7 @@
         >
           <li class="menu-title"><span>{{ user.username }}</span></li>
           <li><a href="/dashboard">Home</a></li>
+          <li><a href="/transactions">Transactions</a></li>
           <li><a href="/auth/logout">Log out</a></li>
         </ul>
       </div>

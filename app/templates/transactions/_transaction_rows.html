@@ -1,0 +1,87 @@
+{# Partial for transaction table rows (HTMX) #}
+{% if transactions %}
+<div class="card bg-base-100 shadow overflow-x-auto">
+  <table class="table table-zebra">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Description</th>
+        <th>Card</th>
+        <th>Kind</th>
+        <th class="text-right">Amount</th>
+        <th>Sources</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tx in transactions %}
+      {% set primary_date = tx.posting_datetime or tx.transaction_datetime or tx.created_at %}
+      <tr class="hover cursor-pointer" onclick="window.location.href='/transactions/{{ tx.id }}'">
+        <td>
+          <div class="flex flex-col">
+            <span class="font-medium">{{ primary_date.strftime('%Y-%m-%d') if primary_date else '—' }}</span>
+            <span class="text-xs text-base-content/60">
+              {% if tx.posting_datetime %}P{% elif tx.transaction_datetime %}T{% else %}C{% endif %}
+            </span>
+          </div>
+        </td>
+        <td>
+          <div class="flex flex-col">
+            <span class="font-medium truncate max-w-xs">{{ tx.description }}</span>
+            {% if tx.location %}
+            <span class="text-xs text-base-content/60 truncate max-w-xs">{{ tx.location }}</span>
+            {% endif %}
+          </div>
+        </td>
+        <td>
+          {% if tx.card %}
+          <span class="badge badge-ghost">****{{ tx.card.card_masked_number[-4:] if tx.card.card_masked_number else '0000' }}</span>
+          {% else %}
+          —
+          {% endif %}
+        </td>
+        <td>
+          <span class="badge badge-sm 
+            {% if tx.transaction_kind == 'purchase' %}badge-warning
+            {% elif tx.transaction_kind == 'topup' %}badge-info
+            {% elif tx.transaction_kind == 'refund' %}badge-success
+            {% else %}badge-ghost{% endif %}">
+            {{ tx.transaction_kind }}
+          </span>
+        </td>
+        <td class="text-right">
+          <span class="font-mono font-medium {% if tx.amount < 0 %}text-error{% else %}text-success{% endif %}">
+            {{ "%.2f"|format(tx.amount) }}
+          </span>
+          <span class="text-xs">{{ tx.currency }}</span>
+          {% if tx.original_amount %}
+          <div class="text-xs text-base-content/60">
+            {{ "%.2f"|format(tx.original_amount) }} {{ tx.original_currency }}
+          </div>
+          {% endif %}
+        </td>
+        <td>
+          {% set source_count = tx.source_count|default(0) %}
+          <span class="badge {% if source_count > 1 %}badge-primary{% else %}badge-ghost{% endif %}">
+            {{ source_count }} source{{ 's' if source_count != 1 else '' }}
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# Include pagination #}
+{% include "transactions/_pagination.html" %}
+
+{% else %}
+<div class="card bg-base-100 shadow">
+  <div class="card-body items-center text-center py-12">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+    </svg>
+    <h3 class="font-semibold mt-4">No transactions found</h3>
+    <p class="text-base-content/60">Try adjusting your filters or add some transactions.</p>
+  </div>
+</div>
+{% endif %}

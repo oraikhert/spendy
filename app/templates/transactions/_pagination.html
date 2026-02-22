@@ -1,0 +1,70 @@
+{# Pagination partial for transactions list #}
+{% if pagination.total_pages > 1 %}
+<div class="flex flex-wrap items-center justify-between gap-4 mt-4">
+  <div class="text-sm text-base-content/70">
+    Showing {{ pagination.offset + 1 }} - {{ [pagination.offset + pagination.limit, pagination.total]|min }} of {{ pagination.total }}
+  </div>
+  
+  <div class="join">
+    {# Previous button #}
+    {% if pagination.current_page > 1 %}
+    <a 
+      href="/transactions?{{ query_string }}&offset={{ (pagination.current_page - 2) * pagination.limit }}"
+      class="join-item btn btn-sm"
+      hx-get="/transactions/partials/transactions?{{ query_string }}&offset={{ (pagination.current_page - 2) * pagination.limit }}"
+      hx-target="#transactions-container"
+      hx-swap="innerHTML"
+    >
+      ‹ Prev
+    </a>
+    {% else %}
+    <button class="join-item btn btn-sm" disabled>‹ Prev</button>
+    {% endif %}
+
+    {# Page numbers #}
+    {% for page in range(1, pagination.total_pages + 1) %}
+      {% if page == 1 or page == pagination.total_pages or (page >= pagination.current_page - 1 and page <= pagination.current_page + 1) %}
+        <a 
+          class="join-item btn btn-sm {% if page == pagination.current_page %}btn-primary{% endif %}"
+          href="/transactions?{{ query_string }}&offset={{ (page - 1) * pagination.limit }}"
+          hx-get="/transactions/partials/transactions?{{ query_string }}&offset={{ (page - 1) * pagination.limit }}"
+          hx-target="#transactions-container"
+          hx-swap="innerHTML"
+        >
+          {{ page }}
+        </a>
+      {% elif page == pagination.current_page - 2 or page == pagination.current_page + 2 %}
+        <span class="join-item btn btn-sm btn-ghost">...</span>
+      {% endif %}
+    {% endfor %}
+
+    {# Next button #}
+    {% if pagination.current_page < pagination.total_pages %}
+    <a 
+      href="/transactions?{{ query_string }}&offset={{ pagination.current_page * pagination.limit }}"
+      class="join-item btn btn-sm"
+      hx-get="/transactions/partials/transactions?{{ query_string }}&offset={{ pagination.current_page * pagination.limit }}"
+      hx-target="#transactions-container"
+      hx-swap="innerHTML"
+    >
+      Next ›
+    </a>
+    {% else %}
+    <button class="join-item btn btn-sm" disabled>Next ›</button>
+    {% endif %}
+  </div>
+
+  {# Per page selector #}
+  <div class="flex items-center gap-2">
+    <span class="text-sm">Per page:</span>
+    <select 
+      class="select select-bordered select-sm"
+      onchange="window.location.href = '/transactions?{{ query_string }}&limit=' + this.value"
+    >
+      <option value="25" {% if pagination.limit == 25 %}selected{% endif %}>25</option>
+      <option value="50" {% if pagination.limit == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if pagination.limit == 100 %}selected{% endif %}>100</option>
+    </select>
+  </div>
+</div>
+{% endif %}

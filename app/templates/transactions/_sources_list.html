@@ -1,0 +1,234 @@
+{# Sources list partial for transaction details #}
+<div class="card bg-base-100 shadow">
+  <div class="card-body p-4">
+    <h3 class="card-title text-base">
+      Sources 
+      <span class="badge badge-primary badge-sm">{{ source_count }}</span>
+    </h3>
+
+    {% if sources %}
+    <div class="space-y-3 mt-2">
+      {% for link in sources %}
+      <div class="border border-base-300 rounded-lg p-3 {% if link.is_primary %}border-primary bg-primary/5{% endif %}">
+        <!-- Source Header -->
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="badge badge-sm 
+              {% if link.source_event.source_type == 'pdf_statement' %}badge-info
+              {% elif link.source_event.source_type == 'sms_text' %}badge-warning
+              {% elif link.source_event.source_type == 'telegram_text' %}badge-success
+              {% elif link.source_event.source_type == 'manual' %}badge-ghost
+              {% else %}badge-outline{% endif %}">
+              {{ link.source_event.source_type }}
+            </span>
+            
+            <span class="badge badge-sm 
+              {% if link.source_event.parse_status == 'parsed' %}badge-success
+              {% elif link.source_event.parse_status == 'failed' %}badge-error
+              {% else %}badge-warning{% endif %}">
+              {{ link.source_event.parse_status }}
+            </span>
+            
+            {% if link.is_primary %}
+            <span class="badge badge-sm badge-primary">PRIMARY</span>
+            {% endif %}
+          </div>
+          
+          {% if link.match_confidence %}
+          <span class="text-xs text-base-content/60">
+            {{ "%.0f"|format(link.match_confidence * 100) }}% conf.
+          </span>
+          {% endif %}
+        </div>
+
+        <!-- Source Preview -->
+        <div class="mt-2 text-sm">
+          {% if link.source_event.raw_text %}
+          <p class="truncate text-base-content/80">{{ link.source_event.raw_text[:100] }}...</p>
+          {% elif link.source_event.file_path %}
+          <p class="text-base-content/60">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            {{ link.source_event.file_path.split('/')[-1] }}
+          </p>
+          {% endif %}
+        </div>
+
+        <!-- Parsed Data Summary -->
+        <div class="mt-2 flex flex-wrap gap-1 text-xs">
+          {% if link.source_event.parsed_amount %}
+          <span class="badge badge-xs badge-ghost">
+            {{ "%.2f"|format(link.source_event.parsed_amount) }} {{ link.source_event.parsed_currency }}
+          </span>
+          {% endif %}
+          {% if link.source_event.parsed_description %}
+          <span class="badge badge-xs badge-ghost">
+            {{ link.source_event.parsed_description[:30] }}...
+          </span>
+          {% endif %}
+        </div>
+
+        <!-- Timestamps -->
+        <div class="mt-2 text-xs text-base-content/50">
+          Created: {{ link.source_event.created_at.strftime('%d %b %Y %H:%M') }}
+        </div>
+
+        <!-- Actions -->
+        <div class="flex flex-wrap gap-1 mt-2">
+          {% if not link.is_primary %}
+          <form 
+            hx-patch="/transactions/{{ transaction.id }}/sources/{{ link.source_event.id }}"
+            hx-vals='{"is_primary": "true"}'
+            hx-target="#sources-container"
+            hx-swap="innerHTML"
+          >
+            <button type="submit" class="btn btn-xs btn-primary btn-outline">
+              Set primary
+            </button>
+          </form>
+          {% endif %}
+          
+          <button 
+            class="btn btn-xs btn-ghost"
+            onclick="document.getElementById('source-modal-{{ link.source_event.id }}').showModal()"
+          >
+            View
+          </button>
+          
+          <button class="btn btn-xs btn-ghost" disabled title="Coming soon">
+            Reprocess
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="text-center py-8 text-base-content/60">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      </svg>
+      <p>No sources linked</p>
+      <p class="text-xs">Link source events to this transaction</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# Source Detail Modals #}
+{% if sources %}
+{% for link in sources %}
+<dialog id="source-modal-{{ link.source_event.id }}" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">
+      Source #{{ link.source_event.id }}
+      <span class="badge badge-sm ml-2">{{ link.source_event.source_type }}</span>
+    </h3>
+    
+    <div class="py-4 space-y-4">
+      <!-- Status -->
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-medium">Parse status:</span>
+        <span class="badge 
+          {% if link.source_event.parse_status == 'parsed' %}badge-success
+          {% elif link.source_event.parse_status == 'failed' %}badge-error
+          {% else %}badge-warning{% endif %}">
+          {{ link.source_event.parse_status }}
+        </span>
+      </div>
+
+      <!-- Raw Text -->
+      {% if link.source_event.raw_text %}
+      <div>
+        <h4 class="font-medium text-sm mb-1">Raw Text</h4>
+        <div class="bg-base-200 p-3 rounded text-sm font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">
+{{ link.source_event.raw_text }}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Parsed Fields -->
+      <div class="grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <span class="text-base-content/60">Parsed Amount:</span>
+          <span class="font-mono">
+            {% if link.source_event.parsed_amount %}
+              {{ "%.2f"|format(link.source_event.parsed_amount) }} {{ link.source_event.parsed_currency }}
+            {% else %}
+              —
+            {% endif %}
+          </span>
+        </div>
+        
+        <div>
+          <span class="text-base-content/60">Parsed Kind:</span>
+          <span>{{ link.source_event.parsed_transaction_kind or '—' }}</span>
+        </div>
+        
+        <div>
+          <span class="text-base-content/60">Transaction Date:</span>
+          <span>{{ link.source_event.parsed_transaction_datetime.strftime('%Y-%m-%d %H:%M') if link.source_event.parsed_transaction_datetime else '—' }}</span>
+        </div>
+        
+        <div>
+          <span class="text-base-content/60">Posting Date:</span>
+          <span>{{ link.source_event.parsed_posting_datetime.strftime('%Y-%m-%d %H:%M') if link.source_event.parsed_posting_datetime else '—' }}</span>
+        </div>
+      </div>
+
+      {% if link.source_event.parsed_description %}
+      <div>
+        <span class="text-base-content/60 text-sm">Parsed Description:</span>
+        <p>{{ link.source_event.parsed_description }}</p>
+      </div>
+      {% endif %}
+
+      <!-- Context -->
+      <div class="text-sm">
+        <h4 class="font-medium mb-1">Context</h4>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          {% if link.source_event.sender %}
+          <div><span class="text-base-content/60">Sender:</span> {{ link.source_event.sender }}</div>
+          {% endif %}
+          {% if link.source_event.recipients %}
+          <div><span class="text-base-content/60">Recipients:</span> {{ link.source_event.recipients }}</div>
+          {% endif %}
+          {% if link.source_event.parsed_card_number %}
+          <div><span class="text-base-content/60">Card:</span> ****{{ link.source_event.parsed_card_number }}</div>
+          {% endif %}
+          {% if link.source_event.parsed_location %}
+          <div><span class="text-base-content/60">Location:</span> {{ link.source_event.parsed_location }}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Parse Error -->
+      {% if link.source_event.parse_error %}
+      <div class="alert alert-error">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span>{{ link.source_event.parse_error }}</span>
+      </div>
+      {% endif %}
+
+      <!-- Timestamps -->
+      <div class="text-xs text-base-content/50 border-t pt-2">
+        <div>Created: {{ link.source_event.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+        <div>Updated: {{ link.source_event.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+      </div>
+    </div>
+
+    <div class="modal-action">
+      <form method="dialog">
+        <button class="btn">Close</button>
+      </form>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button>close</button>
+  </form>
+</dialog>
+{% endfor %}
+{% endif %}

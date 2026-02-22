@@ -1,8 +1,10 @@
 """Account service"""
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.models.account import Account
+from app.models.card import Card
 from app.schemas.account import AccountCreate, AccountUpdate
 
 
@@ -25,7 +27,21 @@ async def get_account(db: AsyncSession, account_id: int) -> Account | None:
 
 async def get_accounts(db: AsyncSession) -> list[Account]:
     """Get all accounts"""
-    result = await db.execute(select(Account))
+    result = await db.execute(
+        select(Account)
+        .options(selectinload(Account.cards))
+        .order_by(Account.institution, Account.name)
+    )
+    return list(result.scalars().all())
+
+
+async def get_account_cards(db: AsyncSession, account_id: int) -> list[Card]:
+    """Get all cards for an account"""
+    result = await db.execute(
+        select(Card)
+        .where(Card.account_id == account_id)
+        .order_by(Card.name)
+    )
     return list(result.scalars().all())
 
 

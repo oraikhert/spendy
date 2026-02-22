@@ -1,0 +1,74 @@
+{# app/templates/transactions/partials/_summary.html - Summary stats bar #}
+<div class="bg-base-100 rounded-lg p-4 mb-4 shadow-sm">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    {# Stats #}
+    <div class="flex flex-wrap items-center gap-4">
+      <div class="flex items-center gap-2">
+        <span class="text-base-content/70 text-sm">Total:</span>
+        <span class="font-bold">{{ total }}</span>
+        <span class="text-base-content/70 text-sm">transactions</span>
+      </div>
+      
+      {% if summary %}
+      <div class="flex items-center gap-2">
+        <span class="text-base-content/70 text-sm">Out:</span>
+        <span class="font-bold text-error">{{ summary.outflow | format_currency(summary.currency) }}</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-base-content/70 text-sm">In:</span>
+        <span class="font-bold text-success">+{{ summary.inflow | format_currency(summary.currency) }}</span>
+      </div>
+      {% endif %}
+    </div>
+
+    {# Sort & View Controls (Desktop) #}
+    <div class="hidden md:flex items-center gap-2">
+      {# Sort #}
+      <select name="sort" 
+              class="select select-bordered select-sm"
+              hx-get="/transactions"
+              hx-trigger="change"
+              hx-include="#filter-form"
+              hx-target="#results-container">
+        <option value="date" {% if filters.sort == 'date' %}selected{% endif %}>Date</option>
+        <option value="amount" {% if filters.sort == 'amount' %}selected{% endif %}>Amount</option>
+        <option value="description" {% if filters.sort == 'description' %}selected{% endif %}>Description</option>
+      </select>
+      
+      {# Sort Direction #}
+      <button type="button"
+              class="btn btn-sm btn-ghost"
+              hx-get="/transactions"
+              hx-vals='{"sort_dir": "{% if filters.sort_dir == 'desc' %}asc{% else %}desc{% endif %}"}'
+              hx-include="#filter-form"
+              hx-target="#results-container"
+              title="{% if filters.sort_dir == 'desc' %}Descending{% else %}Ascending{% endif %}">
+        <svg xmlns="http://www.w3.org/2000/svg" 
+             class="h-4 w-4 {% if filters.sort_dir == 'asc' %}rotate-180{% endif %}" 
+             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      
+      {# View Toggle #}
+      <div class="join">
+        <button type="button" 
+                class="btn join-item btn-sm btn-active"
+                title="Table view"
+                onclick="this.classList.add('btn-active'); this.nextElementSibling.classList.remove('btn-active')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          </svg>
+        </button>
+        <button type="button" 
+                class="btn join-item btn-sm"
+                title="Card view"
+                onclick="this.classList.add('btn-active'); this.previousElementSibling.classList.remove('btn-active')">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

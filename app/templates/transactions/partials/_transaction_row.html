@@ -1,0 +1,93 @@
+{# app/templates/transactions/partials/_transaction_row.html - Single table row #}
+{# 
+  Expects: tx (transaction object with card relationship)
+  Primary date rule: posting_datetime > transaction_datetime > created_at
+  Date badge: P=posting, T=transaction, C=created
+#}
+
+{% set primary_date = tx.posting_datetime or tx.transaction_datetime or tx.created_at %}
+{% set date_type = 'P' if tx.posting_datetime else ('T' if tx.transaction_datetime else 'C') %}
+{% set source_count = tx.source_links|length if tx.source_links else 0 %}
+{% set has_primary = tx.source_links|selectattr('is_primary', 'equalto', true)|list|length > 0 %}
+
+<tr class="hover cursor-pointer"
+    hx-get="/transactions/{{ tx.id }}"
+    hx-push-url="/transactions/{{ tx.id }}"
+    hx-target="body">
+  {# Date with badge #}
+  <td class="whitespace-nowrap">
+    <div class="flex items-center gap-1">
+      <span class="badge badge-ghost badge-xs font-mono" title="{% if date_type == 'P' %}Posting date{% elif date_type == 'T' %}Transaction date{% else %}Created date{% endif %}">
+        {{ date_type }}
+      </span>
+      <span class="text-sm">{{ primary_date.strftime('%Y-%m-%d') }}</span>
+    </div>
+    <div class="text-xs text-base-content/50">{{ primary_date.strftime('%H:%M') }}</div>
+  </td>
+  
+  {# Description + Location #}
+  <td>
+    <div class="flex flex-col">
+      <span class="font-medium truncate max-w-xs" title="{{ tx.description }}">
+        {{ tx.description[:50] }}{% if tx.description|length > 50 %}...{% endif %}
+      </span>
+      {% if tx.location %}
+      <span class="text-xs text-base-content/50 truncate">{{ tx.location }}</span>
+      {% endif %}
+      {% if tx.original_amount and tx.original_currency %}
+      <span class="text-xs text-base-content/50">
+        FX: {{ tx.original_amount }} {{ tx.original_currency }}
+        {% if tx.fx_rate %} @ {{ tx.fx_rate }}{% endif %}
+      </span>
+      {% endif %}
+    </div>
+  </td>
+  
+  {# Card #}
+  <td>
+    <div class="flex flex-col">
+      <span class="text-sm">{{ tx.card.name if tx.card else '—' }}</span>
+      <span class="text-xs text-base-content/50">
+        ****{{ tx.card.card_masked_number[-4:] if tx.card and tx.card.card_masked_number else '—' }}
+      </span>
+    </div>
+  </td>
+  
+  {# Kind #}
+  <td>
+    {% if tx.transaction_kind == 'purchase' %}
+    <span class="badge badge-ghost badge-sm">Purchase</span>
+    {% elif tx.transaction_kind == 'topup' %}
+    <span class="badge badge-success badge-sm">Top-up</span>
+    {% elif tx.transaction_kind == 'refund' %}
+    <span class="badge badge-info badge-sm">Refund</span>
+    {% else %}
+    <span class="badge badge-ghost badge-sm">Other</span>
+    {% endif %}
+  </td>
+  
+  {# Amount #}
+  <td class="text-right">
+    <div class="flex flex-col items-end">
+      <span class="font-mono font-semibold {% if tx.amount < 0 %}text-error{% else %}text-success{% endif %}">
+        {{ tx.amount|format_number }} {{ tx.currency }}
+      </span>
+    </div>
+  </td>
+  
+  {# Sources count #}
+  <td class="text-center">
+    <div class="flex items-center justify-center gap-1">
+      {% if source_count > 0 %}
+      <span class="badge {% if source_count > 1 %}badge-primary{% else %}badge-ghost{% endif %} badge-sm">
+        {{ source_count }}
+      </span>
+      {% if has_primary %}
+      <span class="badge badge-outline badge-xs" title="Primary source set">★</span>
+      {% endif %}
+      {% else %}
+      <span class="text-base-content/30">—</span>
+      {% endif %}
+    </div>
+  </td>
+</tr>

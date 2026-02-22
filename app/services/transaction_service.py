@@ -41,9 +41,17 @@ async def create_transaction(
 
 
 async def get_transaction(db: AsyncSession, transaction_id: int) -> Transaction | None:
-    """Get transaction by ID"""
+    """Get transaction by ID with relationships"""
+    from app.models.card import Card
+    from app.models.account import Account
+    
     result = await db.execute(
-        select(Transaction).where(Transaction.id == transaction_id)
+        select(Transaction)
+        .where(Transaction.id == transaction_id)
+        .options(
+            selectinload(Transaction.card).selectinload(Card.account),
+            selectinload(Transaction.source_links).selectinload(TransactionSourceLink.source_event)
+        )
     )
     return result.scalar_one_or_none()
 
@@ -67,8 +75,17 @@ async def get_transactions(
     Returns:
         Tuple of (transactions list, total count)
     """
-    # Base query
-    query = select(Transaction)
+    from app.models.card import Card
+    from app.models.account import Account
+    
+    # Base query with relationships
+    query = (
+        select(Transaction)
+        .options(
+            selectinload(Transaction.card).selectinload(Card.account),
+            selectinload(Transaction.source_links)
+        )
+    )
     count_query = select(func.count(Transaction.id))
     
     # Apply filters
@@ -79,7 +96,6 @@ async def get_transactions(
     
     if account_id:
         # Need to join with Card to filter by account_id
-        from app.models.card import Card
         query = query.join(Card, Transaction.card_id == Card.id)
         count_query = count_query.join(Card, Transaction.card_id == Card.id)
         filters.append(Card.account_id == account_id)

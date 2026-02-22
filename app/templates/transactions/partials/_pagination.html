@@ -1,0 +1,110 @@
+{# app/templates/transactions/partials/_pagination.html - Pagination controls #}
+{% set current_page = (offset // limit) + 1 %}
+{% set total_pages = (total / limit)|round(0, 'ceil')|int %}
+{% set max_visible_pages = 5 %}
+{% set start_page = [1, current_page - (max_visible_pages // 2)]|max %}
+{% set end_page = [total_pages, start_page + max_visible_pages - 1]|min %}
+{% set start_page = [1, end_page - max_visible_pages + 1]|max %}
+
+{% if total_pages > 1 %}
+<div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 pt-4 border-t border-base-200">
+  {# Page info #}
+  <div class="text-sm text-base-content/70">
+    Showing {{ offset + 1 }}-{{ [offset + limit, total]|min }} of {{ total }}
+  </div>
+  
+  {# Pagination controls #}
+  <div class="join">
+    {# Previous #}
+    {% if current_page > 1 %}
+    <button class="join-item btn btn-sm"
+            hx-get="/transactions"
+            hx-vals='{"offset": {{ offset - limit }}, "limit": {{ limit }}}'
+            hx-include="#filter-form"
+            hx-target="#results-container"
+            hx-push-url="true">
+      «
+    </button>
+    {% else %}
+    <button class="join-item btn btn-sm" disabled>«</button>
+    {% endif %}
+    
+    {# First page #}
+    {% if start_page > 1 %}
+    <button class="join-item btn btn-sm"
+            hx-get="/transactions"
+            hx-vals='{"offset": 0, "limit": {{ limit }}}'
+            hx-include="#filter-form"
+            hx-target="#results-container"
+            hx-push-url="true">
+      1
+    </button>
+    {% if start_page > 2 %}
+    <button class="join-item btn btn-sm" disabled>...</button>
+    {% endif %}
+    {% endif %}
+    
+    {# Page numbers #}
+    {% for page in range(start_page, end_page + 1) %}
+    {% set page_offset = (page - 1) * limit %}
+    {% if page == current_page %}
+    <button class="join-item btn btn-sm btn-primary">{{ page }}</button>
+    {% else %}
+    <button class="join-item btn btn-sm"
+            hx-get="/transactions"
+            hx-vals='{"offset": {{ page_offset }}, "limit": {{ limit }}}'
+            hx-include="#filter-form"
+            hx-target="#results-container"
+            hx-push-url="true">
+      {{ page }}
+    </button>
+    {% endif %}
+    {% endfor %}
+    
+    {# Last page #}
+    {% if end_page < total_pages %}
+    {% if end_page < total_pages - 1 %}
+    <button class="join-item btn btn-sm" disabled>...</button>
+    {% endif %}
+    <button class="join-item btn btn-sm"
+            hx-get="/transactions"
+            hx-vals='{"offset": {{ (total_pages - 1) * limit }}, "limit": {{ limit }}}'
+            hx-include="#filter-form"
+            hx-target="#results-container"
+            hx-push-url="true">
+      {{ total_pages }}
+    </button>
+    {% endif %}
+    
+    {# Next #}
+    {% if current_page < total_pages %}
+    <button class="join-item btn btn-sm"
+            hx-get="/transactions"
+            hx-vals='{"offset": {{ offset + limit }}, "limit": {{ limit }}}'
+            hx-include="#filter-form"
+            hx-target="#results-container"
+            hx-push-url="true">
+      »
+    </button>
+    {% else %}
+    <button class="join-item btn btn-sm" disabled>»</button>
+    {% endif %}
+  </div>
+  
+  {# Per page selector #}
+  <div class="flex items-center gap-2">
+    <span class="text-sm text-base-content/70">Per page:</span>
+    <select name="limit"
+            class="select select-bordered select-sm w-20"
+            hx-get="/transactions"
+            hx-trigger="change"
+            hx-include="#filter-form"
+            hx-target="#results-container"
+            hx-push-url="true">
+      <option value="25" {% if limit == 25 %}selected{% endif %}>25</option>
+      <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
+    </select>
+  </div>
+</div>
+{% endif %}

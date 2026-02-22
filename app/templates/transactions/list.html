@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% from "macros/ui.html" import alert %}
+
+{% block title %}Transactions - Spendy{% endblock %}
+
+{% block content %}
+{# Desktop Layout: Sidebar + Content #}
+<div class="hidden md:grid grid-cols-[280px_1fr] gap-6">
+  {# Desktop Sidebar Filters #}
+  <aside class="card bg-base-100 shadow h-fit">
+    <div class="card-body p-4">
+      <h2 class="card-title text-base mb-2">Filters</h2>
+      {% include "transactions/partials/_filters.html" %}
+    </div>
+  </aside>
+  
+  {# Desktop Main Content #}
+  <div class="flex flex-col">
+    {# Header #}
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-bold">Transactions</h1>
+        <p class="text-base-content/70 text-sm">Manage and review your transactions</p>
+      </div>
+      <div class="flex gap-2">
+        <a href="/transactions/new" class="btn btn-primary btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add
+        </a>
+        <a href="/transactions/import" class="btn btn-outline btn-sm">Import</a>
+      </div>
+    </div>
+
+    {# Summary Bar #}
+    <div id="summary-container">
+      {% include "transactions/partials/_summary.html" %}
+    </div>
+
+    {# Results Container #}
+    <div id="results-container" class="flex-1">
+      {# Loading indicator #}
+      <div id="loading-indicator" class="htmx-indicator flex justify-center py-8">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+
+      {# Desktop: Table Layout #}
+      {% include "transactions/partials/_transaction_table.html" %}
+    </div>
+  </div>
+</div>
+
+{# Mobile Layout: Drawer + Cards #}
+<div class="md:hidden drawer drawer-end">
+  <input id="filter-drawer" type="checkbox" class="drawer-toggle" />
+  
+  <div class="drawer-content flex flex-col">
+    {# Header #}
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-xl font-bold">Transactions</h1>
+      </div>
+      <div class="flex gap-2">
+        <a href="/transactions/new" class="btn btn-primary btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add
+        </a>
+      </div>
+    </div>
+
+    {# Mobile Period Quick Select #}
+    <div class="mb-4">
+      <div class="join w-full">
+        <button type="button" class="btn join-item btn-sm flex-1 period-btn {% if period_preset == 'today' %}btn-primary{% else %}btn-ghost{% endif %}" data-period="today">Today</button>
+        <button type="button" class="btn join-item btn-sm flex-1 period-btn {% if period_preset == 'week' %}btn-primary{% else %}btn-ghost{% endif %}" data-period="week">Week</button>
+        <button type="button" class="btn join-item btn-sm flex-1 period-btn {% if period_preset == 'month' %}btn-primary{% else %}btn-ghost{% endif %}" data-period="month">Month</button>
+        <label for="filter-drawer" class="btn join-item btn-sm flex-1 btn-ghost">
+          Filters
+          {% if filters.account_id or filters.kind or filters.direction %}
+          <span class="badge badge-xs badge-primary">•</span>
+          {% endif %}
+        </label>
+      </div>
+    </div>
+
+    {# Mobile Search #}
+    <div class="mb-4">
+      <input type="search" 
+             name="q" 
+             placeholder="Search transactions..." 
+             value="{{ filters.q or '' }}"
+             class="input input-bordered w-full"
+             hx-get="/transactions"
+             hx-trigger="keyup changed delay:300ms"
+             hx-include="#filter-form input, #filter-form select"
+             hx-target="#results-container"
+             hx-indicator="#loading-indicator" />
+    </div>
+
+    {# Summary Bar #}
+    <div id="summary-container-mobile">
+      {% include "transactions/partials/_summary.html" %}
+    </div>
+
+    {# Results Container #}
+    <div id="results-container" class="flex-1">
+      {# Loading indicator #}
+      <div id="loading-indicator" class="htmx-indicator flex justify-center py-8">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+
+      {# Mobile: Card Layout #}
+      {% include "transactions/partials/_transaction_cards.html" %}
+    </div>
+  </div>
+
+  {# Mobile Filter Drawer #}
+  <div class="drawer-side z-50">
+    <label for="filter-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+    <div class="bg-base-100 min-h-full w-80 p-4">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold">Filters</h2>
+        <label for="filter-drawer" class="btn btn-sm btn-circle btn-ghost">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </label>
+      </div>
+      {% include "transactions/partials/_filter_drawer.html" %}
+    </div>
+  </div>
+</div>
+
+{# Hidden filter form for HTMX includes #}
+<form id="filter-form" class="hidden">
+  <input type="hidden" name="account_id" value="{{ filters.account_id or '' }}" />
+  <input type="hidden" name="card_id" value="{{ filters.card_id or '' }}" />
+  <input type="hidden" name="date_from" value="{{ filters.date_from or '' }}" />
+  <input type="hidden" name="date_to" value="{{ filters.date_to or '' }}" />
+  <input type="hidden" name="q" value="{{ filters.q or '' }}" />
+  <input type="hidden" name="kind" value="{{ filters.kind or '' }}" />
+  <input type="hidden" name="direction" value="{{ filters.direction or '' }}" />
+  <input type="hidden" name="min_amount" value="{{ filters.min_amount or '' }}" />
+  <input type="hidden" name="max_amount" value="{{ filters.max_amount or '' }}" />
+  <input type="hidden" name="currency" value="{{ filters.currency or '' }}" />
+  <input type="hidden" name="sort" value="{{ filters.sort or 'date' }}" />
+  <input type="hidden" name="sort_dir" value="{{ filters.sort_dir or 'desc' }}" />
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Period preset buttons (mobile)
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const period = this.dataset.period;
+      document.querySelectorAll('.period-btn').forEach(b => {
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-ghost');
+      });
+      this.classList.remove('btn-ghost');
+      this.classList.add('btn-primary');
+      
+      // Trigger HTMX request with new period
+      htmx.trigger('#filter-form', 'period-change', { period: period });
+    });
+  });
+</script>
+{% endblock %}

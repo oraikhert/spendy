@@ -1,0 +1,9 @@
+<label class="label" for="filter-card"><span class="label-text">Card</span></label>
+<select id="filter-card" name="card_id" class="select select-bordered w-full">
+  <option value="">All cards</option>
+  {% for card in cards %}
+  <option value="{{ card.id }}" {% if selected_id == card.id %}selected{% endif %}>
+    {{ card.card_type|capitalize }} • **** {{ card.card_masked_number }}
+  </option>
+  {% endfor %}
+</select>

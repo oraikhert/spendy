@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "transactions/partials/_filters.html" import filters_form %}
+{% from "transactions/partials/_transaction_row.html" import transaction_row %}
+{% from "transactions/partials/_transaction_card.html" import transaction_card %}
+{% from "transactions/partials/_pagination.html" import pagination %}
+
+{% block title %}Transactions - Spendy{% endblock %}
+
+{% block content %}
+<div class="drawer lg:drawer-open">
+  <input id="filters-drawer" type="checkbox" class="drawer-toggle" />
+  <div class="drawer-content flex flex-col">
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+      <h1 class="text-2xl font-bold">Transactions</h1>
+      <div class="flex gap-2">
+        <button class="btn btn-primary btn-sm" disabled title="Coming soon">+ Add</button>
+        <button class="btn btn-outline btn-sm" disabled title="Coming soon">Import</button>
+        <label for="filters-drawer" class="btn btn-ghost btn-sm drawer-button lg:hidden">Filters</label>
+      </div>
+    </div>
+
+    <div class="lg:hidden space-y-4 mb-4">
+      <div class="flex flex-wrap gap-2">
+        <span class="badge">Period: {{ filters.period|default('Custom') }}</span>
+        <span class="badge badge-ghost">Per page: {{ per_page }}</span>
+      </div>
+      <p class="text-sm text-base-content/70">
+        Summary: Out <span class="text-error font-mono">{{ "%+.2f" % out_total }}</span>
+        In <span class="text-success font-mono">{{ "%+.2f" % in_total }}</span>
+      </p>
+    </div>
+
+    <div id="results" class="min-h-[200px]">
+      <div id="filters-loading"><span class="htmx-indicator loading loading-spinner loading-sm"></span></div>
+      <div class="flex flex-wrap justify-between items-center gap-4 mb-4">
+        <p class="text-sm text-base-content/70">
+          {{ total }} tx &nbsp; Out: <span class="text-error font-mono">{{ "%+.2f" % out_total }}</span>
+          &nbsp; In: <span class="text-success font-mono">{{ "%+.2f" % in_total }}</span>
+        </p>
+      </div>
+
+      {% if transactions %}
+      <div class="hidden lg:block overflow-x-auto">
+        <table class="table table-zebra">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Card</th>
+              <th>Kind</th>
+              <th>Amount</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for tx in transactions %}
+            {{ transaction_row(tx, primary_date) }}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="lg:hidden space-y-2">
+        {% for tx in transactions %}
+        {{ transaction_card(tx, primary_date) }}
+        {% endfor %}
+      </div>
+      {{ pagination(page, per_page, total, pagination_params) }}
+      {% else %}
+      <div class="alert alert-info">
+        <span>No transactions match your filters.</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="drawer-side">
+    <label for="filters-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+    <aside class="bg-base-200 min-h-full w-64 p-4">
+      <h2 class="font-semibold text-lg mb-4">Filters</h2>
+      {{ filters_form(filters, kinds, currencies, accounts, cards) }}
+    </aside>
+  </div>
+</div>
+{% endblock %}

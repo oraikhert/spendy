@@ -1,0 +1,18 @@
+{% macro transaction_card(tx, primary_date) %}
+{% set pdate, badge = primary_date(tx) %}
+<a href="/transactions/{{ tx.id }}" class="card bg-base-100 shadow hover:shadow-md transition-shadow">
+  <div class="card-body p-4">
+    <div class="flex justify-between items-start">
+      <div>
+        <p class="font-semibold">{{ pdate.strftime('%d %b') if pdate else '—' }} • {{ tx.description[:40] }}{% if tx.description|length > 40 %}...{% endif %}</p>
+        <p class="text-sm text-base-content/70">
+          **** {{ tx.card.card_masked_number if tx.card else '—' }} • {{ tx.transaction_kind }} • {{ tx.source_links|length }} source{{ 's' if tx.source_links|length != 1 else '' }}
+        </p>
+      </div>
+      <div class="text-right font-mono {% if tx.amount < 0 %}text-error{% else %}text-success{% endif %}">
+        {{ "%+.2f" % tx.amount }} {{ tx.currency }}
+      </div>
+    </div>
+  </div>
+</a>
+{% endmacro %}

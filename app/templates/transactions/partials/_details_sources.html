@@ -1,0 +1,11 @@
+{% from "transactions/partials/_source_card.html" import source_card %}
+<div id="sources-list" class="space-y-4">
+  {% for link in transaction.source_links %}
+  {{ source_card(link, transaction.id) }}
+  {% endfor %}
+  {% if not transaction.source_links %}
+  <div class="alert alert-info">
+    <span>No sources linked to this transaction.</span>
+  </div>
+  {% endif %}
+</div>

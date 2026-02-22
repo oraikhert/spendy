@@ -1,0 +1,32 @@
+{% macro source_card(link, transaction_id) %}
+{% set se = link.source_event %}
+<div class="card bg-base-100 shadow collapse collapse-arrow">
+  <input type="checkbox" />
+  <div class="collapse-title flex flex-wrap items-center gap-2">
+    <span class="badge badge-outline">{{ se.source_type }}</span>
+    <span class="badge {% if se.parse_status == 'parsed' %}badge-success{% elif se.parse_status == 'failed' %}badge-error{% else %}badge-warning{% endif %}">{{ se.parse_status }}</span>
+    {% if link.is_primary %}<span class="badge badge-primary">PRIMARY</span>{% endif %}
+    {% if link.match_confidence %}<span class="text-sm text-base-content/70">conf: {{ "%.2f" % link.match_confidence }}</span>{% endif %}
+    <span class="text-sm text-base-content/70">{{ se.created_at.strftime('%Y-%m-%d') if se.created_at else '' }}</span>
+  </div>
+  <div class="collapse-content">
+    <p class="text-sm mb-2 truncate" title="{{ se.raw_text or se.file_path or '' }}">
+      {{ (se.raw_text or se.file_path or '—')[:80] }}{% if (se.raw_text or se.file_path or '')|length > 80 %}...{% endif %}
+    </p>
+    <div class="flex flex-wrap gap-2">
+      <form class="inline" hx-post="/transactions/{{ transaction_id }}/sources/{{ se.id }}/set-primary" hx-target="#sources-list" hx-swap="innerHTML" >
+        <button type="submit" class="btn btn-sm btn-ghost" {% if link.is_primary %}disabled{% endif %}>Set primary</button>
+      </form>
+      <form class="inline" hx-post="/transactions/{{ transaction_id }}/sources/{{ se.id }}/reprocess" hx-target="#sources-list" hx-swap="innerHTML">
+        <button type="submit" class="btn btn-sm btn-outline">Reprocess</button>
+      </form>
+    </div>
+    <div class="mt-2 text-xs space-y-1">
+      {% if se.parsed_amount %}Amount: {{ se.parsed_amount }} {{ se.parsed_currency or '' }}{% endif %}
+      {% if se.parsed_description %}Desc: {{ se.parsed_description[:50] }}{% endif %}
+      {% if se.parsed_transaction_datetime %}Txn: {{ se.parsed_transaction_datetime.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+      {% if se.parse_error %}<p class="text-error">{{ se.parse_error }}</p>{% endif %}
+    </div>
+  </div>
+</div>
+{% endmacro %}

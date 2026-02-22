@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Transaction Details - Spendy{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+  <div class="flex items-center gap-2">
+    <a href="/transactions" class="btn btn-ghost btn-sm">← Back</a>
+    <h1 class="text-2xl font-bold">Transaction Details</h1>
+  </div>
+  <div class="flex gap-2">
+    <button class="btn btn-outline btn-sm" disabled title="Coming soon">Delete</button>
+  </div>
+</div>
+
+<div class="card bg-base-100 shadow mb-6">
+  <div class="card-body">
+    <p class="text-2xl font-mono {% if transaction.amount < 0 %}text-error{% else %}text-success{% endif %}">
+      {{ "%+.2f" % transaction.amount }} {{ transaction.currency }}
+    </p>
+    <p class="font-semibold">{{ transaction.description }}</p>
+    <p class="text-sm text-base-content/70">
+      {{ transaction.transaction_kind }} • {{ transaction.card.card_type|capitalize }} **** {{ transaction.card.card_masked_number }}
+      • {{ transaction.card.account.institution }} {{ transaction.card.account.name }}
+    </p>
+    <p class="text-sm text-base-content/70">
+      Txn: {{ transaction.transaction_datetime.strftime('%Y-%m-%d %H:%M') if transaction.transaction_datetime else '—' }}
+      Post: {{ transaction.posting_datetime.strftime('%Y-%m-%d %H:%M') if transaction.posting_datetime else '—' }}
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div>
+    <h2 class="text-lg font-semibold mb-4">Canonical (Transaction)</h2>
+    <div id="canonical-section">
+      {% include "transactions/partials/_details_canonical.html" %}
+    </div>
+  </div>
+  <div>
+    <h2 class="text-lg font-semibold mb-4">Sources ({{ transaction.source_links|length }})</h2>
+    {% include "transactions/partials/_details_sources.html" %}
+  </div>
+</div>
+{% endblock %}

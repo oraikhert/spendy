@@ -1,0 +1,135 @@
+<form
+  id="canonical-form"
+  hx-patch="/transactions/{{ transaction.id }}"
+  hx-target="#canonical-section"
+  hx-swap="innerHTML"
+  class="space-y-4"
+>
+  <div class="form-control">
+    <label class="label" for="edit-card"><span class="label-text">Card</span></label>
+    <select id="edit-card" name="card_id" class="select select-bordered w-full" required>
+      {% for card in cards %}
+      <option value="{{ card.id }}" {% if transaction.card_id == card.id %}selected{% endif %}>
+        {{ card.card_type|capitalize }} • **** {{ card.card_masked_number }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="edit-kind"><span class="label-text">Kind</span></label>
+    <select id="edit-kind" name="transaction_kind" class="select select-bordered w-full" required>
+      {% for k in kinds %}
+      <option value="{{ k.value }}" {% if transaction.transaction_kind == k.value %}selected{% endif %}>{{ k.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="edit-amount"><span class="label-text">Amount</span></label>
+    <input
+      type="number"
+      id="edit-amount"
+      name="amount"
+      step="0.01"
+      required
+      class="input input-bordered validator w-full"
+      value="{{ transaction.amount }}"
+    >
+    <div class="validator-hint">Enter a valid amount</div>
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="edit-currency"><span class="label-text">Currency</span></label>
+    <select id="edit-currency" name="currency" class="select select-bordered validator w-full" required>
+      {% for c in currencies %}
+      <option value="{{ c }}" {% if transaction.currency == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <div class="validator-hint">Required</div>
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="edit-tx-dt"><span class="label-text">Transaction datetime</span></label>
+    <input
+      type="datetime-local"
+      id="edit-tx-dt"
+      name="transaction_datetime"
+      class="input input-bordered w-full"
+      value="{{ transaction.transaction_datetime.strftime('%Y-%m-%dT%H:%M') if transaction.transaction_datetime else '' }}"
+    >
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="edit-post-dt"><span class="label-text">Posting datetime</span></label>
+    <input
+      type="datetime-local"
+      id="edit-post-dt"
+      name="posting_datetime"
+      class="input input-bordered w-full"
+      value="{{ transaction.posting_datetime.strftime('%Y-%m-%dT%H:%M') if transaction.posting_datetime else '' }}"
+    >
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="edit-desc"><span class="label-text">Description</span></label>
+    <textarea
+      id="edit-desc"
+      name="description"
+      class="textarea textarea-bordered validator w-full"
+      required
+      rows="3"
+    >{{ transaction.description }}</textarea>
+    <div class="validator-hint">Required</div>
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="edit-location"><span class="label-text">Location</span></label>
+    <input
+      type="text"
+      id="edit-location"
+      name="location"
+      class="input input-bordered w-full"
+      value="{{ transaction.location or '' }}"
+    >
+  </div>
+
+  <div class="divider">FX (optional)</div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="form-control">
+      <label class="label" for="edit-orig-amount"><span class="label-text">Original amount</span></label>
+      <input type="number" id="edit-orig-amount" name="original_amount" step="0.01" class="input input-bordered w-full" value="{{ transaction.original_amount or '' }}">
+    </div>
+    <div class="form-control">
+      <label class="label" for="edit-orig-currency"><span class="label-text">Original currency</span></label>
+      <select id="edit-orig-currency" name="original_currency" class="select select-bordered w-full">
+        <option value="">—</option>
+        {% for c in currencies %}
+        <option value="{{ c }}" {% if transaction.original_currency == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-control">
+      <label class="label" for="edit-fx-rate"><span class="label-text">FX rate</span></label>
+      <input type="number" id="edit-fx-rate" name="fx_rate" step="0.000001" class="input input-bordered w-full" value="{{ transaction.fx_rate or '' }}">
+    </div>
+    <div class="form-control">
+      <label class="label" for="edit-fx-fee"><span class="label-text">FX fee</span></label>
+      <input type="number" id="edit-fx-fee" name="fx_fee" step="0.01" class="input input-bordered w-full" value="{{ transaction.fx_fee or '' }}">
+    </div>
+  </div>
+
+  {% if transaction.merchant_norm or transaction.fingerprint %}
+  <div class="divider">Debug (read-only)</div>
+  <div class="space-y-2 text-sm">
+    {% if transaction.merchant_norm %}
+    <p><span class="badge badge-ghost">merchant_norm</span> <code class="font-mono">{{ transaction.merchant_norm }}</code></p>
+    {% endif %}
+    {% if transaction.fingerprint %}
+    <p><span class="badge badge-ghost">fingerprint</span> <code class="font-mono text-xs">{{ transaction.fingerprint }}</code></p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <button type="submit" class="btn btn-primary">Save changes</button>
+</form>

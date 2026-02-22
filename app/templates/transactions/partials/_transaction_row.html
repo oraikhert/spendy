@@ -1,0 +1,27 @@
+{% macro transaction_row(tx, primary_date) %}
+{% set pdate, badge = primary_date(tx) %}
+<tr>
+  <td>
+    <span class="font-mono text-sm">{{ pdate.strftime('%Y-%m-%d') if pdate else '—' }}</span>
+    <span class="badge badge-ghost badge-sm ml-1">{{ badge }}</span>
+  </td>
+  <td>
+    <div>{{ tx.description[:50] }}{% if tx.description|length > 50 %}...{% endif %}</div>
+    <div class="text-sm text-base-content/70">
+      {% set src_count = tx.source_links|length %}
+      {{ src_count }} source{{ 's' if src_count != 1 else '' }}
+    </div>
+  </td>
+  <td class="font-mono">**** {{ tx.card.card_masked_number if tx.card else '—' }}</td>
+  <td><span class="badge badge-outline">{{ tx.transaction_kind }}</span></td>
+  <td class="font-mono {% if tx.amount < 0 %}text-error{% else %}text-success{% endif %}">
+    {{ "%+.2f" % tx.amount }} {{ tx.currency }}
+  </td>
+  <td>
+    {% if tx.original_amount %}
+    <span class="badge badge-ghost badge-sm">FX</span>
+    {% endif %}
+    <a href="/transactions/{{ tx.id }}" class="link link-hover btn btn-ghost btn-xs">View</a>
+  </td>
+</tr>
+{% endmacro %}

@@ -14,7 +14,10 @@ from app.schemas.transaction import (
     TransactionResponse,
     TransactionListResponse
 )
-from app.schemas.source_event import TransactionSourceLinkResponse
+from app.schemas.source_event import (
+    TransactionSourceLinkResponse,
+    TransactionSourceLinkUpdate,
+)
 from app.services import transaction_service
 
 
@@ -31,12 +34,15 @@ async def get_transactions(
     date_to: datetime | None = Query(None),
     q: str | None = Query(None),
     kind: str | None = Query(None, pattern="^(purchase|topup|refund|other)$"),
+    direction: str | None = Query(None, pattern="^(all|out|in)$"),
+    currency: str | None = Query(None, pattern="^[A-Z]{3}$"),
     min_amount: Decimal | None = Query(None),
     max_amount: Decimal | None = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0)
 ):
     """Get transactions with filters"""
+    direction_val = direction if direction and direction != "all" else None
     transactions, total = await transaction_service.get_transactions(
         db=db,
         account_id=account_id,
@@ -45,6 +51,8 @@ async def get_transactions(
         date_to=date_to,
         q=q,
         kind=kind,
+        direction=direction_val,
+        currency=currency,
         min_amount=min_amount,
         max_amount=max_amount,
         limit=limit,
@@ -130,3 +138,35 @@ async def get_transaction_sources(
     """Get all source events linked to a transaction"""
     links = await transaction_service.get_transaction_sources(db, transaction_id)
     return links
+
+
+@router.patch(
+    "/{transaction_id}/sources/{source_event_id}",
+    response_model=TransactionSourceLinkResponse
+)
+async def update_transaction_source_link(
+    transaction_id: int,
+    source_event_id: int,
+    link_data: TransactionSourceLinkUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)]
+):
+    """Update a source link (e.g. set primary)"""
+    if link_data.is_primary is True:
+        link = await transaction_service.set_primary_source(
+            db, transaction_id, source_event_id
+        )
+    else:
+        links = await transaction_service.get_transaction_sources(db, transaction_id)
+        link = next((l for l in links if l.source_event_id == source_event_id), None)
+        if link and link_data.is_primary is False:
+            link.is_primary = False
+            await db.commit()
+            await db.refresh(link)
+
+    if not link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source link not found"
+        )
+    return link

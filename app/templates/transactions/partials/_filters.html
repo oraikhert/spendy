@@ -1,0 +1,141 @@
+{% macro filters_form(filters, kinds, currencies, accounts, cards) %}
+<form
+  id="filters-form"
+  class="space-y-4"
+  hx-get="/transactions"
+  hx-target="#results"
+  hx-trigger="submit"
+  hx-include="#filters-form"
+  hx-indicator="#filters-loading"
+>
+  <div class="form-control">
+    <label class="label" for="filter-account"><span class="label-text">Account</span></label>
+    <select
+      id="filter-account"
+      name="account_id"
+      class="select select-bordered w-full"
+      hx-get="/transactions/card-options"
+      hx-target="#card-options-container"
+      hx-swap="innerHTML"
+      hx-include="[name='account_id']"
+      hx-trigger="change"
+    >
+      <option value="">All accounts</option>
+      {% for acc in accounts %}
+      <option value="{{ acc.id }}" {% if filters.account_id == acc.id %}selected{% endif %}>
+        {{ acc.institution }} • {{ acc.name }} {{ acc.account_currency }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-control" id="card-options-container">
+    <label class="label" for="filter-card"><span class="label-text">Card</span></label>
+    <select
+      id="filter-card"
+      name="card_id"
+      class="select select-bordered w-full"
+      {% if not filters.account_id %}disabled{% endif %}
+    >
+      <option value="">All cards</option>
+      {% for card in cards %}
+      <option value="{{ card.id }}" {% if filters.card_id == card.id %}selected{% endif %}>
+        {{ card.card_type|capitalize }} • **** {{ card.card_masked_number }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-control">
+    <label class="label"><span class="label-text">Period</span></label>
+    <div class="join flex-wrap">
+      <button type="button" class="join-item btn btn-sm" name="period" value="today"
+        hx-get="/transactions" hx-target="#results"       hx-include="#filters-form" hx-vals='{"period": "today"}'>Today</button>
+      <button type="button" class="join-item btn btn-sm" name="period" value="week"
+        hx-get="/transactions" hx-target="#results" hx-include="#filters-form" hx-vals='{"period": "week"}'>Week</button>
+      <button type="button" class="join-item btn btn-sm" name="period" value="month"
+        hx-get="/transactions" hx-target="#results" hx-include="#filters-form" hx-vals='{"period": "month"}'>Month</button>
+    </div>
+    <label class="label mt-2" for="date_from"><span class="label-text">From</span></label>
+    <input
+      type="date"
+      id="date_from"
+      name="date_from"
+      class="input input-bordered w-full"
+      value="{{ filters.date_from.strftime('%Y-%m-%d') if filters.date_from else '' }}"
+    >
+    <label class="label mt-2" for="date_to"><span class="label-text">To</span></label>
+    <input
+      type="date"
+      id="date_to"
+      name="date_to"
+      class="input input-bordered w-full"
+      value="{{ filters.date_to.strftime('%Y-%m-%d') if filters.date_to else '' }}"
+    >
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="filter-q"><span class="label-text">Search</span></label>
+    <input
+      type="search"
+      id="filter-q"
+      name="q"
+      class="input input-bordered w-full"
+      placeholder="carrefour / 120 / taxi"
+      value="{{ filters.q or '' }}"
+    >
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="filter-kind"><span class="label-text">Kind</span></label>
+    <select id="filter-kind" name="kind" class="select select-bordered w-full">
+      <option value="">All</option>
+      {% for k in kinds %}
+      <option value="{{ k.value }}" {% if filters.kind == k.value %}selected{% endif %}>{{ k.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-control">
+    <label class="label"><span class="label-text">Direction</span></label>
+    <div class="flex gap-4">
+      <label class="label cursor-pointer gap-2">
+        <input type="radio" name="direction" value="all" class="radio radio-sm" {% if filters.direction == 'all' %}checked{% endif %}>
+        <span class="label-text">All</span>
+      </label>
+      <label class="label cursor-pointer gap-2">
+        <input type="radio" name="direction" value="out" class="radio radio-sm" {% if filters.direction == 'out' %}checked{% endif %}>
+        <span class="label-text">Out</span>
+      </label>
+      <label class="label cursor-pointer gap-2">
+        <input type="radio" name="direction" value="in" class="radio radio-sm" {% if filters.direction == 'in' %}checked{% endif %}>
+        <span class="label-text">In</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="filter-min"><span class="label-text">Amount min</span></label>
+    <input type="number" id="filter-min" name="min_amount" step="0.01" class="input input-bordered w-full" value="{{ filters.min_amount or '' }}">
+  </div>
+  <div class="form-control">
+    <label class="label" for="filter-max"><span class="label-text">Amount max</span></label>
+    <input type="number" id="filter-max" name="max_amount" step="0.01" class="input input-bordered w-full" value="{{ filters.max_amount or '' }}">
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="filter-currency"><span class="label-text">Currency</span></label>
+    <select id="filter-currency" name="currency" class="select select-bordered w-full">
+      <option value="">All</option>
+      {% for c in currencies %}
+      <option value="{{ c }}" {% if filters.currency == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="flex gap-2">
+    <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+    <a href="/transactions" class="btn btn-outline btn-sm">Reset</a>
+  </div>
+</form>
+{% endmacro %}

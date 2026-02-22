@@ -1,0 +1,80 @@
+{% set source = link.source_event %}
+<article class="card bg-base-200 border border-base-300">
+  <div class="card-body p-3 space-y-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="badge badge-outline">{{ source.source_type }}</span>
+      <span class="badge {% if source.parse_status == 'parsed' %}badge-success{% elif source.parse_status == 'failed' %}badge-error{% else %}badge-warning{% endif %}">
+        {{ source.parse_status }}
+      </span>
+      {% if link.is_primary %}
+        <span class="badge badge-primary">PRIMARY</span>
+      {% endif %}
+      {% if link.match_confidence is not none %}
+        <span class="text-xs text-base-content/70">confidence: {{ "%.2f"|format(link.match_confidence) }}</span>
+      {% endif %}
+    </div>
+
+    <div class="text-sm">
+      <p class="font-medium">Created: {{ source.created_at.strftime('%Y-%m-%d %H:%M') if source.created_at else "-" }}</p>
+      {% if source.parsed_description %}
+        <p class="text-base-content/80">{{ source.parsed_description }}</p>
+      {% elif source.raw_text %}
+        <p class="text-base-content/80">{{ source.raw_text[:160] }}{% if source.raw_text|length > 160 %}...{% endif %}</p>
+      {% elif source.file_path %}
+        <p class="text-base-content/80">{{ source.file_path }}</p>
+      {% endif %}
+    </div>
+
+    <div class="flex flex-wrap gap-2">
+      <button
+        type="button"
+        class="btn btn-sm"
+        hx-post="/transactions/{{ transaction.id }}/sources/{{ source.id }}/set-primary"
+        hx-target="closest section"
+        hx-swap="outerHTML"
+      >
+        Set primary
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline"
+        hx-post="/transactions/{{ transaction.id }}/sources/{{ source.id }}/reprocess"
+        hx-target="closest section"
+        hx-swap="outerHTML"
+      >
+        Reprocess
+      </button>
+    </div>
+
+    <div class="collapse collapse-arrow bg-base-100 border border-base-300">
+      <input type="checkbox" />
+      <div class="collapse-title text-sm font-medium">Raw / parsed details</div>
+      <div class="collapse-content text-sm space-y-2">
+        <div class="grid grid-cols-2 gap-2">
+          <p><span class="text-base-content/70">Amount:</span> {{ source.parsed_amount or "-" }}</p>
+          <p><span class="text-base-content/70">Currency:</span> {{ source.parsed_currency or "-" }}</p>
+          <p><span class="text-base-content/70">Txn dt:</span> {{ source.parsed_transaction_datetime.strftime('%Y-%m-%d %H:%M') if source.parsed_transaction_datetime else "-" }}</p>
+          <p><span class="text-base-content/70">Posting dt:</span> {{ source.parsed_posting_datetime.strftime('%Y-%m-%d %H:%M') if source.parsed_posting_datetime else "-" }}</p>
+          <p><span class="text-base-content/70">Card:</span> {{ source.parsed_card_number or "-" }}</p>
+          <p><span class="text-base-content/70">Kind:</span> {{ source.parsed_transaction_kind or "-" }}</p>
+          <p><span class="text-base-content/70">Location:</span> {{ source.parsed_location or "-" }}</p>
+          <p><span class="text-base-content/70">Sender:</span> {{ source.sender or "-" }}</p>
+        </div>
+        {% if source.recipients %}
+          <p><span class="text-base-content/70">Recipients:</span> {{ source.recipients }}</p>
+        {% endif %}
+        {% if source.parse_error %}
+          <div role="alert" class="alert alert-error alert-soft">
+            <span>{{ source.parse_error }}</span>
+          </div>
+        {% endif %}
+        {% if source.raw_text %}
+          <pre class="mockup-code overflow-x-auto"><code>{{ source.raw_text }}</code></pre>
+        {% elif source.file_path %}
+          <p><span class="text-base-content/70">File:</span> {{ source.file_path }}</p>
+          <a href="/api/v1/source-events/{{ source.id }}/download" class="link link-primary">Download file</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</article>

@@ -26,6 +26,7 @@ class TransactionCreate(TransactionBase):
 
 class TransactionUpdate(BaseModel):
     """Schema for updating a transaction"""
+    card_id: int | None = None
     amount: Decimal | None = Field(None, decimal_places=2)
     currency: str | None = Field(None, min_length=3, max_length=3)
     transaction_datetime: datetime | None = None

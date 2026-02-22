@@ -1,0 +1,41 @@
+{% set card = card_map.get(tx.card_id) %}
+{% set account = account_map.get(card.account_id) if card else None %}
+{% set primary_date = tx.posting_datetime or tx.transaction_datetime or tx.created_at %}
+{% set date_badge = "P" if tx.posting_datetime else ("T" if tx.transaction_datetime else "C") %}
+{% set meta = source_meta.get(tx.id, {}) %}
+<tr>
+  <td>
+    <div class="font-medium">{{ primary_date.strftime('%Y-%m-%d') if primary_date else "-" }}</div>
+    <span class="badge badge-outline badge-xs">{{ date_badge }}</span>
+  </td>
+  <td>
+    <a href="/transactions/{{ tx.id }}" class="link link-hover font-medium">{{ tx.description }}</a>
+    {% if tx.location %}
+      <div class="text-xs text-base-content/70">{{ tx.location }}</div>
+    {% endif %}
+    <div class="mt-1 flex items-center gap-1">
+      <span class="badge badge-ghost badge-sm">{{ meta.get("source_count", 0) }} sources</span>
+      {% if meta.get("parse_status") %}
+        {% set st = meta.get("parse_status") %}
+        <span class="badge badge-sm {% if st == 'parsed' %}badge-success{% elif st == 'failed' %}badge-error{% else %}badge-warning{% endif %}">
+          {{ st }}
+        </span>
+      {% endif %}
+    </div>
+  </td>
+  <td>
+    {% if card %}
+      <div>{{ card.name }}</div>
+      <div class="text-xs text-base-content/70">{{ card.card_masked_number }}</div>
+      {% if account %}
+        <div class="text-xs text-base-content/50">{{ account.institution }}</div>
+      {% endif %}
+    {% else %}
+      -
+    {% endif %}
+  </td>
+  <td><span class="badge badge-outline">{{ tx.transaction_kind }}</span></td>
+  <td class="text-right font-semibold {% if tx.amount < 0 %}text-error{% elif tx.amount > 0 %}text-success{% endif %}">
+    {{ tx.amount }} {{ tx.currency }}
+  </td>
+</tr>

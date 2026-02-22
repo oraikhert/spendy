@@ -1,0 +1,158 @@
+<section id="details-form-container" class="card bg-base-100 border border-base-300">
+  <div class="card-body p-4">
+    <h2 class="card-title text-base">Canonical transaction</h2>
+
+    {% if message_text %}
+      <div role="alert" class="alert alert-{{ message_kind or 'info' }}">
+        <span>{{ message_text }}</span>
+      </div>
+    {% endif %}
+
+    <form
+      class="space-y-3"
+      hx-patch="/transactions/{{ transaction.id }}"
+      hx-target="#details-form-container"
+      hx-swap="outerHTML"
+    >
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Card</legend>
+        <select name="card_id" class="select select-bordered validator w-full" required>
+          {% for item in cards %}
+            <option value="{{ item.id }}" {% if item.id == transaction.card_id %}selected{% endif %}>
+              {{ item.name }} - {{ item.card_masked_number }}
+            </option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Kind</legend>
+        <select name="transaction_kind" class="select select-bordered validator w-full" required>
+          {% for k in ["purchase", "topup", "refund", "other"] %}
+            <option value="{{ k }}" {% if transaction.transaction_kind == k %}selected{% endif %}>{{ k }}</option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      <div class="grid grid-cols-2 gap-2">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Amount</legend>
+          <input
+            name="amount"
+            type="number"
+            class="input input-bordered validator w-full"
+            value="{{ transaction.amount }}"
+            required
+            step="0.01"
+          />
+          <p class="validator-hint">Required, non-zero, step 0.01</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Currency</legend>
+          <input
+            name="currency"
+            type="text"
+            class="input input-bordered validator w-full uppercase"
+            minlength="3"
+            maxlength="3"
+            pattern="^[A-Za-z]{3}$"
+            required
+            value="{{ transaction.currency }}"
+          />
+          <p class="validator-hint">3-letter code (e.g. AED)</p>
+        </fieldset>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Transaction datetime</legend>
+          <input
+            name="transaction_datetime"
+            type="datetime-local"
+            class="input input-bordered w-full"
+            value="{{ transaction.transaction_datetime.strftime('%Y-%m-%dT%H:%M') if transaction.transaction_datetime else '' }}"
+          />
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Posting datetime</legend>
+          <input
+            name="posting_datetime"
+            type="datetime-local"
+            class="input input-bordered w-full"
+            value="{{ transaction.posting_datetime.strftime('%Y-%m-%dT%H:%M') if transaction.posting_datetime else '' }}"
+          />
+        </fieldset>
+      </div>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Description</legend>
+        <textarea
+          name="description"
+          class="textarea textarea-bordered validator w-full"
+          rows="3"
+          required
+        >{{ transaction.description }}</textarea>
+        <p class="validator-hint">Required canonical description</p>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Location</legend>
+        <input name="location" type="text" class="input input-bordered w-full" value="{{ transaction.location or '' }}" />
+      </fieldset>
+
+      <div class="divider">FX (optional)</div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Original amount</legend>
+          <input
+            name="original_amount"
+            type="number"
+            step="0.01"
+            class="input input-bordered w-full"
+            value="{{ transaction.original_amount or '' }}"
+          />
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Original currency</legend>
+          <input
+            name="original_currency"
+            type="text"
+            minlength="3"
+            maxlength="3"
+            pattern="^[A-Za-z]{3}$"
+            class="input input-bordered w-full uppercase"
+            value="{{ transaction.original_currency or '' }}"
+          />
+        </fieldset>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">FX rate</legend>
+          <input name="fx_rate" type="number" step="0.000001" class="input input-bordered w-full" value="{{ transaction.fx_rate or '' }}" />
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">FX fee</legend>
+          <input name="fx_fee" type="number" step="0.01" class="input input-bordered w-full" value="{{ transaction.fx_fee or '' }}" />
+        </fieldset>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <div class="bg-base-200 rounded-box p-3">
+          <span class="badge badge-outline">merchant_norm</span>
+          <p class="font-mono text-xs mt-2 break-all">{{ transaction.merchant_norm or "-" }}</p>
+        </div>
+        <div class="bg-base-200 rounded-box p-3">
+          <span class="badge badge-outline">fingerprint</span>
+          <p class="font-mono text-xs mt-2 break-all">{{ transaction.fingerprint or "-" }}</p>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">
+        <span class="htmx-indicator loading loading-spinner loading-sm"></span>
+        Save changes
+      </button>
+    </form>
+  </div>
+</section>

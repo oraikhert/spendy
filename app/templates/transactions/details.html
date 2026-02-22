@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Transaction {{ transaction.id }} - Spendy{% endblock %}
+
+{% block content %}
+{% set card = card_map.get(transaction.card_id) %}
+{% set account = account_map.get(card.account_id) if card else None %}
+<section class="space-y-4">
+  <header class="flex items-center justify-between gap-2">
+    <a href="/transactions" class="btn btn-ghost btn-sm">Back</a>
+    <h1 class="text-xl font-bold">Transaction details</h1>
+    <div class="dropdown dropdown-end lg:hidden">
+      <div tabindex="0" role="button" class="btn btn-outline btn-sm">Actions</div>
+      <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-44 p-2 shadow">
+        <li><button disabled>Edit</button></li>
+        <li><button disabled>Delete</button></li>
+      </ul>
+    </div>
+    <div class="hidden lg:flex gap-2">
+      <button class="btn btn-outline btn-sm" disabled>Edit</button>
+      <button class="btn btn-error btn-outline btn-sm" disabled>Delete</button>
+    </div>
+  </header>
+
+  <article class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div>
+          <p class="text-sm text-base-content/70">Amount</p>
+          <p class="font-bold text-lg {% if transaction.amount < 0 %}text-error{% elif transaction.amount > 0 %}text-success{% endif %}">
+            {{ transaction.amount }} {{ transaction.currency }}
+          </p>
+        </div>
+        <div>
+          <p class="text-sm text-base-content/70">Kind</p>
+          <span class="badge badge-outline">{{ transaction.transaction_kind }}</span>
+        </div>
+        <div>
+          <p class="text-sm text-base-content/70">Card</p>
+          <p class="font-medium">{{ card.name if card else "-" }} {{ card.card_masked_number if card else "" }}</p>
+        </div>
+        <div>
+          <p class="text-sm text-base-content/70">Account</p>
+          <p class="font-medium">{{ account.institution if account else "-" }} {{ account.name if account else "" }}</p>
+        </div>
+      </div>
+      <div>
+        <p class="text-sm text-base-content/70">Description</p>
+        <p class="font-medium">{{ transaction.description }}</p>
+      </div>
+      <div class="flex flex-wrap gap-4 text-sm">
+        <span>Txn: {{ transaction.transaction_datetime.strftime('%Y-%m-%d %H:%M') if transaction.transaction_datetime else "-" }}</span>
+        <span>Posting: {{ transaction.posting_datetime.strftime('%Y-%m-%d %H:%M') if transaction.posting_datetime else "-" }}</span>
+      </div>
+    </div>
+  </article>
+
+  <div class="hidden lg:grid lg:grid-cols-2 gap-4">
+    {% include "transactions/_details_form.html" %}
+    <div id="sources-list">
+      {% include "transactions/_sources_list.html" %}
+    </div>
+  </div>
+
+  <div class="lg:hidden">
+    <div role="tablist" class="tabs tabs-border tabs-box">
+      <input type="radio" name="details_tabs" role="tab" class="tab" aria-label="Details" checked="checked" />
+      <div role="tabpanel" class="tab-content p-2">
+        {% include "transactions/_details_form.html" %}
+      </div>
+      <input type="radio" name="details_tabs" role="tab" class="tab" aria-label="Sources ({{ source_links|length }})" />
+      <div role="tabpanel" class="tab-content p-2">
+        <div id="sources-list-mobile">
+          {% include "transactions/_sources_list.html" %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

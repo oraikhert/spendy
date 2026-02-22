@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.transaction import Transaction
 from app.models.transaction_source_link import TransactionSourceLink
+from app.models.source_event import SourceEvent
 from app.schemas.transaction import TransactionCreate, TransactionUpdate
 from app.utils.matching import normalize_merchant, generate_fingerprint
 
@@ -56,6 +57,7 @@ async def get_transactions(
     date_to: datetime | None = None,
     q: str | None = None,
     kind: str | None = None,
+    currency: str | None = None,
     min_amount: Decimal | None = None,
     max_amount: Decimal | None = None,
     limit: int = 100,
@@ -119,6 +121,9 @@ async def get_transactions(
     
     if kind:
         filters.append(Transaction.transaction_kind == kind)
+
+    if currency:
+        filters.append(Transaction.currency == currency)
     
     if min_amount is not None:
         filters.append(Transaction.amount >= min_amount)
@@ -201,3 +206,72 @@ async def get_transaction_sources(
     )
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+async def set_primary_source_link(
+    db: AsyncSession,
+    transaction_id: int,
+    source_event_id: int
+) -> TransactionSourceLink | None:
+    """Set one source link as primary for the transaction."""
+    query = select(TransactionSourceLink).where(
+        TransactionSourceLink.transaction_id == transaction_id
+    )
+    result = await db.execute(query)
+    links = list(result.scalars().all())
+    if not links:
+        return None
+
+    target_link: TransactionSourceLink | None = None
+    for link in links:
+        if link.source_event_id == source_event_id:
+            target_link = link
+            link.is_primary = True
+        else:
+            link.is_primary = False
+
+    if target_link is None:
+        return None
+
+    await db.commit()
+    await db.refresh(target_link)
+    return target_link
+
+
+async def get_source_link(
+    db: AsyncSession,
+    transaction_id: int,
+    source_event_id: int
+) -> TransactionSourceLink | None:
+    """Get a specific transaction-source link."""
+    query = (
+        select(TransactionSourceLink)
+        .where(
+            TransactionSourceLink.transaction_id == transaction_id,
+            TransactionSourceLink.source_event_id == source_event_id
+        )
+        .options(selectinload(TransactionSourceLink.source_event))
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+
+
+async def get_source_event_for_transaction(
+    db: AsyncSession,
+    transaction_id: int,
+    source_event_id: int
+) -> SourceEvent | None:
+    """Get a source event only if linked to the given transaction."""
+    query = (
+        select(SourceEvent)
+        .join(
+            TransactionSourceLink,
+            TransactionSourceLink.source_event_id == SourceEvent.id
+        )
+        .where(
+            TransactionSourceLink.transaction_id == transaction_id,
+            SourceEvent.id == source_event_id
+        )
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none()

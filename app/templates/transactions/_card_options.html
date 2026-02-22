@@ -1,0 +1,13 @@
+<legend class="fieldset-legend">Card</legend>
+<select
+  name="card_id"
+  class="select select-bordered w-full"
+  {% if not cards %}disabled{% endif %}
+>
+  <option value="">All cards</option>
+  {% for card in cards %}
+    <option value="{{ card.id }}" {% if selected_card_id == card.id %}selected{% endif %}>
+      {{ card.name }} - {{ card.card_masked_number }}
+    </option>
+  {% endfor %}
+</select>

@@ -1,0 +1,26 @@
+<section class="card bg-base-100 border border-base-300">
+  <div class="card-body p-4 space-y-3">
+    <div class="flex items-center justify-between">
+      <h2 class="card-title text-base">Sources</h2>
+      <span class="badge badge-outline">{{ source_links|length }} linked</span>
+    </div>
+
+    {% if message_text %}
+      <div role="alert" class="alert alert-{{ message_kind or 'info' }}">
+        <span>{{ message_text }}</span>
+      </div>
+    {% endif %}
+
+    {% if source_links %}
+      <div class="space-y-2">
+        {% for link in source_links %}
+          {% include "transactions/_source_card.html" %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div role="alert" class="alert alert-info">
+        <span>No linked sources for this transaction yet.</span>
+      </div>
+    {% endif %}
+  </div>
+</section>

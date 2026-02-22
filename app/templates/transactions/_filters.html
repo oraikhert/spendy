@@ -1,0 +1,167 @@
+<div class="card bg-base-100 border border-base-300">
+  <div class="card-body p-4">
+    <h2 class="card-title text-base">Filters</h2>
+
+    <form
+      id="transactions-filters-form"
+      class="space-y-3"
+      hx-get="/transactions"
+      hx-target="#transactions-results"
+      hx-swap="innerHTML"
+      hx-indicator="#transactions-loading"
+    >
+      <input type="hidden" name="offset" value="0" />
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Account</legend>
+        <select
+          name="account_id"
+          class="select select-bordered w-full"
+          hx-get="/transactions/cards-options"
+          hx-target="#card-select-wrap"
+          hx-include="#transactions-filters-form"
+          hx-swap="innerHTML"
+        >
+          <option value="">All accounts</option>
+          {% for account in accounts %}
+            <option value="{{ account.id }}" {% if filters.account_id == account.id %}selected{% endif %}>
+              {{ account.institution }} - {{ account.name }} - {{ account.account_currency }}
+            </option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      <fieldset class="fieldset" id="card-select-wrap">
+        <legend class="fieldset-legend">Card</legend>
+        <select
+          name="card_id"
+          class="select select-bordered w-full"
+          {% if not cards %}disabled{% endif %}
+        >
+          <option value="">All cards</option>
+          {% for card in cards %}
+            <option value="{{ card.id }}" {% if filters.card_id == card.id %}selected{% endif %}>
+              {{ card.name }} - {{ card.card_masked_number }}
+            </option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Period</legend>
+        <div class="join w-full">
+          {% set period_options = [("today", "Today"), ("week", "Week"), ("month", "Month"), ("custom", "Custom")] %}
+          {% for value, label in period_options %}
+            <input
+              type="radio"
+              name="period"
+              value="{{ value }}"
+              aria-label="{{ label }}"
+              class="btn btn-sm join-item"
+              {% if filters.period == value %}checked{% endif %}
+            />
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="grid grid-cols-2 gap-2">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Date from</legend>
+          <input type="date" name="date_from" value="{{ filters.date_from }}" class="input input-bordered w-full" />
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Date to</legend>
+          <input type="date" name="date_to" value="{{ filters.date_to }}" class="input input-bordered w-full" />
+        </fieldset>
+      </div>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Search</legend>
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="merchant, amount, location" class="input input-bordered w-full" />
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Kind</legend>
+        <select name="kind" class="select select-bordered w-full">
+          <option value="">All kinds</option>
+          <option value="purchase" {% if filters.kind == "purchase" %}selected{% endif %}>Purchase</option>
+          <option value="topup" {% if filters.kind == "topup" %}selected{% endif %}>Top-up</option>
+          <option value="refund" {% if filters.kind == "refund" %}selected{% endif %}>Refund</option>
+          <option value="other" {% if filters.kind == "other" %}selected{% endif %}>Other</option>
+        </select>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Direction</legend>
+        <div class="flex items-center gap-4">
+          <label class="label cursor-pointer gap-2">
+            <input type="radio" name="direction" value="all" class="radio radio-sm" {% if filters.direction == "all" %}checked{% endif %} />
+            <span class="label-text">All</span>
+          </label>
+          <label class="label cursor-pointer gap-2">
+            <input type="radio" name="direction" value="out" class="radio radio-sm" {% if filters.direction == "out" %}checked{% endif %} />
+            <span class="label-text">Out</span>
+          </label>
+          <label class="label cursor-pointer gap-2">
+            <input type="radio" name="direction" value="in" class="radio radio-sm" {% if filters.direction == "in" %}checked{% endif %} />
+            <span class="label-text">In</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="grid grid-cols-2 gap-2">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Min amount</legend>
+          <input
+            type="number"
+            name="min_amount"
+            value="{{ filters.min_amount }}"
+            step="0.01"
+            class="input input-bordered validator w-full"
+          />
+          <p class="validator-hint">Use decimal format</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Max amount</legend>
+          <input
+            type="number"
+            name="max_amount"
+            value="{{ filters.max_amount }}"
+            step="0.01"
+            class="input input-bordered validator w-full"
+          />
+          <p class="validator-hint">Must be >= min amount</p>
+        </fieldset>
+      </div>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Currency</legend>
+        <input
+          type="text"
+          name="currency"
+          value="{{ filters.currency }}"
+          maxlength="3"
+          minlength="3"
+          pattern="^[A-Za-z]{3}$"
+          placeholder="AED"
+          class="input input-bordered validator w-full uppercase"
+        />
+        <p class="validator-hint">3-letter currency code</p>
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Per page</legend>
+        <select name="limit" class="select select-bordered w-full">
+          {% for opt in [20, 50, 100] %}
+            <option value="{{ opt }}" {% if limit == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </fieldset>
+
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="btn btn-primary flex-1">Apply</button>
+        <a href="/transactions" class="btn btn-outline flex-1">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>

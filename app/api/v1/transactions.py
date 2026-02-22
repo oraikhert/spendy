@@ -14,7 +14,10 @@ from app.schemas.transaction import (
     TransactionResponse,
     TransactionListResponse
 )
-from app.schemas.source_event import TransactionSourceLinkResponse
+from app.schemas.source_event import (
+    TransactionSourceLinkResponse,
+    TransactionSourceLinkUpdate
+)
 from app.services import transaction_service
 
 
@@ -31,6 +34,7 @@ async def get_transactions(
     date_to: datetime | None = Query(None),
     q: str | None = Query(None),
     kind: str | None = Query(None, pattern="^(purchase|topup|refund|other)$"),
+    currency: str | None = Query(None, min_length=3, max_length=3),
     min_amount: Decimal | None = Query(None),
     max_amount: Decimal | None = Query(None),
     limit: int = Query(100, ge=1, le=1000),
@@ -45,6 +49,7 @@ async def get_transactions(
         date_to=date_to,
         q=q,
         kind=kind,
+        currency=currency,
         min_amount=min_amount,
         max_amount=max_amount,
         limit=limit,
@@ -130,3 +135,41 @@ async def get_transaction_sources(
     """Get all source events linked to a transaction"""
     links = await transaction_service.get_transaction_sources(db, transaction_id)
     return links
+
+
+@router.patch(
+    "/{transaction_id}/sources/{source_event_id}",
+    response_model=TransactionSourceLinkResponse
+)
+async def update_transaction_source_link(
+    transaction_id: int,
+    source_event_id: int,
+    link_data: TransactionSourceLinkUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)]
+):
+    """Update a transaction-source link (MVP: set primary)."""
+    link = await transaction_service.get_source_link(db, transaction_id, source_event_id)
+    if not link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction-source link not found"
+        )
+
+    if link_data.is_primary is True:
+        updated_link = await transaction_service.set_primary_source_link(
+            db, transaction_id, source_event_id
+        )
+        if not updated_link:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transaction-source link not found"
+            )
+        link = await transaction_service.get_source_link(db, transaction_id, source_event_id)
+        if not link:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transaction-source link not found after update"
+            )
+
+    return link

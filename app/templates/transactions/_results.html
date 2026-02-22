@@ -1,0 +1,82 @@
+<div class="space-y-3">
+  <div class="card bg-base-100 border border-base-300">
+    <div class="card-body p-4">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div class="text-sm">
+          <span class="font-semibold">{{ summary.count }}</span> transactions
+          <span class="mx-2">•</span>
+          <span>Out: <span class="text-error font-semibold">{{ summary.outflow_total }}</span></span>
+          <span class="mx-2">•</span>
+          <span>In: <span class="text-success font-semibold">+{{ summary.inflow_total }}</span></span>
+        </div>
+        <div id="transactions-loading" class="htmx-indicator">
+          <span class="loading loading-spinner loading-sm"></span>
+        </div>
+      </div>
+      {% if error_message %}
+        <div role="alert" class="alert alert-error mt-3">
+          <span>{{ error_message }}</span>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if not error_message %}
+    {% if transactions %}
+      <div class="hidden lg:block overflow-x-auto card bg-base-100 border border-base-300">
+        <table class="table table-zebra">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Card</th>
+              <th>Kind</th>
+              <th class="text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for tx in transactions %}
+              {% include "transactions/_transaction_row.html" %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 lg:hidden">
+        {% for tx in transactions %}
+          {% include "transactions/_transaction_card.html" %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div role="alert" class="alert alert-info">
+        <span>No transactions found for selected filters.</span>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <nav class="flex items-center justify-between">
+    <button
+      class="btn btn-outline btn-sm"
+      {% if not has_prev %}disabled{% endif %}
+      hx-get="/transactions"
+      hx-target="#transactions-results"
+      hx-swap="innerHTML"
+      hx-include="#transactions-filters-form"
+      hx-vals='{"offset": {{ prev_offset }} }'
+    >
+      Prev
+    </button>
+    <span class="text-sm">Page {{ page }}</span>
+    <button
+      class="btn btn-outline btn-sm"
+      {% if not has_next %}disabled{% endif %}
+      hx-get="/transactions"
+      hx-target="#transactions-results"
+      hx-swap="innerHTML"
+      hx-include="#transactions-filters-form"
+      hx-vals='{"offset": {{ next_offset }} }'
+    >
+      Next
+    </button>
+  </nav>
+</div>

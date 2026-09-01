@@ -18,6 +18,7 @@ async def dashboard(
 ):
     """Display dashboard page (protected - requires authentication)."""
     return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "user": user}
+        request=request,
+        name="dashboard.html",
+        context={"user": user},
     )

@@ -22,8 +22,9 @@ ACCESS_TOKEN_MAX_AGE_SECONDS = 1800  # TODO: take from auth settings / token TTL
 
 def _render_alert(request: Request, message: str, kind: str = "error") -> HTMLResponse:
     return templates.TemplateResponse(
-        "partials/_alert.html",
-        {"request": request, "kind": kind, "message": message},
+        request=request,
+        name="partials/_alert.html",
+        context={"kind": kind, "message": message},
         status_code=200,
     )
 
@@ -58,8 +59,9 @@ async def login_page(
     if user:
         return RedirectResponse(url="/dashboard", status_code=303)
     return templates.TemplateResponse(
-        "auth/login.html",
-        {"request": request, "registration_enabled": settings.REGISTRATION_ENABLED},
+        request=request,
+        name="auth/login.html",
+        context={"registration_enabled": settings.REGISTRATION_ENABLED},
     )
 
 
@@ -89,7 +91,11 @@ async def register_page(
         return RedirectResponse(url="/auth/login", status_code=303)
     if user:
         return RedirectResponse(url="/dashboard", status_code=303)
-    return templates.TemplateResponse("auth/register.html", {"request": request})
+    return templates.TemplateResponse(
+        request=request,
+        name="auth/register.html",
+        context={},
+    )
 
 
 @router.post("/register")

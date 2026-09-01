@@ -118,10 +118,10 @@ async def find_matching_transactions(
     merchant_norm: str | None = None,
     orig_amount: Decimal | None = None,
     orig_currency: str | None = None,
-    days_delta: int = 1
 ) -> list[Transaction]:
     """
     Find matching transactions based on card_id, amount, currency, and date.
+    Date matching is restricted to the same calendar day.
     Matches on (amount, currency) or (orig_amount, orig_currency) when provided.
     
     Args:
@@ -138,17 +138,19 @@ async def find_matching_transactions(
     Returns:
         List of matching transactions
     """
-    # Determine the date to match on
+    # Determine the date to match on.  By default matching is restricted to
+    # the same calendar day.  A one-day tolerance can incorrectly merge two
+    # separate purchases with the same amount and merchant on adjacent days.
     if posting_datetime:
         match_date = posting_datetime.date()
-        date_field = Transaction.posting_datetime
     elif transaction_datetime:
         match_date = transaction_datetime.date()
-        date_field = Transaction.transaction_datetime
     else:
         # No date to match on
         match_date = created_at.date()
-        date_field = Transaction.created_at
+
+    match_start = datetime.combine(match_date, datetime.min.time())
+    match_end = match_start + timedelta(days=1)
 
     amount_currency_match = and_(
         Transaction.amount == amount,
@@ -171,23 +173,22 @@ async def find_matching_transactions(
         )
     )
     
-    # Add date filter
-    # Match on the same date (not exact datetime)
+    # Add date filter.  Match on the same calendar date by default.
     query = query.where(
         or_(
             and_(
                 Transaction.posting_datetime.isnot(None),
-                Transaction.posting_datetime >= datetime.combine(match_date, datetime.min.time()) - timedelta(days=days_delta),
-                Transaction.posting_datetime < datetime.combine(match_date, datetime.max.time())
+                Transaction.posting_datetime >= match_start,
+                Transaction.posting_datetime < match_end,
             ),
             and_(
                 Transaction.transaction_datetime.isnot(None),
-                Transaction.transaction_datetime >= datetime.combine(match_date, datetime.min.time()) - timedelta(days=days_delta),
-                Transaction.transaction_datetime < datetime.combine(match_date, datetime.max.time())
+                Transaction.transaction_datetime >= match_start,
+                Transaction.transaction_datetime < match_end,
             ),
             and_(
-                Transaction.created_at >= datetime.combine(match_date, datetime.min.time()) - timedelta(days=days_delta),
-                Transaction.created_at < datetime.combine(match_date, datetime.max.time())
+                Transaction.created_at >= match_start,
+                Transaction.created_at < match_end,
             )
         )
     )

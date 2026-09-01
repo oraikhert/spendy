@@ -397,6 +397,7 @@ async def create_transaction_and_link(
     transaction_datetime = (
         transaction_data.transaction_datetime
         or source_event.parsed_transaction_datetime
+        or source_event.transaction_datetime
     )
     
     posting_datetime = (
@@ -537,7 +538,10 @@ async def reprocess_source_event(
             amount=amount,
             currency=currency,
             posting_datetime=source_event.parsed_posting_datetime,
-            transaction_datetime=source_event.parsed_transaction_datetime,
+            transaction_datetime=(
+                source_event.parsed_transaction_datetime
+                or source_event.transaction_datetime
+            ),
             created_at=source_event.created_at,
             merchant_norm=merchant_norm,
             orig_amount=orig_amount,
@@ -563,6 +567,15 @@ async def reprocess_source_event(
             )
             db.add(link)
             _enrich_found_transaction_with_source(found_transaction, source_event)
+        elif len(matching_transactions) == 0:
+            # No same-day match: create a new transaction and link it.  This
+            # is also needed when reprocessing an event whose old link was
+            # removed because it matched a transaction from another day.
+            await create_transaction_and_link(
+                db,
+                source_event_id,
+                TransactionCreateAndLink(card_id=source_event.card_id),
+            )
     
     await db.commit()
     await db.refresh(source_event)

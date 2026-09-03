@@ -1,49 +1,38 @@
-# Spendy Deployment Guide (VDS, Docker, Nginx, Let’s Encrypt)
+# Deployment: Docker, PostgreSQL and Nginx
 
-This document describes a practical “development deployment” setup for **Spendy** on a cloud VDS using:
+This is the runbook for the existing single-server deployment. It uses the
+repository's Docker configuration, PostgreSQL storage, host Nginx and Let's Encrypt.
+Read [the access model](ARCHITECTURE.md#access-model) before exposing an installation:
+authenticated users share transaction data and server-side CSRF validation is absent.
+Return to the [documentation index](../README.md#documentation).
 
-- **Docker + Docker Compose** (FastAPI + PostgreSQL)
-- **Nginx** as a reverse proxy on the host
-- **Let’s Encrypt** TLS certificates with automatic renewal
-- **Alembic** migrations (Async SQLAlchemy)
+- [Prerequisites](#prerequisites)
+- [Server preparation](#server-preparation)
+- [Configuration](#configuration)
+- [First deployment](#first-deployment)
+- [Users](#users)
+- [HTTPS proxy](#https-proxy)
+- [Updates and backups](#updates-and-backups)
+- [Database access and maintenance](#database-access-and-maintenance)
 
-The goal: a repeatable, minimal, and safe setup where:
-- App is accessible via HTTPS domain
-- Postgres is not exposed publicly
-- Deploy updates via `git pull` + `docker compose up -d --build`
+## Prerequisites
 
----
+Use an Ubuntu server with SSH access and a domain A record pointing to the server.
+Commands below assume a root/admin shell on the server; adapt privileges for your
+deployment user.
 
-## 1) Prerequisites
+## Server preparation
 
-### Domain
-- Create an **A record**: `spendy.example.com` → your VDS public IP
-
-### Server
-- Ubuntu 22.04/24.04 recommended (works on 20.04 too)
-- SSH access (root or a sudo user)
-
-### Repository
-- Spendy code is available on GitHub (public or via SSH deploy key)
-
----
-
-## 2) Server Preparation
-
-SSH into the server:
-
-```bash
-ssh root@YOUR_SERVER_IP
-```
-
-Update packages:
+### Update and install packages
 
 ```bash
 apt update && apt -y upgrade
 apt -y install git curl ufw nginx
 ```
 
-Firewall:
+### Configure the firewall
+
+Allow SSH, HTTP and HTTPS before enabling the firewall:
 
 ```bash
 ufw allow OpenSSH
@@ -53,7 +42,7 @@ ufw enable
 ufw status
 ```
 
-Install Docker + Compose plugin:
+### Install Docker and the Compose plugin
 
 ```bash
 curl -fsSL https://get.docker.com | sh
@@ -62,331 +51,182 @@ docker --version
 docker compose version
 ```
 
----
-
-## 3) Project Directory
-
-Use a clean location such as:
+### Install Certbot
 
 ```bash
-mkdir -p /opt/spendy
+apt -y install certbot python3-certbot-nginx
+```
+
+Clone the repository into `/opt/spendy`, using your actual remote URL or SSH deploy
+key. Run Compose commands from that directory.
+
+## Configuration
+
+Use the committed [Dockerfile](../Dockerfile) and
+[docker-compose.yml](../docker-compose.yml); do not recreate copies from documentation.
+Compose defines services `db` and `app`, binds PostgreSQL and HTTP to host loopback,
+stores PostgreSQL in a named volume, and mounts `./data/uploads` into the app.
+
+For a new deployment, copy [.env.example](../.env.example) to `.env` and configure:
+
+```dotenv
+POSTGRES_PASSWORD=REPLACE_WITH_DB_PASSWORD
+DATABASE_URL=postgresql+asyncpg://spendy:REPLACE_WITH_DB_PASSWORD@db:5432/spendy
+SECRET_KEY=REPLACE_WITH_RANDOM_SECRET
+REGISTRATION_ENABLED=false
+DEBUG=false
+```
+
+Use the same database password in both settings; URL-encode special characters
+in the connection URL. Generate a signing secret with
+`python3 -c "import secrets; print(secrets.token_hex(32))"`. Preserve existing secrets
+on updates. Keep `.env` out of Git and restrict its filesystem permissions.
+
+`db` is the Compose hostname used from inside the app container. The PostgreSQL
+driver is already a project dependency. App settings are defined in
+[app/config.py](../app/config.py); Docker-only variables such as `POSTGRES_PASSWORD`
+are consumed by Compose.
+
+## First deployment
+
+Build the app and start PostgreSQL, then check that `db` becomes healthy:
+
+```bash
 cd /opt/spendy
-git clone https://github.com/<you>/<Spendy>.git .
-```
-
-> For private repos, use SSH deploy keys.
-
----
-
-## 4) Application Configuration (.env)
-
-Create `/opt/spendy/.env`:
-
-```env
-# Postgres password (used by docker compose)
-POSTGRES_PASSWORD=CHANGE_ME_STRONG
-
-# Database URL (Async SQLAlchemy)
-DATABASE_URL=postgresql+asyncpg://spendy:CHANGE_ME_STRONG@db:5432/spendy
-
-# Security
-SECRET_KEY=CHANGE_ME_SUPER_SECRET
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# App
-APP_NAME=Spendy
-DEBUG=False
-```
-
-**Important:** Since Spendy uses async SQLAlchemy, use:
-- `postgresql+asyncpg://...`
-and ensure `asyncpg` is in `requirements.txt`.
-
----
-
-## 5) Dockerfile (Project Root)
-
-Create `/opt/spendy/Dockerfile`:
-
-```dockerfile
-FROM python:3.13-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
-
-COPY . /app
-
-EXPOSE 8000
-
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
----
-
-## 6) docker-compose.yml (Postgres + App)
-
-Create `/opt/spendy/docker-compose.yml`:
-
-```yaml
-services:
-  db:
-    image: postgres:16
-    container_name: spendy-db
-    environment:
-      POSTGRES_DB: spendy
-      POSTGRES_USER: spendy
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "127.0.0.1:5432:5432"  # local-only for SSH tunnel usage
-    volumes:
-      - spendy_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U spendy -d spendy"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    restart: unless-stopped
-
-  app:
-    build: .
-    container_name: spendy-app
-    env_file:
-      - .env
-    depends_on:
-      db:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:8000:8000"  # local-only; exposed via Nginx
-    volumes:
-      - ./data/uploads:/app/data/uploads
-    restart: unless-stopped
-
-volumes:
-  spendy_pgdata:
-```
-
-### Data persistence
-- PostgreSQL data is stored in the Docker volume: `spendy_pgdata`
-- Uploaded files are stored on the host: `/opt/spendy/data/uploads`
-
----
-
-## 7) IMPORTANT: Avoid `create_all()` on Postgres
-
-Spendy currently initializes DB tables in code via `Base.metadata.create_all()` (SQLite-friendly), but on Postgres **schema should be managed by Alembic**.
-
-Recommended approach:
-- Keep `create_all()` only for SQLite local development
-- For Postgres: do **not** create tables automatically at app startup
-
-In `app/database.py`, gate init logic like:
-
-```python
-async def init_db() -> None:
-    if not settings.DATABASE_URL.startswith("sqlite"):
-        return
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-```
-
-This prevents:
-`DuplicateTableError: relation "accounts" already exists`
-
----
-
-## 8) Start the Stack
-
-From `/opt/spendy`:
-
-```bash
-docker compose up -d --build
+mkdir -p data/uploads
+docker compose build app
+docker compose up -d db
 docker compose ps
-docker logs -n 100 spendy-app
 ```
 
-Local health check:
+Apply migrations in a one-off app container **before starting the HTTP service**:
 
 ```bash
-curl -I http://127.0.0.1:8000
+docker compose run --rm app alembic upgrade head
+docker compose run --rm app alembic current
+docker compose up -d app
+docker compose logs --tail=100 app
+curl --fail http://127.0.0.1:8000/health
 ```
 
----
+The one-off container uses the app image and `.env` without running its normal
+server command. PostgreSQL schema creation is already disabled in `init_db()`;
+no code edit is required. Use [Migrations](MIGRATIONS.md) for schema decisions and
+known model/history differences. A successful health response confirms HTTP only;
+also verify login and a protected database-backed request.
 
-## 9) Run Alembic Migrations
+## Users
 
-Run migrations inside the app container:
+With migrations applied, create a user while self-registration remains disabled.
+In a Bash shell on the server:
 
 ```bash
-docker exec -it spendy-app alembic upgrade head
+read -r -s -p 'New user password: ' spendy_user_password
+docker compose run --rm app python scripts/create_user.py \
+  --email owner@example.com --username owner --password "$spendy_user_password"
+unset spendy_user_password
 ```
 
-Verify:
+Replace the synthetic email/username with the intended account. The current CLI
+accepts its password through a process argument; the prompt avoids putting the
+literal password in shell history. For a local installation, run the same
+`python scripts/create_user.py` command with `venv` active, without the Compose prefix.
+Input validation comes from [UserCreate](../app/schemas/user.py).
 
-```bash
-docker exec -it spendy-app alembic current
-```
+## HTTPS proxy
 
-> Your `alembic/env.py` is already async-aware, so this is supported.
-
----
-
-## 10) Nginx Reverse Proxy (Host)
-
-Create `/etc/nginx/sites-available/spendy.conf`:
+Create `/etc/nginx/sites-available/spendy.conf` using your real domain:
 
 ```nginx
 server {
     listen 80;
     server_name spendy.example.com;
 
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
     location / {
         proxy_pass http://127.0.0.1:8000;
-
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-
         client_max_body_size 25m;
     }
 }
 ```
 
-Enable config:
+Enable the site once, validate Nginx, then issue the certificate:
 
 ```bash
-mkdir -p /var/www/certbot
 ln -s /etc/nginx/sites-available/spendy.conf /etc/nginx/sites-enabled/spendy.conf
 nginx -t
 systemctl reload nginx
-```
-
----
-
-## 11) Let’s Encrypt TLS (Certbot)
-
-Install certbot:
-
-```bash
-apt -y install certbot python3-certbot-nginx
-```
-
-Issue certificate:
-
-```bash
 certbot --nginx -d spendy.example.com
-```
-
-Auto-renewal check:
-
-```bash
-systemctl status certbot.timer
 certbot renew --dry-run
+systemctl status certbot.timer
 ```
 
----
+Verify HTTPS login in a browser, including the cookie's Secure flag and redirect
+behavior. Secure-cookie selection depends on the scheme seen by the app; forwarding
+the header alone does not establish that Uvicorn trusts the proxy. If it sees HTTP,
+configure trusted forwarded-header handling for the actual proxy/container network
+before considering HTTPS login verified. Review the CORS policy in
+[app/main.py](../app/main.py) for the intended client origins.
 
-## 12) Deploy Updates (Repeatable Process)
+## Updates and backups
+
+Before a schema-changing update, record the deployed Git revision, stop app writes
+and back up both the database and uploads. For example, with the `db` service running:
 
 ```bash
 cd /opt/spendy
-git pull
-docker compose up -d --build
-docker exec -it spendy-app alembic upgrade head
-docker logs -n 80 spendy-app
+git rev-parse HEAD
+docker compose stop app
+mkdir -p /var/backups/spendy
+spendy_backup_id=$(date -u +%Y%m%dT%H%M%SZ)
+docker compose exec -T db pg_dump -U spendy -d spendy -Fc \
+  > "/var/backups/spendy/$spendy_backup_id.dump"
+tar -czf "/var/backups/spendy/$spendy_backup_id-uploads.tar.gz" data/uploads
 ```
 
----
+Check both commands succeeded and validate restore on a separate database before
+relying on a backup. Keep backups outside the repository and copy them to durable
+storage according to the installation's retention policy.
 
-## 13) Database Access (Terminal)
-
-Inside Postgres container:
+With a clean deployment checkout, update the code and migrate before restarting:
 
 ```bash
-docker exec -it spendy-db psql -U spendy -d spendy
+git pull --ff-only
+docker compose build app
+docker compose run --rm app alembic upgrade head
+docker compose run --rm app alembic current
+docker compose up -d app
+docker compose logs --tail=100 app
+curl --fail http://127.0.0.1:8000/health
 ```
 
-Useful commands:
+Run each step only after the previous one succeeds. If migration fails, leave the
+app stopped and use [migration recovery](MIGRATIONS.md#recovery-and-rollback).
+An older image may not support the new schema; code rollback alone is insufficient.
+After an update, verify HTTPS login and database-backed behavior again.
 
-```sql
-\dt
-\d accounts
-\q
-```
+## Database access and maintenance
 
----
-
-## 14) pgAdmin (Laptop) Connection via SSH Tunnel
-
-Because Postgres is bound to `127.0.0.1:5432` on the server, use an SSH tunnel.
-
-### Recommended (pgAdmin built-in SSH Tunnel)
-In pgAdmin “Add New Server”:
-
-**Connection tab**
-- Host: `127.0.0.1`
-- Port: `5432`
-- Database: `spendy`
-- Username: `spendy`
-- Password: `POSTGRES_PASSWORD`
-
-**SSH Tunnel tab**
-- Tunnel host: your server domain or IP
-- Username: `root` (or your deploy user)
-- Auth: SSH key file (recommended)
-- Keep alive (seconds): `60`
-
-### Alternative (manual SSH tunnel)
-On your laptop:
+For an interactive database session on the server:
 
 ```bash
-ssh -L 15432:127.0.0.1:5432 root@spendy.example.com
+docker compose exec db psql -U spendy -d spendy
 ```
 
-Then in pgAdmin:
-- Host: `127.0.0.1`
-- Port: `15432`
+Use `\dt` to list tables and `\q` to exit. For a desktop SQL client, open an SSH
+tunnel from the laptop:
 
----
-
-## 15) Reset / Cleanup
-
-### Reset Postgres data completely
 ```bash
-docker compose down -v
+ssh -N -L 15432:127.0.0.1:5432 deploy@spendy.example.com
 ```
 
-or:
-```bash
-docker volume rm spendy_pgdata
-```
+Connect the client to `127.0.0.1:15432`, database/user `spendy`, using the configured
+database password. Substitute the actual SSH user and host.
 
-### Rebuild app without losing DB data
-```bash
-docker compose up -d --build
-```
-
-(DB persists because it is stored in the volume.)
-
----
-
-## 16) Notes / Best Practices (Minimal)
-
-- Keep Postgres bound to localhost (`127.0.0.1`) and use SSH tunnel for remote access.
-- Use Alembic migrations for schema changes (don’t use `create_all()` on Postgres).
-- Store uploads on host with bind mount (`./data/uploads`).
-- Keep `.env` outside git and use strong secrets.
+`docker compose stop app` stops HTTP while retaining data. Rebuilding the app
+retains the PostgreSQL volume and upload mount. Named-volume deletion, including
+`docker compose down -v`, destroys database storage and is not routine maintenance.
+For a clean test environment, use a separate deployment and data location.

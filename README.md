@@ -1,297 +1,121 @@
-# Spendy — Family Budget Tracking Application
-
-A family budget tracking app built with FastAPI.
-
-## Tech stack
-
-- **Backend**: FastAPI
-- **Frontend**: Jinja2 + HTMX + Tailwind CSS + DaisyUI
-- **Database**: SQLite (can be switched to PostgreSQL)
-- **ORM**: SQLAlchemy 2.0 (async)
-- **Authentication**: JWT (Bearer for API, HTTP-only cookies for web pages)
-- **Password hashing**: bcrypt
-
-## Quick start
-
-```bash
-python -m venv venv
-source venv/bin/activate   # Mac/Linux; on Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env      # optional
-python run.py
-```
-
-Or use scripts: `./install.sh` (install), then `./start.sh` (run).
-
-After starting:
-- **Web UI**: http://localhost:8000 (redirects to login)
-- **API docs**: http://localhost:8000/docs
-
-If you have install issues, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
-
-## Project structure
-
-```
-spendy/
-├── app/
-│   ├── main.py              # Application entry point
-│   ├── config.py            # Configuration
-│   ├── database.py          # Database setup
-│   ├── models/              # SQLAlchemy models (User, Account, Card, Transaction, SourceEvent, TransactionSourceLink)
-│   ├── schemas/             # Pydantic schemas (validation)
-│   ├── services/            # Service layer (user, auth, account, card, transaction, source_event, dashboard, exchange_rate)
-│   ├── utils/               # Parsing, matching, canonicalization
-│   ├── api/v1/              # API routes (auth, accounts, cards, transactions, source-events, dashboard, meta, exchange-rates)
-│   ├── web/                 # Web routes (HTML)
-│   ├── templates/          # Jinja2 templates
-│   ├── static/              # CSS, JS, images
-│   └── core/                # Utilities (security, deps)
-├── data/uploads/            # Uploaded files (PDFs, screenshots); contents ignored in git
-├── docs/                    # Documentation
-├── alembic/                 # DB migrations
-├── requirements.txt
-├── run.py
-└── README.md
-```
-
-### Architecture
-
-The app uses a **layered architecture with a service layer**:
-
-```
-┌─────────────────────────────────────────┐
-│         Clients                         │
-├──────────────────┬──────────────────────┤
-│   Web Pages      │      REST API        │
-│  (Jinja2+HTMX)   │    (JSON/Bearer)     │
-└────────┬─────────┴──────────┬───────────┘
-         │                    │
-         └────────┬───────────┘
-                  │
-         ┌────────▼─────────┐
-         │    Services      │
-         │ (Business logic) │
-         └────────┬─────────┘
-                  │
-         ┌────────▼─────────┐
-         │     Models       │
-         │   (SQLAlchemy)    │
-         └────────┬─────────┘
-                  │
-         ┌────────▼─────────┐
-         │    Database      │
-         │     (SQLite)     │
-         └──────────────────┘
-```
-
-**Benefits:** Business logic is separate from HTTP; one service layer serves both API and web; services are easy to test; REST API stays available for other clients. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
-
-## Installation and run
-
-### 1. Virtual environment and dependencies
-
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
-pip install -r requirements.txt
-```
-
-If you get an SSL error on macOS: `pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements.txt` or use `./install.sh`.
-
-### 2. Environment
-
-```bash
-cp .env.example .env
-```
-
-For production, change `SECRET_KEY` (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`).
-
-### 3. Migrations (transaction features)
-
-```bash
-alembic upgrade head
-```
-
-See [docs/MIGRATIONS.md](docs/MIGRATIONS.md).
-
-### 4. Run
-
-```bash
-python run.py
-# or
-uvicorn app.main:app --reload
-```
-
-App: http://localhost:8000  
-Swagger: http://localhost:8000/docs  
-ReDoc: http://localhost:8000/redoc
-
-## Web UI
-
-The app has a web UI with Jinja2, HTMX, Tailwind CSS and DaisyUI.
-
-### Pages
-
-| Path | Description |
-|------|-------------|
-| `/` | Home (redirects to `/auth/login`) |
-| `/auth/login` | Login |
-| `/auth/register` | Register |
-| `/auth/logout` | Logout |
-| `/dashboard` | User dashboard (auth required) |
-
-### Features
-
-- **HTMX** — forms submit without full page reload
-- **Tailwind CSS + DaisyUI** — responsive UI
-- **HTTP-only cookies** — JWT stored safely (XSS protection)
-- **Validation** — client and server
-- **Auto login** — after register you are logged in
-
-### Using the web UI
-
-1. Open http://localhost:8000
-2. Click "Register" to create an account
-3. After register you are logged in and see the dashboard
-
-## API endpoints
-
-All endpoints except `/health` and auth login/register require `Authorization: Bearer <access_token>`.
-
-### Auth
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/v1/auth/register` | Register |
-| POST | `/api/v1/auth/login` | Login (returns JWT) |
-| GET | `/api/v1/auth/me` | Current user (token required) |
-
-**Register** — JSON: `email`, `username`, `password` (min 8 chars), `full_name` (optional).  
-**Login** — form-data: `username` (or email), `password`. Response: `access_token`, `token_type: "bearer"`.  
-**Profile** — header: `Authorization: Bearer <access_token>`.
-
-### Transactions (token required)
-
-| Area | Methods | Path pattern |
-|------|---------|--------------|
-| Accounts | GET, POST | `/api/v1/accounts` |
-| Account | GET, PATCH, DELETE | `/api/v1/accounts/{id}` |
-| Cards | GET, POST | `/api/v1/accounts/{id}/cards` |
-| Card | GET, PATCH, DELETE | `/api/v1/cards/{id}` |
-| Transactions | GET, POST | `/api/v1/transactions` (query: account_id, card_id, date_from, date_to, q, kind, min_amount, max_amount, limit, offset) |
-| Transaction | GET, PATCH, DELETE | `/api/v1/transactions/{id}` |
-| Transaction sources | GET | `/api/v1/transactions/{id}/sources` |
-| Source events (text) | POST | `/api/v1/source-events/text` (JSON: source_type, raw_text, account_id?, card_id?) |
-| Source events (upload) | POST | `/api/v1/source-events/upload` (form: source_type, file, account_id?, card_id?) |
-| Source events | GET, GET by id | `/api/v1/source-events`, `/api/v1/source-events/{id}` |
-| Link / create-and-link / unlink | POST, DELETE | `/api/v1/source-events/{id}/link`, `.../create-transaction-and-link`, `.../link/{transaction_id}` |
-| Reprocess | POST | `/api/v1/source-events/{id}/reprocess` |
-| Download file | GET | `/api/v1/source-events/{id}/download` |
-| Dashboard | GET | `/api/v1/dashboard/summary` (query: date_from, date_to, account_id?, card_id?) |
-| Exchange rates | GET | `/api/v1/exchange-rates/rate` (query: from_currency, to_currency; no auth) |
-| Meta | GET | `/api/v1/meta/transaction-kinds` |
-
-Details: `app/api/v1/` and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Using the API
-
-### Via Swagger UI (http://localhost:8000/docs)
-
-1. **Register**: POST `/api/v1/auth/register` → "Try it out" → enter data → "Execute".
-2. **Login**: POST `/api/v1/auth/login` → enter username and password → "Execute" → copy `access_token`.
-3. **Authorize**: "Authorize" → paste token in Value → "Authorize".
-4. **Profile**: GET `/api/v1/auth/me` → "Try it out" → "Execute".
-
-### Data requirements
-
-- **Email** — valid, unique.
-- **Username** — 3–100 chars, unique.
-- **Password** — 8–72 chars.
-
-### Full flow (bash)
-
-```bash
-# Register
-curl -X POST "http://localhost:8000/api/v1/auth/register" \
-  -H "Content-Type: application/json" \
-  -d '{"email": "test@example.com", "username": "testuser", "password": "testpassword123", "full_name": "Test User"}'
-
-# Login and save token
-TOKEN=$(curl -s -X POST "http://localhost:8000/api/v1/auth/login" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=testuser&password=testpassword123" \
-  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
-
-# Profile
-curl -X GET "http://localhost:8000/api/v1/auth/me" -H "Authorization: Bearer $TOKEN"
-```
-
-### Python example
-
-```python
-import requests
-BASE = "http://localhost:8000/api/v1"
-requests.post(f"{BASE}/auth/register", json={"email": "u@ex.com", "username": "u", "password": "password123", "full_name": "User"})
-r = requests.post(f"{BASE}/auth/login", data={"username": "u", "password": "password123"}, headers={"Content-Type": "application/x-www-form-urlencoded"})
-token = r.json()["access_token"]
-print(requests.get(f"{BASE}/auth/me", headers={"Authorization": f"Bearer {token}"}).json())
-```
-
-### API errors
-
-- **400** "Email already registered" / "Username already taken" — use another email or username.
-- **401** "Incorrect username or password" — wrong credentials.
-- **401** "Could not validate credentials" — wrong or expired token; login again.
-- **400** "Inactive user" — user is deactivated.
-
-### Tips
-
-- JWT expires in 30 minutes (configurable in `.env`).
-- Login accepts **username** or **email** in the `username` field.
-- More examples in `api_examples.http` (VS Code REST Client).
-
-## FAQ
-
-- **Stop the server?** — `Ctrl+C` in the terminal.
-- **Where is data stored?** — In `spendy.db` (SQLite) in the project root.
-- **Reset DB?** — Stop server, run `rm spendy.db`; DB is recreated on next start.
-- **Request examples?** — `api_examples.http` or Swagger UI.
-- **Run tests:**  
-  1. `pip install -r requirements-dev.txt`  
-  2. `python test_api.py` (from project root with venv active)
-
-## Switching to PostgreSQL
-
-1. Create a database in PostgreSQL.
-2. In `.env`: `DATABASE_URL=postgresql+asyncpg://user:password@localhost/spendy`
-3. `pip install asyncpg`
-4. Restart the app (or apply migrations; see [docs/MIGRATIONS.md](docs/MIGRATIONS.md)).
-
-## Security
-
-- Passwords hashed with bcrypt.
-- JWT for auth; expiry set in `.env`.
-- In production: use HTTPS, your own `SECRET_KEY`, and limit CORS in `app/main.py`.
-
-## Roadmap
-
-1. **Transaction tracking** — done (accounts, cards, transactions, source events, matching, dashboard summary)
-2. **Web pages** — transactions, reports, settings
-3. **Family groups** — shared family budget
-4. **Reports** — charts, stats, export
-5. **Notifications** — reminders, budget alerts
-6. **Mobile app** — React Native or Flutter
-7. **Auth** — OAuth, two-factor
+# Spendy
+
+Spendy tracks accounts, cards, transactions and their source messages/files.
+The JSON API supports transaction management, SMS parsing, matching and summaries;
+the web UI currently provides login, optional registration and a dashboard page.
+File uploads are stored, but PDF/image parsing is not implemented. Family groups,
+budgets, reports and transaction management pages remain future work.
+
+Built with FastAPI, async SQLAlchemy, Pydantic, Alembic and SQLite/PostgreSQL.
+The UI uses Jinja2, HTMX, Tailwind CSS and DaisyUI; no frontend build is required.
 
 ## Documentation
 
-| File | Description |
-|------|-------------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture and design |
-| [docs/SERVICE_LAYER.md](docs/SERVICE_LAYER.md) | Service layer: structure, usage, examples |
-| [docs/MIGRATIONS.md](docs/MIGRATIONS.md) | Alembic migrations |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Install and run problems |
+Read the document for your task; there is no need to load the entire documentation.
+
+| Task | Start here |
+|------|------------|
+| Install, run, use the API or run checks | This README |
+| Locate code or understand architectural decisions | [Architecture](docs/ARCHITECTURE.md) |
+| Change ingestion, matching, money handling or service behavior | [Service contracts](docs/SERVICE_LAYER.md) |
+| Initialize, upgrade or change a database schema | [Migrations](docs/MIGRATIONS.md) |
+| Deploy or update the Docker/PostgreSQL installation | [Deployment](docs/DEPLOYMENT.md) |
+| Diagnose installation or runtime errors | [Troubleshooting](docs/TROUBLESHOOTING.md) |
+| Work as a coding agent | [Project rules](AGENTS.md) |
+
+## Local setup
+
+Run commands from the repository root. Python 3.13 matches the
+[Docker runtime](Dockerfile). The commands below use a POSIX shell; on Windows,
+activate the environment with `venv\Scripts\activate`.
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+For a new checkout, copy [.env.example](.env.example) to `.env`; preserve any
+existing `.env`. Settings are defined in [app/config.py](app/config.py).
+Choose `DATABASE_URL` before initializing the schema. The example uses the local
+SQLite file `spendy.db`; environment variables override values from `.env`.
+
+Initialize a **new, empty database before starting the app** using
+[the migration procedure](docs/MIGRATIONS.md#new-database). For an existing
+database, use the appropriate scenario in that document first.
+
+The example `.env` disables registration. To create the first local user through
+the UI, set `REGISTRATION_ENABLED=true`, then start the app:
+
+```bash
+python run.py
+```
+
+Open [the web UI](http://localhost:8000), register and log in. To close registration
+afterward, set `REGISTRATION_ENABLED=false` and restart. For installations where
+self-registration stays disabled, use [manual user creation](docs/DEPLOYMENT.md#users).
+Set a unique `SECRET_KEY` before using the app with real data.
+
+For later starts, activate `venv` and run the same command; `./start.sh` is a
+shortcut. `./install.sh` installs dependencies but does not initialize migrations
+or configure users. Stop the development server with `Ctrl+C`.
+
+## API usage
+
+- [Swagger UI](http://localhost:8000/docs) lists current endpoints and schemas.
+- [ReDoc](http://localhost:8000/redoc) provides an alternative API reference.
+- [api_examples.http](api_examples.http) contains auth requests and error examples.
+- [Health](http://localhost:8000/health) checks HTTP availability, not DB readiness.
+
+Use an existing user, or register with `POST /api/v1/auth/register` when
+registration is enabled. Login at `POST /api/v1/auth/login` uses form fields
+`username` (username or email) and `password`. Send the returned token as
+`Authorization: Bearer <access_token>` for protected requests.
+
+Account, card, transaction, source-event and dashboard APIs require an active user.
+Health, login, registration, exchange-rate lookup and transaction-kind metadata
+do not require a token; disabled registration returns 403. Authentication does not
+provide per-user budget isolation: see [the current access model](docs/ARCHITECTURE.md#access-model).
+For exact validation limits and payloads, use Swagger and
+[input schemas](app/schemas/), rather than maintaining a second endpoint catalog.
+
+## Development checks
+
+With `venv` active, install [development dependencies](requirements-dev.txt), then
+run the parser checks (they do not need a server or database):
+
+```bash
+python -m pip install -r requirements-dev.txt
+python tests/test_parsing.py
+python tests/test_parsing_kind_location.py
+```
+
+For [API checks](tests/test_api.py), reserve port 8000 for an isolated test server.
+In one terminal, use a fresh temporary SQLite database and enable registration:
+
+```bash
+source venv/bin/activate
+spendy_test_dir=$(mktemp -d)
+export DATABASE_URL="sqlite+aiosqlite:///$spendy_test_dir/api.sqlite3"
+export REGISTRATION_ENABLED=true
+python run.py
+```
+
+This disposable test server deliberately uses SQLite startup bootstrap; it does
+not test migrations. In a second terminal, activate `venv` and run:
+
+```bash
+python tests/test_api.py
+```
+
+The test creates users at `http://localhost:8000`; never point it at your normal
+server. Inspect its output as well as its exit code: the script catches failures.
+Stop the test server and close its shell afterward so its environment overrides
+are not reused. Use a fresh temporary directory for each run.
+
+There is no configured pytest suite, linter, type checker or frontend build.
+For documentation-only changes, check content, relative links/anchors, referenced
+paths and `git diff --check`; application tests are unnecessary.
 
 ## License
 

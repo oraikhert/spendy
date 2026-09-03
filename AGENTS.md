@@ -10,18 +10,15 @@
 - Keep multi-step plans/progress in the conversation. At handoff record decisions,
   changed paths, checks, blockers, and next steps, not tool logs.
 
-## Repository map
+## Orientation
 
 Spendy is a family budget app: FastAPI, async SQLAlchemy 2.0, Pydantic v2,
 Alembic, SQLite/PostgreSQL, Jinja2, HTMX, Tailwind CSS, and DaisyUI.
 
-- `app/main.py`: app/lifespan; `config.py`: settings; `database.py`: sessions.
-- `app/api/v1/`: JSON API; `app/web/`: HTML routes; `app/core/`: auth/dependencies.
-- `app/services/`: shared business logic; `app/models/`: ORM;
-  `app/schemas/`: validation/serialization; `app/utils/`: parsing/matching.
-- `app/templates/`: pages, `partials/`, `macros/`; `app/static/`: assets.
-- `alembic/versions/`: migrations; `tests/`: checks; `scripts/`: admin utilities.
-- `docs/`: durable design/operations docs; `data/uploads/`: private user files.
+Use the [README task index](README.md#documentation) to select relevant docs.
+The canonical folder map is in [Architecture](docs/ARCHITECTURE.md#code-map).
+Service behavior and known limitations are in
+[Service contracts](docs/SERVICE_LAYER.md); do not infer guarantees from layer names.
 
 ## Environment and checks
 
@@ -35,13 +32,14 @@ python run.py                                # local server, port 8000
 python tests/test_parsing.py
 python tests/test_parsing_kind_location.py
 python tests/test_api.py                      # isolated server required
-alembic upgrade head                          # verify target DB first
 git diff --check
 ```
 
 Settings load `.env` through Pydantic Settings. Override `DATABASE_URL` for
 tests before importing the app; never test against a personal/production DB.
-API tests create users on localhost:8000; inspect output, not just exit codes.
+API tests create users on localhost:8000 and need registration enabled; follow the
+[isolated setup](README.md#development-checks) and inspect output, not just exit codes.
+For schema operations, first select the matching [migration scenario](docs/MIGRATIONS.md).
 There is no configured pytest suite, linter, type checker, or frontend build.
 Declare dependencies and commands when adding tooling.
 
@@ -88,13 +86,13 @@ Declare dependencies and commands when adding tooling.
   savings. Isolate DB/network; enable SQLite foreign keys for constraint tests.
 - Run focused checks, then affected integrations; verify UI browser flows and
   responsive/error states. Review the diff and report checks/limitations.
-  Docs-only edits need content/link/size checks, not unrelated application tests.
+  Docs-only edits need content, relative-link/anchor, referenced-path and size checks,
+  not unrelated application tests.
 - Update affected docs in the same change when behavior, setup, API, schema, or
-  architecture changes. Read only relevant sections: `README.md` for setup/API;
-  `docs/ARCHITECTURE.md` for layers/folder map and significant decisions (why,
-  alternatives, consequences); `docs/SERVICE_LAYER.md` for business contracts;
-  `docs/MIGRATIONS.md` for schema operations; `docs/DEPLOYMENT.md` and
-  `docs/TROUBLESHOOTING.md` for operations. Keep one canonical explanation.
+  architecture changes. Follow the README task index and read only relevant sections.
+  Keep one canonical explanation per topic; link to it elsewhere. Describe current
+  behavior separately from intended rules and known limitations. Keep field lists
+  in schemas/models, endpoint details in OpenAPI, and revision history in Alembic.
 - No automatic summary files or duplicate folder trees. Keep this guide under
   6,000 characters (a project budget, not an official Codex limit). Add only durable,
   actionable rules; move detail to linked docs or scoped instructions when needed.

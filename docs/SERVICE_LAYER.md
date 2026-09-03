@@ -1,341 +1,168 @@
-# Service layer
-
-## What it is
-
-The service layer sits between API routes and the database models. It holds the application’s business logic.
-
-## Why use it
-
-### Without a service layer
-
-All logic lived in API routes:
-
-```python
-# app/api/v1/auth.py (old)
-@router.post("/register")
-async def register(user_in: UserCreate, db: AsyncSession):
-    # Check email - 5 lines
-    result = await db.execute(select(User).where(User.email == user_in.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Check username - 5 lines
-    result = await db.execute(select(User).where(User.username == user_in.username))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Username already taken")
-    
-    # Create user - 10 lines
-    db_user = User(
-        email=user_in.email,
-        username=user_in.username,
-        hashed_password=get_password_hash(user_in.password),
-        ...
-    )
-    db.add(db_user)
-    await db.commit()
-    await db.refresh(db_user)
-    return db_user
-```
-
-**Issues:** Logic duplicated when adding web routes; hard to test (need to mock HTTP); business and HTTP logic mixed; no reuse.
-
-### With a service layer
-
-```python
-# app/services/user_service.py
-async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
-    """All user-creation business logic"""
-    if await get_user_by_email(user_in.email, db):
-        raise ValueError("Email already registered")
-    
-    if await get_user_by_username(user_in.username, db):
-        raise ValueError("Username already taken")
-    
-    db_user = User(
-        email=user_in.email,
-        username=user_in.username,
-        hashed_password=get_password_hash(user_in.password),
-        ...
-    )
-    db.add(db_user)
-    await db.commit()
-    await db.refresh(db_user)
-    return db_user
-```
-
-```python
-# app/api/v1/auth.py
-@router.post("/register")
-async def register(user_in: UserCreate, db: AsyncSession):
-    """Only HTTP handling"""
-    try:
-        user = await user_service.create_user(user_in, db)
-        return user
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-```
-
-**Benefits:** One implementation for API and web; easy to test without HTTP; clear separation; reusable logic. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture.
-
-## Structure
-
-```
-app/services/
-├── __init__.py             # Exports
-├── user_service.py         # User CRUD
-├── auth_service.py         # Auth and tokens
-├── account_service.py      # Account CRUD
-├── card_service.py         # Card CRUD
-├── transaction_service.py  # Transaction CRUD, list with filters, get sources
-├── source_event_service.py # Create from text/upload, link, create-and-link, reprocess; FX resolution before matching
-├── exchange_rate_service.py # get_rate (with in-memory TTL cache); used for FX conversion
-└── dashboard_service.py    # Summary (total_spent, total_income, by_kind)
-```
-
-```
-app/utils/
-├── parsing.py              # parse_text (SMS bank notifications: amount, currency, merchant, card number)
-├── matching.py             # normalize_merchant, generate_fingerprint, find_matching_transactions (amount/currency or orig_amount/orig_currency)
-└── canonicalization.py     # canonicalize_transaction (priority from linked source events)
-```
-
-**Usage:**
-```python
-from app.services import user_service, auth_service, account_service, card_service, transaction_service, source_event_service, dashboard_service
-
-user = await user_service.create_user(...)
-account = await account_service.create_account(db, account_data)
-# etc.
-```
-
-## Service functions
-
-### user_service.py
-
-#### `get_user_by_id(user_id: int, db: AsyncSession) -> User | None`
-
-Get user by ID.
-
-```python
-user = await user_service.get_user_by_id(123, db)
-if user:
-    print(f"Found: {user.username}")
-```
-
-#### `get_user_by_email(email: str, db: AsyncSession) -> User | None`
-
-Get user by email.
-
-#### `get_user_by_username(username: str, db: AsyncSession) -> User | None`
-
-Get user by username.
-
-#### `get_user_by_username_or_email(identifier: str, db: AsyncSession) -> User | None`
-
-Find by username or email (e.g. for login).
-
-```python
-user = await user_service.get_user_by_username_or_email("johndoe", db)
-user = await user_service.get_user_by_username_or_email("john@example.com", db)
-```
-
-#### `create_user(user_in: UserCreate, db: AsyncSession) -> User`
-
-Create user with validation: unique email, unique username, password hashing, save to DB.
-
-**Raises:** `ValueError("Email already registered")`, `ValueError("Username already taken")`.
-
-```python
-try:
-    user = await user_service.create_user(user_in, db)
-except ValueError as e:
-    print(f"Error: {e}")
-```
-
-#### `update_user(user_id: int, user_update: UserUpdate, db: AsyncSession) -> User`
-
-Update user. Validates existence and uniqueness when email/username change; hashes password if changed.
-
-**Raises:** `ValueError("User not found")`, `ValueError("Email already registered")`, `ValueError("Username already taken")`.
-
-### auth_service.py
-
-#### `authenticate_user(username_or_email: str, password: str, db: AsyncSession) -> User`
-
-Check credentials: find user by username or email, verify password (bcrypt), check `is_active`.
-
-**Raises:** `ValueError("Incorrect username or password")`, `ValueError("Inactive user")`.
-
-```python
-try:
-    user = await auth_service.authenticate_user("johndoe", "password123", db)
-except ValueError as e:
-    print(f"Login error: {e}")
-```
-
-#### `create_user_access_token(user: User) -> Token`
-
-Create JWT access token. Returns `Token` with `access_token` and `token_type` ("bearer").
-
-```python
-token = await auth_service.create_user_access_token(user)
-print(token.access_token)
-```
-
-## Using services in API routes
-
-### Pattern
-
-```python
-from app.services import user_service, auth_service
-
-@router.post("/endpoint")
-async def endpoint(data: Schema, db: AsyncSession):
-    try:
-        result = await service_function(data, db)
-        return result  # 200 OK
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-```
-
-### Register example
-
-```python
-@router.post("/register", response_model=UserSchema, status_code=201)
-async def register(user_in: UserCreate, db: AsyncSession) -> User:
-    try:
-        user = await user_service.create_user(user_in, db)
-        return user
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-```
-
-### Login example
-
-```python
-@router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm, db: AsyncSession) -> Token:
-    try:
-        user = await auth_service.authenticate_user(
-            form_data.username, form_data.password, db
-        )
-        token = await auth_service.create_user_access_token(user)
-        return token
-    except ValueError as e:
-        if "Inactive" in str(e):
-            raise HTTPException(status_code=400, detail=str(e))
-        else:
-            raise HTTPException(
-                status_code=401,
-                detail=str(e),
-                headers={"WWW-Authenticate": "Bearer"}
-            )
-```
-
-## Using services in web routes
-
-Web routes (Jinja2+HTMX) use the same services. On success return HTML or set cookies/redirect; on `ValueError` return an error fragment or 400. See [ARCHITECTURE.md](ARCHITECTURE.md) for the login example.
-
-## Rules
-
-### In services
-
-- Business logic, validation, checks
-- DB access (queries, commits)
-- Work with multiple models
-- Complex calculations or external integrations
-
-### Not in services
-
-- HTTP-specific code (HTTPException, status codes, headers)
-- FastAPI dependencies
-- request/response objects
-- Building JSON or HTML responses
-
-### Exceptions
-
-Services raise `ValueError`, not `HTTPException`. Routes map them to HTTP:
-
-```python
-# Bad - HTTP in service
-async def create_user(...):
-    if await get_user_by_email(...):
-        raise HTTPException(status_code=400, detail="Email exists")
-
-# Good - domain exception
-async def create_user(...):
-    if await get_user_by_email(...):
-        raise ValueError("Email already registered")
-```
-
-Typical mapping: 400 (validation), 401 (auth), 404 (not found).
-
-## Testing
-
-Test services without HTTP:
-
-```python
-# tests/test_user_service.py
-import pytest
-from app.services import user_service
-
-@pytest.mark.asyncio
-async def test_create_user(db_session):
-    user_data = UserCreate(
-        email="test@example.com",
-        username="testuser",
-        password="password123"
-    )
-    user = await user_service.create_user(user_data, db_session)
-    assert user.id is not None
-    assert user.email == "test@example.com"
-
-@pytest.mark.asyncio
-async def test_create_user_duplicate_email(db_session):
-    user_data = UserCreate(
-        email="test@example.com",
-        username="testuser",
-        password="password123"
-    )
-    await user_service.create_user(user_data, db_session)
-    user_data2 = UserCreate(
-        email="test@example.com",
-        username="testuser2",
-        password="password123"
-    )
-    with pytest.raises(ValueError, match="Email already registered"):
-        await user_service.create_user(user_data2, db_session)
-```
-
-## Transaction-domain services (reference)
-
-- **account_service** — create_account, get_account, get_accounts, update_account, delete_account. See `app/services/account_service.py`.
-- **card_service** — create_card, get_card, get_cards_by_account, update_card, delete_card. See `app/services/card_service.py`.
-- **transaction_service** — create_transaction (sets merchant_norm, fingerprint), get_transaction, get_transactions (filters: account_id, card_id, date_from/to, q, kind, min/max_amount, limit, offset), update_transaction, delete_transaction, get_transaction_sources. See `app/services/transaction_service.py`.
-- **source_event_service** — create_source_event_from_text (parse, resolve FX, then match or create transaction), create_source_event_from_file (stores in data/uploads), get_source_event, get_source_events (filters), link_source_to_transaction, create_transaction_and_link (auto-FX when source currency != account currency unless manual FX provided), unlink_source_from_transaction, reprocess_source_event (re-parse, resolve FX, re-match). Uses `_resolve_amount_currency_fx` (loads card/account, calls exchange_rate_service.get_rate when currencies differ). See `app/services/source_event_service.py`.
-- **exchange_rate_service** — get_rate(from_currency, to_currency) returns Decimal; in-memory TTL cache per base currency; uses ExchangeRate-API Open Access (open.er-api.com). See `app/services/exchange_rate_service.py`.
-- **dashboard_service** — get_dashboard_summary(date_from, date_to, account_id?, card_id?); returns total_spent, total_income, by_kind, count_transactions, last_updated_at. See `app/services/dashboard_service.py`.
-
-Utils: `parse_text` in `app/utils/parsing.py` returns parsed_amount, parsed_currency, parsed_description, parsed_card_number, parse_status. `find_matching_transactions` in `app/utils/matching.py` takes optional orig_amount, orig_currency; matches transactions by (amount, currency) or (original_amount, original_currency). Canonicalization in `app/utils/canonicalization.py`.
-
-## Adding new services
-
-1. **Create the module** (e.g. `app/services/transaction_service.py`) with async functions that take schemas and `db: AsyncSession`, do validation and DB work, return domain objects or raise `ValueError`.
-2. **Export in** `app/services/__init__.py`.
-3. **Use in routes**: call the service in a try/except and map `ValueError` to HTTP status.
-
-## Moving logic from routes to services
-
-1. Extract the business logic from the route into a new function in a service module.
-2. Keep the same logic (DB calls, checks).
-3. In the route, call the service and convert `ValueError` to `HTTPException`.
-
-## Summary
-
-The service layer gives:
-
-- **Encapsulation** — business logic in one place
-- **Reuse** — same code for API and web
-- **Testability** — simple unit tests
-- **Flexibility** — change UI without changing logic
-- **Scalability** — ready for more clients and features
+# Service contracts
+
+Read this when changing business behavior. This document describes current
+contracts and important limitations, rather than repeating function signatures.
+See [Architecture](ARCHITECTURE.md) for boundaries and the
+[README](../README.md#development-checks) for supported checks.
+
+- [Transactions and errors](#transactions-and-errors)
+- [Accounts, cards and transactions](#accounts-cards-and-transactions)
+- [Text ingestion](#text-ingestion)
+- [Matching and dates](#matching-and-dates)
+- [Money and exchange rates](#money-and-exchange-rates)
+- [Linking and reprocessing](#linking-and-reprocessing)
+- [Files and canonicalization](#files-and-canonicalization)
+- [Authentication and summaries](#authentication-and-summaries)
+
+## Transactions and errors
+
+Pass a separate `AsyncSession` to each request/task. Existing write services commit
+their changes and usually refresh returned objects. Read services do not commit.
+`get_db()` closes the session; it has no explicit commit/rollback workflow.
+Closing a session releases an uncommitted transaction, but a caller that catches
+a database failure and continues using that session must roll it back first.
+
+| Operation | Commit boundary |
+|-----------|-----------------|
+| User/account/card/transaction writes | Commit inside the service |
+| Text ingestion | Flush source and optional transaction IDs, then commit source/transaction/link together |
+| Create transaction and link | Flush the transaction ID, then commit transaction/link together |
+| Reprocess | May call create-and-link, which commits internally, before its own final commit |
+| File ingestion | Write file before committing its source row; filesystem and DB are not atomic |
+| Canonicalization helper | Changes an ORM object without committing |
+
+Do not assume wrapping existing service calls creates an atomic multi-step workflow.
+For new workflows, choose one transaction owner and account for nested commits.
+The reprocessing and file paths above are existing limitations.
+
+Expected business failures commonly use `ValueError`; routes map them to HTTP.
+CRUD lookups/updates may return `None`, and deletes/unlink return `False` when absent.
+Database integrity failures are not uniformly translated into domain errors, so
+prechecks alone do not guarantee race-safe handling of duplicate requests.
+The exchange-rate service currently raises `HTTPException(502)` directly, an
+exception to the intended separation of HTTP and business logic.
+
+## Accounts, cards and transactions
+
+[Account](../app/services/account_service.py), [card](../app/services/card_service.py)
+and [transaction](../app/services/transaction_service.py) services provide CRUD.
+Updates apply only fields present in the input schema; deletes are hard deletes.
+Card/account existence checks vary by caller: do not assume each service validates
+all foreign keys or authorization. See the [access model](ARCHITECTURE.md#access-model).
+
+Transaction creation/update derives `merchant_norm` and `fingerprint`. Direct CRUD
+does not perform source matching or automatic FX conversion. Fingerprints are indexed,
+not unique: generating one does not itself reject a duplicate transaction.
+
+Transaction and source lists return `(items, total)` with limit/offset pagination.
+Transaction date filters prefer posting time, falling back to transaction time;
+source filters use the source's contextual `transaction_datetime`. Endpoints pass
+inclusive `date_from`/`date_to` bounds. Current ordering uses dates without an ID
+tiebreaker; account/card lists are unbounded. Preserve behavior deliberately when
+adding pagination or deterministic ordering.
+
+## Text ingestion
+
+[create_source_event_from_text](../app/services/source_event_service.py) does the following:
+
+1. Hash exact input text with SHA-256. Existing content raises `ValueError`; it is
+   not returned as a successful replay. The unique hash is global, independent of
+   source type, account and card.
+2. Parse with [parse_text](../app/utils/parsing.py). Amount, currency, merchant,
+   last four card digits, kind and location may be extracted. Known non-transaction
+   messages are `skipped`; `parsed` does not guarantee every field is available.
+3. Use the supplied card, or select the first card whose normalized last four digits
+   match; `account_id`, when supplied, narrows that lookup. Ambiguous card suffixes
+   are not rejected by this helper.
+4. Flush the source. A nonzero parsed amount, currency and resolved card trigger
+   FX resolution and matching. Missing data or a zero amount leaves it unlinked.
+5. One match: link and fill missing transaction details. No matches: create a
+   transaction and primary link. Multiple matches: save the source without an
+   automatic link. Commit the result.
+
+Enrichment fills missing location, description and dates, and may replace kind
+`other`. It does not replace existing monetary fields or recalculate the fingerprint.
+FX failures propagate; this path does not fall back silently to an unconverted amount.
+
+## Matching and dates
+
+[find_matching_transactions](../app/utils/matching.py) uses card ID, amount/currency
+and optionally normalized merchant. With FX originals, either the canonical pair
+or the original amount/currency pair can match.
+
+The source day comes from posting time, then transaction time, then creation time.
+Candidates match when **any** of their posting, transaction or creation timestamps
+falls within that same day (`[midnight, next midnight)`). Creation time is an OR
+condition even when other timestamps exist; this differs from list/summary filters.
+There is no adjacent-day tolerance. The code takes `.date()` and constructs day
+bounds without explicit timezone normalization; do not silently change this behavior.
+
+Fingerprint inputs are card, day, amount/currency and normalized merchant. The day
+prefers posting time, then transaction time, otherwise `unknown`; original monetary
+values take precedence when both exist. Fingerprint generation and candidate matching
+are separate operations.
+
+## Money and exchange rates
+
+Amounts use `Decimal` and SQL `Numeric`. Current schemas accept two decimal places
+for amounts/fees and six for FX rates. The parser uses negative purchases/payments
+and positive refunds/card top-ups; direct CRUD does not enforce sign by kind.
+
+During source ingestion, differing source/account currencies trigger conversion
+before matching. Canonical amount is `(source_amount * rate).quantize(Decimal("0.01"))`
+using the active Decimal context; original amount/currency and rate are preserved.
+No currency-specific precision table is implemented.
+
+[ExchangeRateService](../app/services/exchange_rate_service.py) fetches latest rates
+from the configured provider, not historical transaction-date rates. It returns
+`Decimal`, caches per base currency in memory for the configured TTL, and reuses an
+async HTTP client with a 10-second timeout. Equal currencies return 1 without a request.
+Provider/network failures or unsupported target currency can produce HTTP 502.
+Configuration keys are in [app/config.py](../app/config.py).
+
+## Linking and reprocessing
+
+All operations below live in [source_event_service.py](../app/services/source_event_service.py).
+
+| Operation | Behavior |
+|-----------|----------|
+| Manual link | Adds a non-primary link; duplicate pair raises `ValueError`. Does not merge transaction fields. |
+| Create-and-link | Requires a source and effective card, amount and currency. Uses overrides, then parsed/contextual values; creates a new transaction and primary link without deduplicating it. |
+| Unlink | Removes only the link; keeps both source and transaction. Returns `False` if absent. |
+| Reprocess | Re-parses text, resolves FX and reruns matching with the stored card. When amount/currency/card are available, replaces existing links: one match links, zero creates, multiple leaves unlinked. Missing prerequisites leave old links in place. |
+
+Create-and-link currently uses truthiness for several overrides: a zero amount
+falls back to the parsed amount. Supplying `original_amount` or `fx_rate` disables
+auto-FX; supplying only `original_currency` or `fx_fee` does not. Reprocess does not
+repeat card suffix discovery, can replace manual links, and does not delete old
+transactions when replacing links. It is not a read-only preview or a guaranteed
+idempotent operation. Its nested commit boundary is described above.
+
+## Files and canonicalization
+
+File ingestion hashes raw bytes, rejects existing hashes, writes under `data/uploads/`
+and stores a source with status `new`. PDF/image parsing is not implemented.
+A failed DB commit can leave a file behind; there is no compensating cleanup.
+
+[canonicalize_transaction](../app/utils/canonicalization.py) can prioritize parsed
+PDF monetary/posting fields, SMS transaction dates and source descriptions. It does
+not commit and is not currently called by the ingestion/link routes. Do not document
+its priority rules as automatic behavior of those routes.
+
+## Authentication and summaries
+
+[User services](../app/services/user_service.py) validate email/username uniqueness,
+hash passwords and commit writes. [Auth services](../app/services/auth_service.py)
+accept username or email, check password and active status, and create JWTs without
+DB writes. Registration policy belongs to routes; CLI creation bypasses it.
+
+[Dashboard summaries](../app/services/dashboard_service.py) use posting time with
+transaction-time fallback and inclusive date bounds. Spending sums absolute negative
+amounts, income sums nonnegative amounts, and per-kind totals retain their sign.
+`base_currency` does not perform conversion: totals can mix currencies unless the
+selected data is already in one currency.
+
+When changing these contracts, use synthetic fixtures and isolate DB/network work.
+Cover duplicate content, ambiguous matches, reprocessing links, FX failure, zero
+amounts and date boundaries as relevant. Existing runnable checks are listed in
+the [README](../README.md#development-checks); pytest fixtures are not configured.

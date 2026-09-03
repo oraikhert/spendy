@@ -1,276 +1,129 @@
-# Install and run troubleshooting
+# Troubleshooting
 
-## Successful install
+Find the symptom below. Use [local setup](../README.md#local-setup) for the normal
+installation path; this document only covers deviations. Run local Python commands
+from the repository root with `venv` active. Return to the
+[documentation index](../README.md#documentation).
 
-If install worked:
+- [Environment or import errors](#environment-or-import-errors)
+- [Dependency installation fails](#dependency-installation-fails)
+- [Port already in use](#port-already-in-use)
+- [Database errors](#database-errors)
+- [Registration or login fails](#registration-or-login-fails)
+- [API checks fail](#api-checks-fail)
+- [Source processing or FX fails](#source-processing-or-fx-fails)
+- [Rebuild the Python environment](#rebuild-the-python-environment)
+- [Request help](#request-help)
 
-- **Virtual environment** exists (`venv/`), dependencies are installed.
-- **Scripts:** `./install.sh` — install (venv + deps, with SSL workaround if needed); `./start.sh` — run the app.
-- **Check:** Activate venv (`source venv/bin/activate`), run `python -c "import fastapi; import uvicorn; print('OK')"`, then `python run.py`. You should see "Database initialized" and "Uvicorn running on http://0.0.0.0:8000".
-- **Next:** Open http://localhost:8000/docs and try the API (`python test_api.py`). If something fails, use the sections below.
+## Environment or import errors
 
----
+**Symptom:** `externally-managed-environment`, missing `fastapi`, or missing `app`.
 
-## Problem 1: "externally-managed-environment"
+**Check:** `pwd`, `python --version`, `python -m pip --version`. The working directory
+must be the repository root and pip should belong to `venv`.
 
-**Symptoms:**
-```
-error: externally-managed-environment
-× This environment is externally managed
-```
+**Fix:** activate `venv` and install the declared dependencies using the README.
+Do not install packages globally to bypass an externally managed Python environment.
 
-**Cause:** On macOS, Python from Homebrew does not allow global package installs.
+**Verify:** `python -c "import fastapi, uvicorn, sqlalchemy; print('Imports OK')"`.
 
-**Fix:** Use a virtual environment:
+## Dependency installation fails
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+| Symptom | Check and fix | Verify |
+|---------|---------------|--------|
+| SSL certificate verification error | Inspect Python's certificate configuration with `python -c "import ssl; print(ssl.get_default_verify_paths())"`. Repair the certificates for that Python distribution or configure the required organization CA. For python.org macOS installs, use the supplied Install Certificates command. | Retry `python -m pip install -r requirements.txt` with certificate verification enabled. |
+| No compatible distribution / build failure | Identify the failing package and Python version. Python 3.13 matches the repository Dockerfile; do not replace project dependencies with unrelated individual installs. | Install the unchanged requirements, then run `python -m pip check`. |
+| Missing compiler or PostgreSQL headers | On macOS, install Command Line Tools (`xcode-select --install`); on Ubuntu/Debian, install required build headers/tools, including `libpq-dev` if the failing package needs it. For Windows compiler failures, use the appropriate Build Tools or WSL. | Retry the failing requirements installation and inspect its exit status. |
 
-Or run: `./install.sh`
+The legacy `install.sh` can retry with trusted-host flags. These bypass certificate
+verification for those hosts; repairing the certificate configuration is the normal
+resolution. There is no need to copy a temporary diagnostics script into the project.
 
----
+## Port already in use
 
-## Problem 2: SSL certificate errors
+**Symptom:** address already in use on port 8000.
 
-**Symptoms:**
-```
-SSLError(SSLCertVerificationError('OSStatus -26276'))
-Could not fetch URL https://pypi.org/simple/...
-```
-
-**Cause:** Python on macOS may not have SSL certificates configured.
-
-**Fix 1 — Quick (trusted hosts):**
-
-```bash
-source venv/bin/activate
-pip install --trusted-host pypi.org \
-            --trusted-host pypi.python.org \
-            --trusted-host files.pythonhosted.org \
-            -r requirements.txt
-```
-
-Or run: `./install.sh` (it will use these flags if needed).
-
-**Fix 2 — Permanent (install certs):**
-
-**Option A:** Run:
-```bash
-/usr/local/bin/python3 -m pip install --upgrade certifi
-/Applications/Python\ 3.*/Install\ Certificates.command
-```
-
-**Option B — Manual:** Install certifi and check paths:
-```bash
-pip install --upgrade certifi
-
-cat << EOF > /tmp/fix_ssl.py
-import ssl
-import certifi
-
-print(f"Default SSL paths: {ssl.get_default_verify_paths()}")
-print(f"Certifi bundle: {certifi.where()}")
-EOF
-
-python /tmp/fix_ssl.py
-```
-
----
-
-## Problem 3: Package versions not compatible with Python 3.13
-
-**Symptoms:** `ERROR: Could not find a version that satisfies the requirement...`
-
-**Fix:** `requirements.txt` uses flexible versions (`>=`). If it still fails:
+**Check:** on macOS/Linux, `lsof -i :8000` identifies the process. Stop your own
+development server with `Ctrl+C`, or choose a different local port:
 
 ```bash
-pip install --upgrade pip
-pip install fastapi
-pip install uvicorn[standard]
-# etc. one by one to see which fails
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
----
+**Verify:** open [health on port 8001](http://localhost:8001/health). The API test
+script targets port 8000, so use its dedicated setup instead of this alternate port.
 
-## Problem 4: Missing system dependencies
+## Database errors
 
-**Symptoms:**
-```
-error: command 'gcc' failed
-error: Microsoft Visual C++ 14.0 is required
-```
+**Symptom:** missing table/column, table already exists, or database file cannot open.
 
-**macOS:**
-```bash
-xcode-select --install
-```
+**Check:** confirm the selected `DATABASE_URL` without exposing credentials, the
+working directory and `alembic current`. For SQLite, check the parent directory's
+existence and write permissions. A relative path is resolved from the working directory.
 
-**Linux (Ubuntu/Debian):**
-```bash
-sudo apt update
-sudo apt install python3-dev python3-pip build-essential libpq-dev
-```
+**Fix:** follow [Migrations](MIGRATIONS.md) for the matching scenario: new database,
+tracked existing database, or SQLite created at startup. For filesystem errors,
+correct the path/ownership or use a writable development location.
 
-**Windows:** Install Visual Studio Build Tools, or use WSL2 with Ubuntu.
+**Verify:** inspect the revision/schema and run a database-backed operation.
+Startup's “Database initialized” log and `/health` do not establish schema compatibility.
+For nullability/type errors, check the documented [backend differences](MIGRATIONS.md#backend-differences).
 
----
+## Registration or login fails
 
-## Problem 5: psycopg2-binary install fails
+**Symptom:** API registration returns 403, registration page redirects, or login fails.
 
-**Symptoms:** `ERROR: Failed building wheel for psycopg2-binary`
+**Check:** `.env.example` disables registration. Check the selected environment's
+`REGISTRATION_ENABLED` value and whether the user exists. API login expects form
+fields, not a JSON body; the `username` field accepts username or email.
 
-**Fix 1 — Use SQLite only:** Remove `psycopg2-binary>=2.9.9` from `requirements.txt`.
+**Fix:** enable registration only where intended and restart, or use
+[manual creation](DEPLOYMENT.md#users). For an expired/invalid token, log in again.
+Inactive accounts and incorrect credentials have distinct errors; inspect the response.
 
-**Fix 2 — Install system deps:**
+**Verify:** log in and request `/api/v1/auth/me` with the bearer token. For web-only
+HTTPS problems, check [proxy and cookie behavior](DEPLOYMENT.md#https-proxy).
 
-**macOS:** `brew install postgresql`
+## API checks fail
 
-**Linux:** `sudo apt-get install libpq-dev`
+**Symptom:** cannot connect, registration returns 403/400, or output reports failures.
 
----
+**Check:** use `python tests/test_api.py`, with development dependencies installed.
+It targets localhost:8000 and creates fixed test users; a reused database may already
+contain them. Its caught exceptions may leave a successful process exit code.
 
-## Problem 6: Port 8000 already in use
+**Fix:** follow the [isolated API-check procedure](../README.md#development-checks)
+with a fresh temporary database and registration enabled. Never reset your normal
+database to make tests pass.
 
-**Symptoms:** `ERROR: [Errno 48] Address already in use`
+**Verify:** inspect every reported check, not just the final process status.
 
-**Fix:** Change port in `run.py`:
+## Source processing or FX fails
 
-```python
-if __name__ == "__main__":
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8001,  # e.g. 8001 instead of 8000
-        reload=True
-    )
-```
+**Symptom:** duplicate-content error, unlinked source, upload still `new`, or HTTP 502.
 
-Or find and stop the process:
-```bash
-lsof -i :8000
-kill -9 <PID>
-```
+**Check:** inspect status and link metadata without logging raw messages/files.
+Exact duplicate content is rejected. Missing card/amount/currency or ambiguous
+matches can leave a text source unlinked; file parsing is not implemented.
 
----
+**Fix:** use the [ingestion and linking contracts](SERVICE_LAYER.md#text-ingestion)
+to decide whether manual linking or reprocessing is appropriate. For FX 502,
+check configured provider reachability and supported currencies before retrying.
+Reprocessing can replace existing links; it is not a harmless diagnostic command.
 
-## Problem 6b: Missing tables (e.g. accounts, transactions)
+**Verify:** inspect the resulting source, transaction and links, including currency,
+original monetary values and dates.
 
-**Symptoms:** `no such table: accounts` or similar after pulling transaction features.
+## Rebuild the Python environment
 
-**Fix:** Apply migrations with venv active and from project root:
+If the environment itself is broken, close the server and deactivate `venv`.
+Rename the old environment to an unused backup name, create a fresh `venv`, and
+install the declared requirements following [local setup](../README.md#local-setup).
+Confirm imports and dependency consistency before discarding the old environment.
+Preserve `.env`, databases, uploads and migration history throughout this procedure.
 
-```bash
-source venv/bin/activate
-alembic upgrade head
-```
+## Request help
 
-See [MIGRATIONS.md](MIGRATIONS.md).
-
----
-
-## Problem 7: Module not found on run
-
-**Symptoms:**
-```
-ModuleNotFoundError: No module named 'fastapi'
-ModuleNotFoundError: No module named 'app'
-```
-
-**Fix:**
-
-1. Activate venv: `source venv/bin/activate` (prompt should show `(venv)`).
-2. Run from project root: `pwd` should be the spendy project directory.
-3. Install deps: `pip list | grep fastapi`.
-
----
-
-## Problem 8: Database file not created
-
-**Symptoms:** `sqlite3.OperationalError: unable to open database file`
-
-**Fix:** Check permissions:
-
-```bash
-pwd
-ls -la
-chmod +w .   # if needed
-```
-
----
-
-## Quick check script
-
-Run this to check your environment:
-
-```bash
-cat << 'EOF' > check_env.sh
-#!/bin/bash
-echo "=== Spendy environment check ==="
-echo ""
-echo "1. Python:"
-python3 --version
-echo ""
-echo "2. venv:"
-if [ -d "venv" ]; then echo "✅ Found"; else echo "❌ Not found - run: python3 -m venv venv"; fi
-echo ""
-echo "3. venv active:"
-if [[ "$VIRTUAL_ENV" != "" ]]; then echo "✅ $VIRTUAL_ENV"; else echo "❌ Run: source venv/bin/activate"; fi
-echo ""
-echo "4. Packages:"
-pip list 2>/dev/null | grep -E "fastapi|uvicorn|sqlalchemy" || echo "❌ Not installed"
-echo ""
-echo "5. Project files:"
-ls -1 app/*.py 2>/dev/null | head -5 || echo "❌ Not found"
-echo "==================================="
-EOF
-
-chmod +x check_env.sh
-./check_env.sh
-```
-
----
-
-## Still not working: full reinstall
-
-```bash
-rm -rf venv
-rm -f spendy.db
-pip cache purge
-
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install --trusted-host pypi.org \
-            --trusted-host pypi.python.org \
-            --trusted-host files.pythonhosted.org \
-            -r requirements.txt
-
-python run.py
-```
-
----
-
-## Get help
-
-If the problem remains:
-
-1. Check Python: `python3 --version` (3.10+ required).
-2. Check full error and logs.
-3. Open a GitHub issue with: Python version, OS, full error text, and `pip list` output.
-
----
-
-## Useful commands
-
-```bash
-python3 --version
-pip --version
-pip list
-pip install --upgrade pip
-pip cache purge
-which python
-deactivate
-```
+Provide the failing command, Python/OS versions, relevant package versions and a
+redacted traceback. For schema errors include the backend and revision, without the
+connection password. Exclude tokens, secrets, raw bank messages, databases and uploads.

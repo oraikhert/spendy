@@ -81,6 +81,7 @@ Declare dependencies and commands when adding tooling.
 
 ## Definition of done and documentation
 
+- Write all project documentation in English.
 - Add regression tests in `tests/test_*.py`, importing production code. Cover
   changed behavior, validation, denied access, and failures by risk, not token
   savings. Isolate DB/network; enable SQLite foreign keys for constraint tests.

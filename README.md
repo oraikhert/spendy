@@ -17,11 +17,22 @@ Read the document for your task; there is no need to load the entire documentati
 |------|------------|
 | Install, run, use the API or run checks | This README |
 | Locate code or understand architectural decisions | [Architecture](docs/ARCHITECTURE.md) |
+| Understand transaction screens and behavior | [Transactions UI](docs/ui/TRANSACTIONS.md) |
+| Implement transaction screens, iteration 1 | [Transactions UI task v1](docs/requirements/TRANSACTIONS_UI_v1.md) |
 | Change ingestion, matching, money handling or service behavior | [Service contracts](docs/SERVICE_LAYER.md) |
 | Initialize, upgrade or change a database schema | [Migrations](docs/MIGRATIONS.md) |
 | Deploy or update the Docker/PostgreSQL installation | [Deployment](docs/DEPLOYMENT.md) |
 | Diagnose installation or runtime errors | [Troubleshooting](docs/TROUBLESHOOTING.md) |
 | Work as a coding agent | [Project rules](AGENTS.md) |
+
+UI documentation in `docs/ui/<FEATURE>.md` describes the target interface in the
+present tense. Keep one current file per feature, without version numbers or delivery status.
+
+Development tasks use `docs/requirements/<FEATURE>_v<N>.md`, starting at `v1`.
+Each task links to the UI documentation and records its scope, baseline, status and
+acceptance checks. Revise the open iteration in place; create the next version for
+a new delivery iteration. Keep completed task scopes unchanged and record the UI
+documentation's Git revision at completion so their references remain traceable.
 
 ## Local setup
 

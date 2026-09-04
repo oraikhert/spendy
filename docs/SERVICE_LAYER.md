@@ -47,19 +47,52 @@ exception to the intended separation of HTTP and business logic.
 [Account](../app/services/account_service.py), [card](../app/services/card_service.py)
 and [transaction](../app/services/transaction_service.py) services provide CRUD.
 Updates apply only fields present in the input schema; deletes are hard deletes.
-Card/account existence checks vary by caller: do not assume each service validates
-all foreign keys or authorization. See the [access model](ARCHITECTURE.md#access-model).
+Direct transaction creation validates card existence. Transaction filters reject
+unknown accounts/cards and incompatible account/card combinations. Other services
+have different reference checks; see the [access model](ARCHITECTURE.md#access-model)
+for shared access and route authentication.
 
 Transaction creation/update derives `merchant_norm` and `fingerprint`. Direct CRUD
 does not perform source matching or automatic FX conversion. Fingerprints are indexed,
 not unique: generating one does not itself reject a duplicate transaction.
 
+Direct CRUD uses strict input schemas separately from legacy response schemas.
+Required values cannot be cleared; descriptions and locations are trimmed, empty
+locations become absent, and currencies accept three Latin letters normalized to
+uppercase. Finite Decimal amounts/rates must fit their model precision without
+rounding. Zero and either sign remain valid independently of transaction type.
+An update cannot include `card_id`. Validation failures map to JSON HTTP 422 and
+HTML field errors; schema/model definitions remain the source for field constraints.
+
+Omitted update values remain untouched. Changes to amount, currency or original FX
+fields validate the merged monetary group: original amount/currency form a pair,
+and an optional positive rate requires both currencies and the original amount.
+Explicitly clearing both original fields clears the rate. Unrelated edits preserve
+incomplete legacy FX groups and the saved fee; the UI does not edit fees. Unchanged
+timestamps retain the precision and offset returned by the database. This does not
+change timestamp storage: SQLite may return naive values, and PostgreSQL may
+normalize the original input offset. Direct edits do not rewrite source fields/links.
+Transaction deletion removes its links in the same commit and preserves sources,
+files, cards, accounts, and links belonging to other transactions.
+
+Transaction filters combine before counting and pagination. Description search is
+a trimmed, case-insensitive literal substring, including `%`, `_`, and backslashes.
+Currency and direction filters are independent; zero is excluded from both signed
+directions. Existing `min_amount`/`max_amount` remain signed bounds. Separate
+nonnegative absolute bounds require a currency. Reversed ranges are rejected.
+Dates use `coalesce(posting_datetime, transaction_datetime)` with inclusive bounds;
+the UI expands calendar dates to full days. Results order by that effective date
+descending, nulls last, then ID descending, with no creation-date fallback.
+
 Transaction and source lists return `(items, total)` with limit/offset pagination.
-Transaction date filters prefer posting time, falling back to transaction time;
-source filters use the source's contextual `transaction_datetime`. Endpoints pass
-inclusive `date_from`/`date_to` bounds. Current ordering uses dates without an ID
-tiebreaker; account/card lists are unbounded. Preserve behavior deliberately when
-adding pagination or deterministic ordering.
+Transaction reads eagerly load card/account data. Link counts use grouped queries.
+Transaction source pages order by source `created_at DESC, id DESC`; the UI requests
+20 links. The existing JSON source endpoint retains its list response with bounded
+`limit`/`offset` (default 100, maximum 1000). Transaction selector references read
+all options in deterministic batches of 500, so later cards/accounts remain
+reachable. Existing account/card CRUD list methods remain unbounded. Standalone
+source filters continue to use contextual `transaction_datetime`; these changes do
+not alter ingestion or same-calendar-day matching below.
 
 ## Text ingestion
 

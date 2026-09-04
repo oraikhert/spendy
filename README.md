@@ -1,10 +1,12 @@
 # Spendy
 
 Spendy tracks accounts, cards, transactions and their source messages/files.
-The JSON API supports transaction management, SMS parsing, matching and summaries;
-the web UI currently provides login, optional registration and a dashboard page.
+The JSON API supports transaction management, SMS parsing, matching and summaries.
+The web UI provides login, optional registration, a dashboard and transaction
+list/detail/create/edit pages with filters, source viewing/downloads, unlink and
+deletion. See [Transactions UI](docs/ui/TRANSACTIONS.md) for screen behavior.
 File uploads are stored, but PDF/image parsing is not implemented. Family groups,
-budgets, reports and transaction management pages remain future work.
+budgets, reports, and account/card management pages remain future work.
 
 Built with FastAPI, async SQLAlchemy, Pydantic, Alembic and SQLite/PostgreSQL.
 The UI uses Jinja2, HTMX, Tailwind CSS and DaisyUI; no frontend build is required.
@@ -100,6 +102,20 @@ python -m pip install -r requirements-dev.txt
 python tests/test_parsing.py
 python tests/test_parsing_kind_location.py
 ```
+
+Run the transaction schema/service/API and HTML regressions without a running server:
+
+```bash
+python tests/test_transaction_service.py
+python tests/test_transactions_web.py
+git diff --check
+```
+
+These scripts select isolated SQLite databases before importing the app and enable
+foreign keys. They use synthetic data and in-process HTTP clients; they do not access
+the configured personal database or external services. They do not verify PostgreSQL
+or browser JavaScript. For UI changes, also verify ordinary and HTMX flows in a
+browser at desktop and 360 px widths, including validation, history, and source actions.
 
 For [API checks](tests/test_api.py), reserve port 8000 for an isolated test server.
 In one terminal, use a fresh temporary SQLite database and enable registration:

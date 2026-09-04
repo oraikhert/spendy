@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 
 from app.config import settings
 from app.database import init_db
@@ -33,6 +33,23 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def private_transaction_responses(request, call_next):
+    private = request.url.path == "/transactions" or request.url.path.startswith("/transactions/")
+    origin = request.headers.get("origin")
+    if private and origin and origin != str(request.base_url).rstrip("/"):
+        # The legacy API CORS policy must not expose cookie-authenticated HTML/CSRF.
+        response = Response("Cross-origin transaction requests are not allowed.", status_code=403)
+    else:
+        response = await call_next(request)
+    if private:
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Vary"] = "Cookie, HX-Request, HX-History-Restore-Request"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 # Configure CORS
 app.add_middleware(

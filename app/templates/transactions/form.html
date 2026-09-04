@@ -1,0 +1,9 @@
+{% extends "transactions/layout.html" %}
+{% block title %}{{ title }} - Spendy{% endblock %}
+{% block transaction_content %}
+<div class="transaction-form-wrap mx-auto space-y-5">
+  <a href="{{ cancel_url }}" class="link link-hover">← {% if transaction %}Back to transaction{% else %}Back to transactions{% endif %}</a>
+  <header><h1 class="text-3xl font-bold">{{ title }}</h1><p class="text-base-content/65 mt-2">{% if transaction %}Update the details of this transaction.{% else %}Record money in or money out.{% endif %}</p></header>
+  {% include "transactions/_form.html" %}
+</div>
+{% endblock %}

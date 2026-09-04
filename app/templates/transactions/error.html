@@ -1,0 +1,8 @@
+{% extends "transactions/layout.html" %}
+{% block title %}{{ title }} - Spendy{% endblock %}
+{% block transaction_content %}
+<section class="card bg-base-100 shadow-sm max-w-2xl mx-auto"><div class="card-body items-start gap-4">
+  <h1 class="text-2xl font-semibold">{{ title }}</h1><p role="alert" class="transaction-text">{{ message }}</p>
+  <div class="flex flex-wrap gap-3"><a href="{{ back_url }}" class="btn btn-outline">Back to transactions</a>{% if retry_url %}<a href="{{ retry_url }}" class="btn btn-primary">Retry</a>{% endif %}</div>
+</div></section>
+{% endblock %}

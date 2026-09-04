@@ -25,31 +25,42 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 async def get_transactions(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
-    account_id: int | None = Query(None),
-    card_id: int | None = Query(None),
+    account_id: int | None = Query(None, gt=0),
+    card_id: int | None = Query(None, gt=0),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     q: str | None = Query(None),
     kind: str | None = Query(None, pattern="^(purchase|topup|refund|other)$"),
     min_amount: Decimal | None = Query(None),
     max_amount: Decimal | None = Query(None),
+    currency: str | None = Query(None),
+    direction: str | None = Query(None, pattern="^(out|in)$"),
+    min_abs_amount: Decimal | None = Query(None),
+    max_abs_amount: Decimal | None = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0)
 ):
     """Get transactions with filters"""
-    transactions, total = await transaction_service.get_transactions(
-        db=db,
-        account_id=account_id,
-        card_id=card_id,
-        date_from=date_from,
-        date_to=date_to,
-        q=q,
-        kind=kind,
-        min_amount=min_amount,
-        max_amount=max_amount,
-        limit=limit,
-        offset=offset
-    )
+    try:
+        transactions, total = await transaction_service.get_transactions(
+            db=db,
+            account_id=account_id,
+            card_id=card_id,
+            date_from=date_from,
+            date_to=date_to,
+            q=q,
+            kind=kind,
+            min_amount=min_amount,
+            max_amount=max_amount,
+            currency=currency,
+            direction=direction,
+            min_abs_amount=min_abs_amount,
+            max_abs_amount=max_abs_amount,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     
     return TransactionListResponse(
         items=transactions,
@@ -66,7 +77,10 @@ async def create_transaction(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ):
     """Create a new transaction"""
-    transaction = await transaction_service.create_transaction(db, transaction_data)
+    try:
+        transaction = await transaction_service.create_transaction(db, transaction_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return transaction
 
 
@@ -94,9 +108,12 @@ async def update_transaction(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ):
     """Update transaction"""
-    transaction = await transaction_service.update_transaction(
-        db, transaction_id, transaction_data
-    )
+    try:
+        transaction = await transaction_service.update_transaction(
+            db, transaction_id, transaction_data
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     if not transaction:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -125,8 +142,12 @@ async def delete_transaction(
 async def get_transaction_sources(
     transaction_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
 ):
-    """Get all source events linked to a transaction"""
-    links = await transaction_service.get_transaction_sources(db, transaction_id)
+    """Get an ordered source page, retaining the existing list response shape."""
+    if await transaction_service.get_transaction(db, transaction_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    links = await transaction_service.get_transaction_sources(db, transaction_id, limit, offset)
     return links

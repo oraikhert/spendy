@@ -29,7 +29,7 @@ This is the canonical map of the main directories, not a generated file inventor
 | [app/templates/](../app/templates/) | Jinja pages, shared `partials/` and `macros/` |
 | [app/static/](../app/static/) | Static assets |
 | [alembic/](../alembic/) | Migration environment and versioned schema changes |
-| [tests/](../tests/) | Executable parser and API checks |
+| [tests/](../tests/) | Executable parser, transaction service, HTML and API checks |
 | [scripts/](../scripts/) | Administrative utilities, including manual user creation |
 | `data/uploads/` | Private uploaded files; contents are git-ignored |
 | [docs/](.) | Architecture, service contracts and operational procedures |
@@ -68,6 +68,11 @@ The browser UI uses CDN dependencies declared in
 [base.html](../app/templates/base.html): HTMX 1.9, Tailwind 4 and DaisyUI 5.
 There is no npm build. Web login returns an HTMX redirect and sets a JWT cookie;
 API login returns a bearer token. Both use the same authentication services.
+Transaction forms work with ordinary GET/POST; HTMX adds filtering, pagination and
+source updates. Full GETs return pages, and fragment requests return their specific
+partial. Filters and pages live in URLs; transaction-list return URLs are validated
+against a local path and allowed query parameters. Screen behavior is documented
+in [Transactions UI](ui/TRANSACTIONS.md).
 
 ## Domain model
 
@@ -95,9 +100,19 @@ Registration is controlled by `REGISTRATION_ENABLED` in API/web routes. The exam
 creation script calls the user service directly and does not use that switch.
 
 Cookie login uses HttpOnly and SameSite=Lax; Secure depends on the request scheme.
-These settings do not establish complete XSS or CSRF protection. Server-side CSRF
-validation is not currently implemented. Deployment and feature changes must account
-for these existing limits rather than infer protections from the presence of JWT.
+Transaction pages, fragments, downloads and mutations require an active cookie user.
+Every transaction create/edit/delete/unlink POST validates a server-generated CSRF
+token bound to that login token; an HTMX header alone grants no access. Other cookie
+flows do not inherit this CSRF check automatically. Expired HTMX sessions use a full
+login redirect. These controls preserve the shared dataset; they do not add ownership.
+Transaction routes reject an explicit cross-origin `Origin` header, including on
+reads, so the existing JSON API CORS policy cannot expose cookie HTML or CSRF tokens.
+
+Transaction responses, including downloads and errors, use `private, no-store` and
+vary by cookie/HTMX request headers. Transaction pages disable HTMX history caching
+and do not persist bank data in localStorage; Back/Forward re-fetches the URL. The
+cookie download route accepts a source ID and permits only resolved attachment
+paths within the upload directory. Files are not public static assets.
 
 ## Design decisions
 

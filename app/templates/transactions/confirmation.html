@@ -1,0 +1,14 @@
+{% extends "transactions/layout.html" %}
+{% block title %}{{ title }} - Spendy{% endblock %}
+{% block transaction_content %}
+<section class="card bg-base-100 shadow-sm max-w-2xl mx-auto"><div class="card-body gap-4">
+  <h1 class="card-title text-2xl">{{ title }}</h1>
+  <p class="transaction-text">{{ message }}</p>
+  <form method="post" action="{{ form_action }}" data-transaction-mutation>
+    {% for name, value in fields.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    {% if 'confirmed' not in fields %}<input type="hidden" name="confirmed" value="yes">{% endif %}
+    <div class="flex flex-wrap gap-3"><a href="{{ cancel_url }}" class="btn">Cancel</a><button type="submit" class="btn btn-error">{{ submit_label }}</button></div>
+    <p data-mutation-status class="text-sm mt-3" role="status" aria-live="polite"></p>
+  </form>
+</div></section>
+{% endblock %}

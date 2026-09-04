@@ -1,0 +1,80 @@
+{% from "transactions/_macros.html" import field_error, field_attrs with context %}
+<form id="transaction-form" method="post" action="{{ form_action }}" hx-post="{{ form_action }}" hx-target="#transaction-form" hx-swap="outerHTML" class="card bg-base-100 shadow-sm" data-transaction-mutation data-transaction-editor {% if errors %}data-has-errors="true"{% endif %} {% if transaction %}data-editing="true"{% endif %} {% if blocked|default(false) %}data-save-blocked="true"{% endif %}>
+  <div class="card-body gap-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}">
+    <input type="hidden" name="currency_manually_edited" value="{{ 'yes' if currency_manually_edited|default(false) else 'no' }}">
+    {% if errors %}<div class="alert alert-error" role="alert" tabindex="-1" data-error-summary><span>{% if blocked|default(false) %}Unable to confirm this request.{% else %}Review the highlighted fields. Your changes have not been saved.{% endif %}{% if errors.get('__all__') %} {{ errors['__all__'] }}{% endif %}{% if errors.get('form') %} {{ errors['form'] }}{% endif %}</span></div>{% endif %}
+    {% if not transaction and not can_create %}<div class="alert alert-info">Add a card before creating a transaction</div>{% endif %}
+    <fieldset class="space-y-5 min-w-0" {% if not transaction and not can_create %}disabled{% endif %}>
+      <legend class="sr-only">Transaction details</legend>
+      <div class="transaction-field">
+        {% if transaction %}
+          <label for="transaction-card" class="label font-medium">Card</label>
+          <input id="transaction-card" class="input w-full" value="{{ card_label(transaction.card) }} · {{ account_label(transaction.card.account) }}" readonly {{ field_attrs(errors, 'card_id', 'transaction-card-hint') }}>
+          <input type="hidden" name="card_id" value="{{ values.get('card_id', '') }}">
+          <p id="transaction-card-hint" class="text-sm text-base-content/65 mt-1">The card cannot be changed after creation.</p>
+        {% else %}
+          <label for="card_id" class="label font-medium">Card <span class="text-error" aria-hidden="true">*</span></label>
+          <select id="card_id" name="card_id" class="select w-full" required {{ field_attrs(errors, 'card_id') }}>
+            <option value="">Choose a card</option>
+            {% for card in cards %}<option value="{{ card.id }}" data-currency="{{ card.currency }}" {% if card.id|string == values.get('card_id', '') %}selected{% endif %}>{{ card.label }}</option>{% endfor %}
+          </select>
+        {% endif %}{{ field_error(errors, 'card_id') }}
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="transaction-field">
+          <label for="amount" class="label font-medium">Amount <span class="text-error" aria-hidden="true">*</span></label>
+          <input id="amount" name="amount" class="input w-full" inputmode="decimal" value="{{ values.get('amount', '') }}" placeholder="-25.00" required {{ field_attrs(errors, 'amount', 'amount-hint') }}>
+          <p id="amount-hint" class="text-sm text-base-content/65 mt-1">Use − for money out and + for money in. Zero is allowed.</p>{{ field_error(errors, 'amount') }}
+        </div>
+        <div class="transaction-field">
+          <label for="currency" class="label font-medium">Currency <span class="text-error" aria-hidden="true">*</span></label>
+          <input id="currency" name="currency" class="input w-full uppercase" value="{{ values.get('currency', '') }}" maxlength="3" autocapitalize="characters" required {{ field_attrs(errors, 'currency', 'currency-hint') }}>
+          <p id="currency-hint" class="text-sm text-base-content/65 mt-1">Three-letter code, such as USD or EUR.</p>{{ field_error(errors, 'currency') }}
+        </div>
+      </div>
+      <div class="transaction-field">
+        <label for="transaction_kind" class="label font-medium">Type <span class="text-error" aria-hidden="true">*</span></label>
+        <select id="transaction_kind" name="transaction_kind" class="select w-full" required {{ field_attrs(errors, 'transaction_kind', 'kind-hint') }}>
+          {% for value, label in [('purchase', 'Purchase'), ('topup', 'Top-up'), ('refund', 'Refund'), ('other', 'Other')] %}<option value="{{ value }}" {% if values.get('transaction_kind', 'purchase') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select><p id="kind-hint" class="text-sm text-base-content/65 mt-1">Type does not change the amount sign.</p>{{ field_error(errors, 'transaction_kind') }}
+      </div>
+      <div class="transaction-field">
+        <label for="description" class="label font-medium">Description <span class="text-error" aria-hidden="true">*</span></label>
+        <textarea id="description" name="description" class="textarea w-full" rows="3" required {{ field_attrs(errors, 'description') }}>{{ values.get('description', '') }}</textarea>{{ field_error(errors, 'description') }}
+      </div>
+      <div class="transaction-field">
+        <label for="transaction_datetime" class="label font-medium">Transaction date</label>
+        <input id="transaction_datetime" name="transaction_datetime" type="text" class="input w-full" value="{{ values.get('transaction_datetime', '') }}" placeholder="2026-02-16T14:30:00" {{ field_attrs(errors, 'transaction_datetime', 'datetime-hint') }}>
+        <p id="datetime-hint" class="text-sm text-base-content/65 mt-1">YYYY-MM-DDTHH:MM:SS; optional fractional seconds and UTC offset, for example +04:00. Leave empty if unknown. No browser timezone conversion.</p>{{ field_error(errors, 'transaction_datetime') }}
+      </div>
+      <details class="transaction-expander border-t border-base-300 pt-4" data-more-details {% if more_details %}open{% endif %}>
+        <summary class="font-medium cursor-pointer">More details</summary>
+        <div class="space-y-5 mt-4">
+          <div class="transaction-field">
+            <label for="posting_datetime" class="label font-medium">Posting date</label>
+            <input id="posting_datetime" name="posting_datetime" class="input w-full" value="{{ values.get('posting_datetime', '') }}" placeholder="2026-02-16T14:30:00" {{ field_attrs(errors, 'posting_datetime', 'datetime-hint') }}>{{ field_error(errors, 'posting_datetime') }}
+          </div>
+          <div class="transaction-field">
+            <label for="location" class="label font-medium">Location</label>
+            <input id="location" name="location" class="input w-full" value="{{ values.get('location', '') }}" maxlength="200" {{ field_attrs(errors, 'location') }}>{{ field_error(errors, 'location') }}
+          </div>
+          <div class="space-y-4" data-fx-fields>
+            <div><h2 class="font-semibold">Original amount and exchange rate</h2><p class="text-sm text-base-content/65 mt-1">Optional. Values are saved as entered, without automatic conversion.</p></div>
+            {% if transaction and ((transaction.original_amount is not none and not transaction.original_currency) or (transaction.original_amount is none and transaction.original_currency)) %}<div class="alert alert-warning text-sm">Incomplete original amount. Complete or clear both fields when changing these values.</div>{% endif %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="transaction-field"><label for="original_amount" class="label font-medium">Original amount</label><input id="original_amount" name="original_amount" class="input w-full" inputmode="decimal" value="{{ values.get('original_amount', '') }}" {{ field_attrs(errors, 'original_amount', 'original-hint') }}>{{ field_error(errors, 'original_amount') }}</div>
+              <div class="transaction-field"><label for="original_currency" class="label font-medium">Original currency</label><input id="original_currency" name="original_currency" class="input w-full uppercase" value="{{ values.get('original_currency', '') }}" maxlength="3" autocapitalize="characters" {{ field_attrs(errors, 'original_currency', 'original-hint') }}>{{ field_error(errors, 'original_currency') }}</div>
+            </div><p id="original-hint" class="text-sm text-base-content/65">Enter or clear both original fields together. Clearing both also clears the exchange rate.</p>
+            <div class="transaction-field"><label for="fx_rate" class="label font-medium">Exchange rate</label><input id="fx_rate" name="fx_rate" class="input w-full" inputmode="decimal" value="{{ values.get('fx_rate', '') }}" {{ field_attrs(errors, 'fx_rate', 'fx-hint') }}><p id="fx-hint" class="text-sm text-base-content/65 mt-1">1 <span data-original-currency-label>{{ values.get('original_currency') or 'original currency' }}</span> = rate <span data-currency-label>{{ values.get('currency') or 'transaction currency' }}</span>. Requires original amount and both currencies; up to 6 decimal places.</p>{{ field_error(errors, 'fx_rate') }}</div>
+          </div>
+        </div>
+      </details>
+    </fieldset>
+    <div class="flex flex-wrap items-center gap-3 border-t border-base-300 pt-5">
+      <button type="submit" class="btn btn-primary" {% if blocked|default(false) or (not transaction and not can_create) %}disabled{% endif %}>{{ submit_label }}</button>
+      <a href="{{ cancel_url }}" class="btn btn-ghost">Cancel</a>
+    </div>
+    <p data-mutation-status class="text-sm" role="status" aria-live="polite">{% if blocked|default(false) %}Refresh this page before saving again. <a class="link" href="{{ form_action }}?return_url={{ return_url|urlencode }}">Refresh page</a>{% endif %}</p>
+  </div>
+</form>

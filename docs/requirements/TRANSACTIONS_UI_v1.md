@@ -1,6 +1,6 @@
 # Transactions UI — development task v1
 
-Iteration: **v1** · Status: **Ready for implementation** · Baseline: **2026-09-03**
+Iteration: **v1** · Status: **Completed** · Baseline: **2026-09-03**
 
 Implement the [Transactions UI](../ui/TRANSACTIONS.md): the transaction list,
 detail page, create/edit form, source viewing/downloads, unlink and transaction
@@ -114,3 +114,39 @@ categories, reconciliation status and family ownership. Do not add placeholder c
 - Update README feature availability and affected service/access contracts.
   Keep the UI document current without delivery notes. Mark this task Completed
   only after acceptance; record checks, limitations and the UI document's Git revision.
+
+## Completion record
+
+Completed on **2026-09-03**. The implemented UI contract is
+[`docs/ui/TRANSACTIONS.md`](../ui/TRANSACTIONS.md) at Git revision
+`2de32f0c611a9b105f9ee74b38b8fe11ad3036d4`; its contents did not change in this delivery.
+No schema migration or dependency upgrade was required.
+
+Validation performed:
+
+- `python tests/test_transaction_service.py`: 13 passing schema, service and JSON
+  API checks using disposable SQLite with foreign keys and isolated network calls.
+- `python tests/test_transactions_web.py`: 24 passing HTML/access checks, including
+  oversized IDs, cross-origin CSRF protection, preserved Retry URLs, ordinary and
+  HTMX month canonicalization, failure recovery, source preservation and downloads.
+- Both parser scripts passed (5 parsing examples and 9 kind/location cases).
+  `python tests/test_api.py` passed against a separate temporary SQLite server;
+  its printed outcomes were inspected.
+- Browser checks used synthetic records and attachments at 360, 768 and 1280 px.
+  Checked wrapping, keyboard focus, validation, confirmation Cancel/Escape,
+  unsaved changes, create/edit redirects, zero amounts, currency defaults,
+  dependent filters, empty results, list/source pagination, source unlinking,
+  Back/Forward restoration and full sign-in navigation after session loss.
+  An injected database write failure preserved the form and blocked retries until
+  an explicit refresh. No personal database or uploads were used.
+- Python compilation, Jinja template compilation, `node --check
+  app/static/js/transactions.js`, documentation links/paths and `git diff --check`
+  passed. Node was used only for the JavaScript syntax check; no frontend build
+  or new tooling dependency was introduced.
+
+Limitations: PostgreSQL was not exercised. Browser checks used Chromium with
+JavaScript enabled; ordinary GET/POST and confirmation fallbacks were covered by
+the HTTP regression suite. Actual connection loss after a server commit was not
+induced; injected service failures and browser write failures verified the
+refresh-before-retry behavior. Existing database timezone storage behavior is
+unchanged, as described in [Service contracts](../SERVICE_LAYER.md#accounts-cards-and-transactions).

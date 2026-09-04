@@ -8,6 +8,7 @@
 
   <div class="flex-none gap-2">
     {% if user %}
+      <a href="/transactions" class="btn btn-ghost btn-sm" {% if request.url.path.startswith('/transactions') %}aria-current="page"{% endif %}>Transactions</a>
       <div class="dropdown dropdown-end">
         <button
           type="button"
@@ -26,6 +27,7 @@
         >
           <li class="menu-title"><span>{{ user.username }}</span></li>
           <li><a href="/dashboard">Home</a></li>
+          <li><a href="/transactions">Transactions</a></li>
           <li><a href="/auth/logout">Log out</a></li>
         </ul>
       </div>

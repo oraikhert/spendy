@@ -13,7 +13,7 @@
     </div>
   </section>
 
-  {{ alert("info", "Budget management, transactions and reports will be available soon!") }}
+  {{ alert("info", "Your transaction history is ready. View transactions or add a new entry below.") }}
 
   <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
@@ -59,11 +59,10 @@
       <div class="card-body">
         <h3 class="card-title">Quick actions</h3>
         <div class="space-y-2">
-          <button class="btn btn-primary btn-block btn-sm" disabled title="Coming soon">Add transaction</button>
-          <button class="btn btn-secondary btn-block btn-sm" disabled title="Coming soon">View reports</button>
+          <a href="/transactions/new" class="btn btn-primary btn-block btn-sm">Add transaction</a>
+          <a href="/transactions" class="btn btn-outline btn-block btn-sm">View transactions</a>
           <a href="/auth/logout" class="btn btn-outline btn-block btn-sm">Log out</a>
         </div>
-        <p class="text-xs text-base-content/60 mt-2">Transactions and reports are in progress.</p>
       </div>
     </div>
 

@@ -1,0 +1,39 @@
+{% macro field_error(errors, name) -%}
+  {% if errors.get(name) %}<p id="{{ name }}-error" class="text-error text-sm mt-1">{{ errors[name] }}</p>{% endif %}
+{%- endmacro %}
+
+{% macro field_attrs(errors, name, hint='') -%}
+  {% if errors.get(name) %}aria-invalid="true"{% endif %}
+  {% if hint or errors.get(name) %}aria-describedby="{{ hint }}{% if hint and errors.get(name) %} {% endif %}{% if errors.get(name) %}{{ name }}-error{% endif %}"{% endif %}
+{%- endmacro %}
+
+{% macro amount(transaction, large=false) -%}
+  <span class="transaction-amount font-semibold {% if large %}text-3xl sm:text-4xl{% endif %} {% if transaction.amount < 0 %}text-error{% elif transaction.amount > 0 %}text-success{% endif %}">{{ money(transaction.amount, transaction.currency) }}</span>
+{%- endmacro %}
+
+{% macro original_amount(transaction) -%}
+  {% if transaction.original_amount is not none and transaction.original_currency %}
+    <span class="block text-xs text-base-content/65 mt-1">Original: {{ money(transaction.original_amount, transaction.original_currency) }}</span>
+  {% elif transaction.original_amount is not none or transaction.original_currency %}
+    <span class="block text-xs text-base-content/65 mt-1">Incomplete original amount</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro effective_date(transaction) -%}
+  <span class="block">{{ display_date(transaction.posting_datetime or transaction.transaction_datetime, 'No date') }}</span>
+  {% if transaction.posting_datetime %}<span class="block text-xs text-base-content/65 mt-1">Posted</span>
+  {% elif transaction.transaction_datetime %}<span class="block text-xs text-base-content/65 mt-1">Transaction date</span>{% endif %}
+{%- endmacro %}
+
+{% macro description(transaction, return_url, source_counts) -%}
+  <a class="link link-hover font-semibold transaction-text" href="{{ detail_url(transaction.id, return_url) }}">{{ transaction.description or 'No description' }}</a>
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-base-content/65">
+    <span class="badge badge-ghost badge-sm">{{ kind_label(transaction.transaction_kind) }}</span>
+    <a class="link" href="{{ detail_url(transaction.id, return_url, 'sources') }}">{{ source_counts.get(transaction.id, 0) }} sources</a>
+  </div>
+  {% if transaction.location and transaction.location != transaction.description %}<p class="transaction-text mt-1 text-sm text-base-content/65">{{ transaction.location }}</p>{% endif %}
+{%- endmacro %}
+
+{% macro detail_row(label, value) -%}
+  <div class="transaction-detail-row"><dt class="text-base-content/65">{{ label }}</dt><dd class="transaction-text font-medium">{{ value }}</dd></div>
+{%- endmacro %}

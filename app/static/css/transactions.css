@@ -1,0 +1,136 @@
+/* Transaction-specific layout; colors and controls follow the shared DaisyUI theme. */
+.transactions-shell,
+.transactions-shell > *,
+.transaction-field,
+.transaction-field > *,
+.transactions-shell .card-body {
+  min-width: 0;
+}
+
+.transactions-shell [hidden] {
+  display: none !important;
+}
+
+.transaction-text {
+  overflow-wrap: anywhere;
+}
+
+.transaction-amount {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.transaction-form-wrap {
+  max-width: 48rem;
+}
+
+.transaction-detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: .75rem;
+}
+
+.transaction-detail-row dd {
+  margin: 0;
+}
+
+.transaction-table {
+  display: none;
+}
+
+.transaction-card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.transaction-card-heading > :first-child {
+  flex: 1 1 9rem;
+}
+
+.transaction-card-amount {
+  max-width: 100%;
+  margin-left: auto;
+  text-align: right;
+}
+
+.transaction-expander > summary {
+  padding-block: .25rem;
+}
+
+.source-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.source-full-text {
+  white-space: pre-wrap;
+}
+
+.transactions-shell :is(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-primary, #4f46e5);
+  outline-offset: 3px;
+}
+
+.transactions-shell [aria-invalid="true"] {
+  border-color: var(--color-error, #dc2626);
+}
+
+.transactions-shell .input,
+.transactions-shell .select,
+.transactions-shell .textarea {
+  max-width: 100%;
+}
+
+.transactions-shell .label {
+  white-space: normal;
+}
+
+.transactions-shell .modal-box {
+  max-height: min(80vh, 40rem);
+  overflow-y: auto;
+}
+
+[data-transaction-mutation][aria-busy="true"] {
+  cursor: progress;
+}
+
+@media (max-width: 639px) {
+  .transactions-shell .card-body {
+    padding: 1rem;
+  }
+
+  .transaction-amount.text-3xl {
+    font-size: 1.25rem;
+    line-height: 1.4;
+  }
+}
+
+@media (min-width: 1024px) {
+  .transaction-table {
+    display: block;
+  }
+
+  .transaction-table table {
+    table-layout: fixed;
+  }
+
+  .transaction-table th:nth-child(1) { width: 20%; }
+  .transaction-table th:nth-child(2) { width: 34%; }
+  .transaction-table th:nth-child(3) { width: 25%; }
+  .transaction-table th:nth-child(4) { width: 21%; }
+
+  .transaction-table td {
+    vertical-align: top;
+    padding-block: 1.125rem;
+  }
+
+  .transaction-cards {
+    display: none;
+  }
+}

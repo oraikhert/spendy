@@ -129,6 +129,7 @@ async def get_current_user_from_cookie(
 
 
 async def get_current_user_from_cookie_required(
+    request: Request,
     user: Annotated[User | None, Depends(get_current_user_from_cookie)]
 ) -> User:
     """
@@ -145,6 +146,8 @@ async def get_current_user_from_cookie_required(
         HTTPException: If user is not authenticated (redirects to login)
     """
     if user is None:
+        if request.headers.get("HX-Request") == "true":
+            raise HTTPException(status_code=401, detail="Not authenticated", headers={"HX-Redirect": "/auth/login"})
         raise HTTPException(
             status_code=status.HTTP_303_SEE_OTHER,
             detail="Not authenticated",

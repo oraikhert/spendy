@@ -1,0 +1,38 @@
+{% from "transactions/_macros.html" import amount, original_amount, effective_date, description with context %}
+<section id="transaction-results" aria-labelledby="transaction-result-count">
+  <h2 id="transaction-result-count" class="text-sm font-medium text-base-content/65 mb-3" tabindex="-1" role="status">{% if errors %}Update filters to see results{% else %}{{ total }} matching transaction{% if total != 1 %}s{% endif %}{% endif %}</h2>
+  {% if not errors and transactions %}
+    <div class="transaction-table card bg-base-100 shadow-sm">
+      <table class="table w-full"><caption class="sr-only">Matching transactions, newest first</caption><thead><tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Card</th><th scope="col" class="text-right">Amount</th></tr></thead>
+        <tbody>{% for transaction in transactions %}<tr>
+          <td>{{ effective_date(transaction) }}</td>
+          <td>{{ description(transaction, return_url, source_counts) }}</td>
+          <td><p class="transaction-text font-medium">{{ card_label(transaction.card) }}</p><p class="transaction-text text-xs text-base-content/65 mt-1">{{ account_label(transaction.card.account) }}</p></td>
+          <td class="text-right">{{ amount(transaction) }}{{ original_amount(transaction) }}</td>
+        </tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    <div class="transaction-cards space-y-3">
+      {% for transaction in transactions %}<article class="card bg-base-100 shadow-sm"><div class="card-body p-4 gap-3">
+        <div class="transaction-card-heading"><div class="min-w-0">{{ description(transaction, return_url, source_counts) }}</div><div class="transaction-card-amount">{{ amount(transaction) }}{{ original_amount(transaction) }}</div></div>
+        <div class="flex flex-wrap justify-between gap-x-4 gap-y-2 text-sm"><div class="text-base-content/65">{{ effective_date(transaction) }}</div><div class="min-w-0"><p class="transaction-text">{{ card_label(transaction.card) }}</p><p class="transaction-text text-xs text-base-content/65 mt-1">{{ account_label(transaction.card.account) }}</p></div></div>
+      </div></article>{% endfor %}
+    </div>
+    <nav class="flex flex-wrap items-center justify-between gap-3 mt-5" aria-label="Transaction pages">
+      <p class="text-sm text-base-content/65">{{ start }}–{{ end }} of {{ total }}</p>
+      <div class="flex items-center gap-2">
+        {% if previous_url %}<a class="btn btn-outline btn-sm" href="{{ previous_url }}" hx-get="{{ previous_url }}" hx-target="#transaction-browser" hx-swap="outerHTML" hx-indicator="#transaction-loading" data-result-page>Previous</a>{% else %}<button class="btn btn-outline btn-sm" disabled>Previous</button>{% endif %}
+        <span class="text-sm">{{ page }} / {{ pages }}</span>
+        {% if next_url %}<a class="btn btn-outline btn-sm" href="{{ next_url }}" hx-get="{{ next_url }}" hx-target="#transaction-browser" hx-swap="outerHTML" hx-indicator="#transaction-loading" data-result-page>Next</a>{% else %}<button class="btn btn-outline btn-sm" disabled>Next</button>{% endif %}
+      </div>
+    </nav>
+  {% elif not errors %}
+    <div class="card bg-base-100 shadow-sm"><div class="card-body items-center text-center py-12">
+      <h3 class="text-xl font-semibold">{% if has_filters %}No matching transactions{% else %}No transactions yet{% endif %}</h3>
+      <p class="text-base-content/65">{% if has_filters %}Try changing your filters or reset to see all transactions.{% else %}Add your first transaction to start keeping track.{% endif %}</p>
+      {% if has_filters %}<a href="/transactions" hx-get="/transactions" hx-target="#transaction-browser" hx-swap="outerHTML" class="btn btn-outline mt-3">Reset filters</a>
+      {% elif can_create %}<a href="{{ create_url }}" class="btn btn-primary mt-3">Add transaction</a>
+      {% else %}<p class="text-sm mt-3">Add a card before creating a transaction</p>{% endif %}
+    </div></div>
+  {% endif %}
+</section>

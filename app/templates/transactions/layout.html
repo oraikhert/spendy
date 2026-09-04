@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "macros/ui.html" import alert %}
+
+{% block extra_head %}
+  {{ super() }}
+  <meta name="htmx-config" content='{"historyEnabled":false,"historyCacheSize":0}'>
+  <link rel="stylesheet" href="/static/css/transactions.css">
+  <script src="/static/js/transactions.js" defer></script>
+{% endblock %}
+
+{% block content %}
+<div class="transactions-shell my-6 space-y-6" hx-history="false" hx-request='{"timeout":30000}' data-transactions-ui data-return-url="{{ return_url|default('/transactions') }}">
+  <div id="transaction-request-error" class="alert alert-error" role="alert" hidden></div>
+  {% block transaction_content %}{% endblock %}
+  <dialog id="transaction-confirmation" class="modal" aria-labelledby="confirmation-title" aria-describedby="confirmation-message">
+    <div class="modal-box">
+      <h2 id="confirmation-title" class="text-xl font-bold"></h2>
+      <p id="confirmation-message" class="mt-3 transaction-text"></p>
+      <div class="modal-action flex-wrap">
+        <button type="button" class="btn" data-dialog-cancel>Cancel</button>
+        <button type="button" class="btn btn-error" data-dialog-confirm>Confirm</button>
+      </div>
+    </div>
+  </dialog>
+</div>
+{% endblock %}

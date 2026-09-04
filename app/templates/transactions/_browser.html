@@ -1,0 +1,83 @@
+{% from "transactions/_macros.html" import field_error, field_attrs with context %}
+<section id="transaction-browser" class="space-y-6" hx-history="false">
+  <header class="flex flex-wrap items-center justify-between gap-4">
+    <div><h1 class="text-3xl font-bold">Transactions</h1><p class="text-base-content/65 mt-1">Your money, one transaction at a time.</p></div>
+    {% if can_create %}<a href="{{ create_url }}" class="btn btn-primary">Add transaction</a>
+    {% else %}<div><button class="btn btn-primary" disabled>Add transaction</button><p class="text-sm text-base-content/65 mt-2">Add a card before creating a transaction</p></div>{% endif %}
+  </header>
+  {% if message|default('') %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+  <form id="transaction-filters" method="get" action="/transactions" hx-get="/transactions" hx-target="#transaction-browser" hx-swap="outerHTML" hx-indicator="#transaction-loading" hx-sync="this:replace" class="card bg-base-100 shadow-sm" data-transaction-filters>
+    <div class="card-body gap-5">
+      {% if errors %}<div class="alert alert-error" role="alert" tabindex="-1" data-error-summary><div>Review the highlighted filters. Results have not been broadened.{% if errors.get('page') %}<p>Page: {{ errors['page'] }}. Apply filters to return to page one.</p>{% endif %}{% if errors.get('form') %}<p>{{ errors['form'] }}</p>{% endif %}</div></div>{% endif %}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="transaction-field">
+          <label for="q" class="label font-medium">Search description</label>
+          <input id="q" name="q" type="search" class="input w-full" value="{{ filters.get('q', '') }}" placeholder="Search transactions" {{ field_attrs(errors, 'q') }}>
+          {{ field_error(errors, 'q') }}
+        </div>
+        <div class="transaction-field">
+          <label for="period" class="label font-medium">Period</label>
+          <select id="period" name="period" class="select w-full" {{ field_attrs(errors, 'period') }}>
+            {% for value, label in [('all', 'All time'), ('month', 'This month'), ('custom', 'Custom range')] %}<option value="{{ value }}" {% if filters.get('period', 'all') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>{{ field_error(errors, 'period') }}
+        </div>
+        <div class="transaction-field">
+          <label for="account_id" class="label font-medium">Account</label>
+          <select id="account_id" name="account_id" class="select w-full" {{ field_attrs(errors, 'account_id') }}>
+            <option value="">All accounts</option>
+            {% for account in accounts %}<option value="{{ account.id }}" {% if account.id|string == filters.get('account_id', '') %}selected{% endif %}>{{ account.label }}</option>{% endfor %}
+          </select>{{ field_error(errors, 'account_id') }}
+        </div>
+      </div>
+      <div data-custom-dates>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {% for name, label in [('date_from', 'From'), ('date_to', 'To')] %}<div class="transaction-field">
+            <label for="{{ name }}" class="label font-medium">{{ label }}</label>
+            <input id="{{ name }}" name="{{ name }}" type="date" class="input w-full" value="{{ filters.get(name, '') }}" {{ field_attrs(errors, name, 'date-range-hint') }}>
+            {{ field_error(errors, name) }}
+          </div>{% endfor %}
+        </div><p id="date-range-hint" class="text-sm text-base-content/65 mt-2">Required for Custom range. Both dates are included.</p>
+      </div>
+      <details class="transaction-expander" {% if advanced_count or errors.get('card_id') or errors.get('kind') or errors.get('direction') or errors.get('currency') or errors.get('min_abs_amount') or errors.get('max_abs_amount') %}open{% endif %}>
+        <summary class="font-medium cursor-pointer">More filters{% if advanced_count %} <span class="badge badge-neutral badge-sm ml-1">{{ advanced_count }}<span class="sr-only"> active</span></span>{% endif %}</summary>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+          <div class="transaction-field">
+            <label for="card_id" class="label font-medium">Card</label>
+            <select id="card_id" name="card_id" class="select w-full" {{ field_attrs(errors, 'card_id') }}><option value="">All cards</option>
+              {% for card in cards %}<option value="{{ card.id }}" data-account-id="{{ card.account_id }}" {% if card.id|string == filters.get('card_id', '') %}selected{% endif %}>{{ card.label }}</option>{% endfor %}
+            </select>{{ field_error(errors, 'card_id') }}
+          </div>
+          <div class="transaction-field">
+            <label for="kind" class="label font-medium">Type</label>
+            <select id="kind" name="kind" class="select w-full" {{ field_attrs(errors, 'kind') }}><option value="">All types</option>
+              {% for value, label in [('purchase', 'Purchase'), ('topup', 'Top-up'), ('refund', 'Refund'), ('other', 'Other')] %}<option value="{{ value }}" {% if filters.get('kind', '') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>{{ field_error(errors, 'kind') }}
+          </div>
+          <div class="transaction-field">
+            <label for="direction" class="label font-medium">Direction</label>
+            <select id="direction" name="direction" class="select w-full" {{ field_attrs(errors, 'direction') }}>
+              {% for value, label in [('', 'All directions'), ('out', 'Money out'), ('in', 'Money in')] %}<option value="{{ value }}" {% if filters.get('direction', '') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>{{ field_error(errors, 'direction') }}
+          </div>
+          <div class="transaction-field">
+            <label for="currency" class="label font-medium">Currency</label>
+            <input id="currency" name="currency" class="input w-full uppercase" type="text" list="transaction-currencies" value="{{ filters.get('currency', '') }}" maxlength="3" placeholder="All currencies" autocapitalize="characters" {{ field_attrs(errors, 'currency') }}>
+            <datalist id="transaction-currencies">{% for currency in currencies %}<option value="{{ currency }}"></option>{% endfor %}</datalist>
+            {{ field_error(errors, 'currency') }}
+          </div>
+          {% for name, label in [('min_abs_amount', 'Amount from'), ('max_abs_amount', 'Amount to')] %}<div class="transaction-field">
+            <label for="{{ name }}" class="label font-medium">{{ label }}</label>
+            <input id="{{ name }}" name="{{ name }}" class="input w-full" inputmode="decimal" value="{{ filters.get(name, '') }}" placeholder="Any amount" {{ field_attrs(errors, name, 'amount-range-hint') }}>
+            {{ field_error(errors, name) }}
+          </div>{% endfor %}
+        </div><p id="amount-range-hint" class="text-sm text-base-content/65 mt-2">Amount bounds use absolute values. Choose a currency first; changing it clears both bounds.</p>
+      </details>
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="submit" class="btn btn-primary" id="apply-transaction-filters">Apply filters</button>
+        <a href="/transactions" class="btn btn-ghost" hx-get="/transactions" hx-target="#transaction-browser" hx-swap="outerHTML" hx-indicator="#transaction-loading">Reset</a>
+        <span id="transaction-loading" class="htmx-indicator text-sm" role="status"><span class="loading loading-spinner loading-xs" aria-hidden="true"></span> Loading transactions…</span>
+      </div>
+    </div>
+  </form>
+  {% include "transactions/_results.html" %}
+</section>

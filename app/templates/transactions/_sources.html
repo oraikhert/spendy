@@ -1,0 +1,49 @@
+{% from "transactions/_macros.html" import detail_row with context %}
+<section id="sources" class="card bg-base-100 shadow-sm" aria-labelledby="sources-heading" hx-history="false">
+  <div class="card-body gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h2 id="sources-heading" class="card-title" tabindex="-1">Sources <span class="badge badge-ghost">{{ source_total }}</span></h2>
+      <span id="sources-loading" class="htmx-indicator text-sm" role="status">Loading sources…</span>
+    </div>
+    <p class="text-sm text-base-content/65">Messages and files linked to this transaction.</p>
+    {% if source_message %}<div class="alert alert-info" role="status">{{ source_message }}</div>{% endif %}
+    {% for source in sources %}
+      {% set event = source.event %}
+      <article class="border border-base-300 rounded-box p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="font-semibold">{{ source.type_label }}</h3><span class="badge badge-sm {% if event.parse_status == 'failed' %}badge-error{% else %}badge-ghost{% endif %}">{{ source.status_label }}</span></div>
+        <p class="text-xs text-base-content/65">Added {{ display_date(event.created_at) }}</p>
+        <p class="source-preview transaction-text text-sm">{% if event.raw_text %}{{ event.raw_text }}{% elif event.file_path %}Attached file{% else %}No source text{% endif %}</p>
+        <details class="transaction-expander">
+          <summary class="text-sm font-medium cursor-pointer">Source details</summary>
+          <div class="mt-3 space-y-4">
+            {% if event.raw_text %}<div><h4 class="text-sm font-semibold mb-1">Full text</h4><p class="transaction-text source-full-text text-sm">{{ event.raw_text }}</p></div>{% endif %}
+            {% if event.parse_status == 'failed' %}<div class="alert alert-error text-sm"><span class="transaction-text">{{ event.parse_error or 'The source could not be parsed.' }}</span></div>{% endif %}
+            <div><h4 class="text-sm font-semibold mb-2">Extracted data</h4>
+              {% if source.extracted %}<dl class="space-y-3 text-sm">{% for label, value in source.extracted %}{{ detail_row(label, value) }}{% endfor %}</dl>
+              {% else %}<p class="text-sm text-base-content/65">No extracted data</p>{% endif %}
+            </div>
+            {% if source.context %}<details class="transaction-expander"><summary class="font-medium text-sm cursor-pointer">Import context</summary><dl class="space-y-3 text-sm mt-3">{% for label, value in source.context %}{{ detail_row(label, value) }}{% endfor %}</dl></details>{% endif %}
+          </div>
+        </details>
+        <div class="flex flex-wrap items-start justify-between gap-2 pt-1">
+          {% if event.file_path %}{% if source.file_available %}<a href="{{ source.download_url }}" class="btn btn-outline btn-sm" data-file-download>Download file</a>{% else %}<p class="text-sm text-base-content/65">File is unavailable</p>{% endif %}{% endif %}
+          <form method="post" action="/transactions/{{ transaction.id }}/sources/{{ event.id }}/unlink" hx-post="/transactions/{{ transaction.id }}/sources/{{ event.id }}/unlink" hx-target="#sources" hx-swap="outerHTML" class="ml-auto" data-transaction-mutation data-confirm-title="Unlink source?" data-confirm-message="Only this link will be removed. The source, file, other links, and transaction values will remain." data-confirm-label="Unlink source">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}"><input type="hidden" name="source_page" value="{{ source_page }}">
+            <button type="submit" class="btn btn-ghost btn-sm text-error">Unlink source</button>
+            <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
+          </form>
+        </div>
+      </article>
+    {% else %}<p class="text-base-content/65 py-4">No sources linked</p>{% endfor %}
+    {% if source_total %}
+    <nav class="flex flex-wrap items-center justify-between gap-3 pt-2" aria-label="Source pages">
+      <p class="text-sm text-base-content/65" role="status">{{ source_start }}–{{ source_end }} of {{ source_total }}</p>
+      <div class="flex items-center gap-2">
+        {% if source_previous_url %}<a href="{{ source_previous_url }}" hx-get="{{ source_previous_url }}" hx-target="#sources" hx-swap="outerHTML" hx-indicator="#sources-loading" class="btn btn-outline btn-sm" data-source-page>Previous</a>{% else %}<button class="btn btn-outline btn-sm" disabled>Previous</button>{% endif %}
+        <span class="text-sm">{{ source_page }} / {{ source_pages }}</span>
+        {% if source_next_url %}<a href="{{ source_next_url }}" hx-get="{{ source_next_url }}" hx-target="#sources" hx-swap="outerHTML" hx-indicator="#sources-loading" class="btn btn-outline btn-sm" data-source-page>Next</a>{% else %}<button class="btn btn-outline btn-sm" disabled>Next</button>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
+  </div>
+</section>

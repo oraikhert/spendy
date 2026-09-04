@@ -43,6 +43,15 @@ _PERIOD_RE = re.compile(
     r"\s+to\s+(?P<end>\d{2}-[A-Za-z]{3}-\d{2})",
     re.IGNORECASE,
 )
+_PERIOD_VALUE_RE = re.compile(
+    r"(?P<start>\d{2}-[A-Za-z]{3}-\d{2})"
+    r"\s+to\s+(?P<end>\d{2}-[A-Za-z]{3}-\d{2})",
+    re.IGNORECASE,
+)
+_MASKED_CARD_RE = re.compile(
+    r"\b\d{4}\s+(?:[X*]{4}\s+){2}(?P<last_four>\d{4})\b",
+    re.IGNORECASE,
+)
 _MONEY_RE = re.compile(r"\d[\d,]*\.\d{2}")
 _MONTHS = {
     "jan": 1,
@@ -82,7 +91,8 @@ def _short_date(value: str) -> date:
 def _statement_metadata(full_text: str, page_count: int) -> ParsedBankStatement:
     card_last_four = None
     card_type = None
-    for line in full_text.splitlines():
+    lines = [" ".join(line.split()) for line in full_text.splitlines()]
+    for line in lines:
         if card_last_four is None and "Card Number:" in line:
             digits = re.findall(r"\d", line.split("Card Number:", 1)[1])
             if len(digits) >= 4:
@@ -91,10 +101,27 @@ def _statement_metadata(full_text: str, page_count: int) -> ParsedBankStatement:
             value = line.split("Card Type:", 1)[1].strip()
             card_type = " ".join(value.split()) or None
 
+    # Some original bank PDFs expose header labels first and their three values
+    # later as a masked card, card type, and statement period block.
+    for index, line in enumerate(lines):
+        masked_card = _MASKED_CARD_RE.search(line)
+        if masked_card is None:
+            continue
+        if card_last_four is None:
+            card_last_four = masked_card.group("last_four")
+        if (
+            card_type is None
+            and index + 2 < len(lines)
+            and _PERIOD_VALUE_RE.fullmatch(lines[index + 2]) is not None
+        ):
+            card_type = lines[index + 1] or None
+        if card_last_four is not None and card_type is not None:
+            break
+
     if card_last_four is None:
         raise _StatementExtractionError("Card number was not found in the statement")
 
-    period_match = _PERIOD_RE.search(full_text)
+    period_match = _PERIOD_RE.search(full_text) or _PERIOD_VALUE_RE.search(full_text)
     if period_match is None:
         raise _StatementExtractionError("Statement period was not found")
     period_start = _short_date(period_match.group("start"))
@@ -160,6 +187,10 @@ def _parse_observations(
         for line in page_text.splitlines():
             stripped = line.strip()
             normalized = " ".join(stripped.split())
+            if "STATEMENT SUMMARY" in normalized or "Emirates NBD Bank" in normalized:
+                table_active = False
+                current_row = None
+                continue
             if (
                 "Transaction Date" in normalized
                 and "Posting Date" in normalized
@@ -169,15 +200,12 @@ def _parse_observations(
                 table_active = True
                 current_row = None
                 continue
-            if not table_active:
-                continue
-            if "STATEMENT SUMMARY" in normalized or "Emirates NBD Bank" in normalized:
-                table_active = False
-                current_row = None
-                continue
 
             row_match = _ROW_RE.match(line)
             if row_match is not None:
+                # Elixir-generated PDFs omit the table header from layout-mode
+                # extraction, while preserving each date-prefixed transaction row.
+                table_active = True
                 value = _decimal(row_match.group("amount"), "statement amount")
                 is_credit = bool(row_match.group("credit"))
                 signed_amount = abs(value) if is_credit else -abs(value)
@@ -202,6 +230,9 @@ def _parse_observations(
                     "raw_lines": [stripped],
                 }
                 rows.append(current_row)
+                continue
+
+            if not table_active:
                 continue
 
             fx_match = _FX_RE.match(stripped)
@@ -283,19 +314,25 @@ def _parse_observations(
     return tuple(observations)
 
 
-def parse_emirates_nbd_statement_text(pages: list[str]) -> SourceParseResult:
-    """Parse layout-preserving text from a recognized statement."""
-    full_text = "\n".join(pages)
-    if not re.search(r"Credit\s+Card\s+Statement", full_text, re.IGNORECASE):
+def parse_emirates_nbd_statement_text(
+    layout_pages: list[str],
+    *,
+    document_pages: list[str] | None = None,
+) -> SourceParseResult:
+    """Parse row layout plus normal document text from a statement."""
+    if document_pages is None:
+        document_pages = layout_pages
+    document_text = "\n".join(document_pages)
+    if not re.search(r"Credit\s+Card\s+Statement", document_text, re.IGNORECASE):
         raise UnsupportedSourceError("The PDF is not a supported credit-card statement")
-    if not re.search(r"Emirates\s+NBD", full_text, re.IGNORECASE):
+    if not re.search(r"Emirates\s+NBD", document_text, re.IGNORECASE):
         raise UnsupportedSourceError("The PDF is not an Emirates NBD statement")
 
-    statement = ParsedBankStatement(bank="Emirates NBD", page_count=len(pages))
+    statement = ParsedBankStatement(bank="Emirates NBD", page_count=len(layout_pages))
     try:
-        statement = _statement_metadata(full_text, len(pages))
-        observations = _parse_observations(pages, statement)
-        expected_debits, expected_credits = _statement_summary_totals(full_text)
+        statement = _statement_metadata(document_text, len(layout_pages))
+        observations = _parse_observations(layout_pages, statement)
+        expected_debits, expected_credits = _statement_summary_totals(document_text)
         parsed_debits = -sum(
             (value.amount for value in observations if value.amount and value.amount < 0),
             Decimal("0"),
@@ -338,10 +375,16 @@ def parse_emirates_nbd_credit_card_statement(
             raise InvalidSourceInputError(
                 f"The statement exceeds the {MAX_STATEMENT_PAGES}-page limit"
             )
-        pages = [page.extract_text(extraction_mode="layout") or "" for page in reader.pages]
+        document_pages = [page.extract_text() or "" for page in reader.pages]
+        layout_pages = [
+            page.extract_text(extraction_mode="layout") or "" for page in reader.pages
+        ]
     except InvalidSourceInputError:
         raise
     except (DependencyError, PdfReadError, OSError, TypeError, ValueError) as exc:
         raise InvalidSourceInputError("The PDF could not be read") from exc
 
-    return parse_emirates_nbd_statement_text(pages)
+    return parse_emirates_nbd_statement_text(
+        layout_pages,
+        document_pages=document_pages,
+    )

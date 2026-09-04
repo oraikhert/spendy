@@ -14,7 +14,7 @@ from app.schemas.transaction import (
     TransactionResponse,
     TransactionListResponse
 )
-from app.schemas.source_event import TransactionSourceLinkResponse
+from app.schemas.transaction_observation import TransactionSourceLinkResponse
 from app.services import transaction_service
 
 
@@ -138,16 +138,18 @@ async def delete_transaction(
     return None
 
 
-@router.get("/{transaction_id}/sources", response_model=list[TransactionSourceLinkResponse])
-async def get_transaction_sources(
+@router.get("/{transaction_id}/observations", response_model=list[TransactionSourceLinkResponse])
+async def get_transaction_observations(
     transaction_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ):
-    """Get an ordered source page, retaining the existing list response shape."""
+    """Get the transaction's ordered source-observation links."""
     if await transaction_service.get_transaction(db, transaction_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-    links = await transaction_service.get_transaction_sources(db, transaction_id, limit, offset)
+    links = await transaction_service.get_transaction_observations(
+        db, transaction_id, limit, offset
+    )
     return links

@@ -25,15 +25,15 @@ a database failure and continues using that session must roll it back first.
 | Operation | Commit boundary |
 |-----------|-----------------|
 | User/account/card/transaction writes | Commit inside the service |
-| Text ingestion | Flush source and optional transaction IDs, then commit source/transaction/link together |
-| Create transaction and link | Flush the transaction ID, then commit transaction/link together |
-| Reprocess | May call create-and-link, which commits internally, before its own final commit |
-| File ingestion | Write file before committing its source row; filesystem and DB are not atomic |
-| Canonicalization helper | Changes an ORM object without committing |
+| Text ingestion | Commit payload, observations, transactions, links and canonical values together |
+| Create transaction and link | Commit transaction/link/canonicalization together |
+| Reprocess | Replace observations/links and recanonicalize in one transaction |
+| File ingestion | Move a private file before commit and remove it if the DB write fails |
+| Canonicalization helper | Change an ORM object without committing |
 
-Do not assume wrapping existing service calls creates an atomic multi-step workflow.
-For new workflows, choose one transaction owner and account for nested commits.
-The reprocessing and file paths above are existing limitations.
+Source orchestration owns its transaction and uses flush-only helpers; it does not
+compose transaction CRUD commits. Filesystem and database writes cannot be truly
+atomic, so upload uses compensating file deletion on a failed commit.
 
 Expected business failures commonly use `ValueError`; routes map them to HTTP.
 CRUD lookups/updates may return `None`, and deletes/unlink return `False` when absent.
@@ -84,38 +84,30 @@ Dates use `coalesce(posting_datetime, transaction_datetime)` with inclusive boun
 the UI expands calendar dates to full days. Results order by that effective date
 descending, nulls last, then ID descending, with no creation-date fallback.
 
-Transaction and source lists return `(items, total)` with limit/offset pagination.
+Transaction, payload and observation lists return `(items, total)` with limit/offset pagination.
 Transaction reads eagerly load card/account data. Link counts use grouped queries.
-Transaction source pages order by source `created_at DESC, id DESC`; the UI requests
-20 links. The existing JSON source endpoint retains its list response with bounded
-`limit`/`offset` (default 100, maximum 1000). Transaction selector references read
-all options in deterministic batches of 500, so later cards/accounts remain
-reachable. Existing account/card CRUD list methods remain unbounded. Standalone
-source filters continue to use contextual `transaction_datetime`; these changes do
-not alter ingestion or same-calendar-day matching below.
+Transaction observation links order by payload receipt time, then observation ID.
+JSON list endpoints default to 100 and permit at most 1000 records. Transaction
+selector references read all options in deterministic batches of 500, so later
+cards/accounts remain reachable. Existing account/card CRUD list methods remain unbounded.
 
 ## Text ingestion
 
-[create_source_event_from_text](../app/services/source_event_service.py) does the following:
+[source_processing_service.py](../app/services/source_processing_service.py) registers
+an immutable payload, runs the parser selected by `(source_kind, media_type)`, stores
+its version and creates zero or more observations. The current registry supports only
+`sms` plus `text/plain`; its regex parser emits stable item key `0`.
 
-1. Hash exact input text with SHA-256. Existing content raises `ValueError`; it is
-   not returned as a successful replay. The unique hash is global, independent of
-   source type, account and card.
-2. Parse with [parse_text](../app/utils/parsing.py). Amount, currency, merchant,
-   last four card digits, kind and location may be extracted. Known non-transaction
-   messages are `skipped`; `parsed` does not guarantee every field is available.
-3. Use the supplied card, or select the first card whose normalized last four digits
-   match; `account_id`, when supplied, narrows that lookup. Ambiguous card suffixes
-   are not rejected by this helper.
-4. Flush the source. A nonzero parsed amount, currency and resolved card trigger
-   FX resolution and matching. Missing data or a zero amount leaves it unlinked.
-5. One match: link and fill missing transaction details. No matches: create a
-   transaction and primary link. Multiple matches: save the source without an
-   automatic link. Commit the result.
+Exact content hashes are indexed but not unique. Without `Idempotency-Key`, identical
+deliveries remain independent. The key is unique within the ingestion method: an
+identical replay returns the existing resource, while reuse with different content or
+creation metadata is a conflict.
 
-Enrichment fills missing location, description and dates, and may replace kind
-`other`. It does not replace existing monetary fields or recalculate the fingerprint.
-FX failures propagate; this path does not fall back silently to an unconverted amount.
+Known non-transaction messages become `ignored`; missing financial extraction becomes
+`failed`; both produce no observations. A successful SMS observation preserves source
+money, resolves a supplied card or matching last four digits, then attempts automatic
+matching. One candidate is linked, no candidates creates a transaction, and multiple
+candidates leave the observation unlinked.
 
 ## Matching and dates
 
@@ -155,32 +147,34 @@ Configuration keys are in [app/config.py](../app/config.py).
 
 ## Linking and reprocessing
 
-All operations below live in [source_event_service.py](../app/services/source_event_service.py).
+All operations below live in [source_processing_service.py](../app/services/source_processing_service.py).
 
 | Operation | Behavior |
 |-----------|----------|
-| Manual link | Adds a non-primary link; duplicate pair raises `ValueError`. Does not merge transaction fields. |
-| Create-and-link | Requires a source and effective card, amount and currency. Uses overrides, then parsed/contextual values; creates a new transaction and primary link without deduplicating it. |
-| Unlink | Removes only the link; keeps both source and transaction. Returns `False` if absent. |
-| Reprocess | Re-parses text, resolves FX and reruns matching with the stored card. When amount/currency/card are available, replaces existing links: one match links, zero creates, multiple leaves unlinked. Missing prerequisites leave old links in place. |
+| Manual link | Rejects an already linked observation, links it to one existing transaction and recanonicalizes. |
+| Create-and-link | Requires effective card, amount and currency; observation values precede request fallbacks. Creates a transaction and manual link atomically. |
+| Unlink | Removes only the link, preserves payload/observation/transaction and recanonicalizes from remaining observations. |
+| Reprocess | Requires a registered parser, deletes every old observation/link, recreates output, reruns matching and preserves orphaned transactions. |
 
-Create-and-link currently uses truthiness for several overrides: a zero amount
-falls back to the parsed amount. Supplying `original_amount` or `fx_rate` disables
-auto-FX; supplying only `original_currency` or `fx_fee` does not. Reprocess does not
-repeat card suffix discovery, can replace manual links, and does not delete old
-transactions when replacing links. It is not a read-only preview or a guaranteed
-idempotent operation. Its nested commit boundary is described above.
+Observation IDs may change during reprocessing. A deliberate parser failure commits
+the failed status with no old observations; an unexpected system/database failure
+rolls back the replacement. Reprocess is not a read-only preview.
 
 ## Files and canonicalization
 
-File ingestion hashes raw bytes, rejects existing hashes, writes under `data/uploads/`
-and stores a source with status `new`. PDF/image parsing is not implemented.
-A failed DB commit can leave a file behind; there is no compensating cleanup.
+Uploads stream to a temporary file under configured `UPLOAD_DIR`, calculate SHA-256,
+then move to an opaque storage name. The original name is metadata only. Files are
+private parser inputs: no API/HTML download route or response exposes their path or
+contents. PDF/image uploads remain `pending` until a parser is implemented.
 
-[canonicalize_transaction](../app/utils/canonicalization.py) can prioritize parsed
-PDF monetary/posting fields, SMS transaction dates and source descriptions. It does
-not commit and is not currently called by the ingestion/link routes. Do not document
-its priority rules as automatic behavior of those routes.
+[canonicalize_transaction](../app/utils/canonicalization.py) runs after link, unlink
+and successful reprocess. Statement observations take monetary, posting and description
+priority; SMS observations take transaction date, kind and location priority. Ties use
+extraction confidence, newer payload receipt, then observation ID. Monetary pairs stay
+within one observation. Missing source values preserve the current canonical field;
+therefore a later source operation can overwrite a direct manual transaction edit but
+does not blank a field with no replacement. FX fee is preserved, while normalization,
+fingerprint and applicable FX rate are refreshed.
 
 ## Authentication and summaries
 

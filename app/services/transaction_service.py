@@ -13,8 +13,9 @@ from sqlalchemy.orm import selectinload
 
 from app.models.account import Account
 from app.models.card import Card
-from app.models.source_event import SourceEvent
+from app.models.source_payload import SourcePayload
 from app.models.transaction import Transaction
+from app.models.transaction_observation import TransactionObservation
 from app.models.transaction_source_link import TransactionSourceLink
 from app.schemas.transaction import (
     Amount, ExchangeRate, MAX_RECORD_ID, TransactionCreate, TransactionUpdate,
@@ -278,30 +279,41 @@ async def get_source_counts(db: AsyncSession, transaction_ids: list[int]) -> dic
     return counts
 
 
-async def get_transaction_sources_page(
+async def get_transaction_observations_page(
     db: AsyncSession, transaction_id: int, limit: int = 20, offset: int = 0
 ) -> tuple[list[TransactionSourceLink], int]:
-    """Return bounded links and their total, ordered by source creation and ID."""
+    """Return bounded observation links and their total."""
     _validate_page(limit, offset)
     total = await db.scalar(
         select(func.count()).select_from(TransactionSourceLink)
         .where(TransactionSourceLink.transaction_id == transaction_id)
     )
-    links = await get_transaction_sources(db, transaction_id, limit=limit, offset=offset)
+    links = await get_transaction_observations(db, transaction_id, limit=limit, offset=offset)
     return links, total
 
 
-async def get_transaction_sources(
+async def get_transaction_observations(
     db: AsyncSession, transaction_id: int, limit: int = 100, offset: int = 0
 ) -> list[TransactionSourceLink]:
-    """Retrieve a source page; existing callers retain the list response shape."""
+    """Retrieve links with the observation and safe payload summary eagerly loaded."""
     _validate_page(limit, offset)
     result = await db.execute(
         select(TransactionSourceLink)
-        .join(SourceEvent, SourceEvent.id == TransactionSourceLink.source_event_id)
+        .join(
+            TransactionObservation,
+            TransactionObservation.id == TransactionSourceLink.observation_id,
+        )
+        .join(SourcePayload, SourcePayload.id == TransactionObservation.source_payload_id)
         .where(TransactionSourceLink.transaction_id == transaction_id)
-        .options(selectinload(TransactionSourceLink.source_event))
-        .order_by(SourceEvent.created_at.desc(), SourceEvent.id.desc())
+        .options(
+            selectinload(TransactionSourceLink.observation).selectinload(
+                TransactionObservation.payload
+            )
+        )
+        .order_by(
+            SourcePayload.received_at.desc(),
+            TransactionObservation.id.desc(),
+        )
         .limit(limit)
         .offset(offset)
     )

@@ -16,15 +16,20 @@ from app.schemas.transaction import (
     TransactionResponse,
     TransactionListResponse,
 )
-from app.schemas.source_event import (
-    SourceEventCreateText,
-    SourceEventResponse,
-    SourceEventListResponse,
-    SourceEventWithTransaction,
+from app.schemas.source_payload import (
+    SourcePayloadCreateText,
+    SourcePayloadSummary,
+    SourcePayloadDetail,
+    SourcePayloadListResponse,
+    BankStatementDetailResponse,
+)
+from app.schemas.transaction_observation import (
+    TransactionObservationSummary,
+    TransactionObservationDetail,
+    TransactionObservationListResponse,
     TransactionLinkCreate,
-    TransactionCreateAndLink,
+    TransactionCreateFromObservation,
     TransactionSourceLinkResponse,
-    TransactionSourceLinkUpdate,
 )
 from app.schemas.dashboard import DashboardSummaryResponse, TransactionKindSummary
 
@@ -47,14 +52,17 @@ __all__ = [
     "TransactionUpdate",
     "TransactionResponse",
     "TransactionListResponse",
-    "SourceEventCreateText",
-    "SourceEventResponse",
-    "SourceEventListResponse",
-    "SourceEventWithTransaction",
+    "SourcePayloadCreateText",
+    "SourcePayloadSummary",
+    "SourcePayloadDetail",
+    "SourcePayloadListResponse",
+    "BankStatementDetailResponse",
+    "TransactionObservationSummary",
+    "TransactionObservationDetail",
+    "TransactionObservationListResponse",
     "TransactionLinkCreate",
-    "TransactionCreateAndLink",
+    "TransactionCreateFromObservation",
     "TransactionSourceLinkResponse",
-    "TransactionSourceLinkUpdate",
     "DashboardSummaryResponse",
     "TransactionKindSummary",
 ]

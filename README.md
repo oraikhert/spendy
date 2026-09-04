@@ -3,9 +3,10 @@
 Spendy tracks accounts, cards, transactions and their source messages/files.
 The JSON API supports transaction management, SMS parsing, matching and summaries.
 The web UI provides login, optional registration, a dashboard and transaction
-list/detail/create/edit pages with filters, source viewing/downloads, unlink and
-deletion. See [Transactions UI](docs/ui/TRANSACTIONS.md) for screen behavior.
-File uploads are stored, but PDF/image parsing is not implemented. Family groups,
+list/detail/create/edit pages with filters and deletion. Its legacy Sources panel is
+awaiting adaptation to the payload/observation model; see the
+[UI follow-up](docs/requirements/SOURCE_PAYLOADS_UI_FOLLOWUP.md). Uploaded files are
+private backend inputs and cannot be downloaded. PDF/image parsing is not implemented. Family groups,
 budgets, reports, and account/card management pages remain future work.
 
 Built with FastAPI, async SQLAlchemy, Pydantic, Alembic and SQLite/PostgreSQL.
@@ -21,6 +22,7 @@ Read the document for your task; there is no need to load the entire documentati
 | Locate code or understand architectural decisions | [Architecture](docs/ARCHITECTURE.md) |
 | Understand transaction screens and behavior | [Transactions UI](docs/ui/TRANSACTIONS.md) |
 | Implement transaction screens, iteration 1 | [Transactions UI task v1](docs/requirements/TRANSACTIONS_UI_v1.md) |
+| Adapt the Sources UI to payloads and observations | [Source payload UI follow-up](docs/requirements/SOURCE_PAYLOADS_UI_FOLLOWUP.md) |
 | Change ingestion, matching, money handling or service behavior | [Service contracts](docs/SERVICE_LAYER.md) |
 | Initialize, upgrade or change a database schema | [Migrations](docs/MIGRATIONS.md) |
 | Deploy or update the Docker/PostgreSQL installation | [Deployment](docs/DEPLOYMENT.md) |
@@ -85,7 +87,7 @@ registration is enabled. Login at `POST /api/v1/auth/login` uses form fields
 `username` (username or email) and `password`. Send the returned token as
 `Authorization: Bearer <access_token>` for protected requests.
 
-Account, card, transaction, source-event and dashboard APIs require an active user.
+Account, card, transaction, source-payload, observation and dashboard APIs require an active user.
 Health, login, registration, exchange-rate lookup and transaction-kind metadata
 do not require a token; disabled registration returns 403. Authentication does not
 provide per-user budget isolation: see [the current access model](docs/ARCHITECTURE.md#access-model).
@@ -101,15 +103,20 @@ run the parser checks (they do not need a server or database):
 python -m pip install -r requirements-dev.txt
 python tests/test_parsing.py
 python tests/test_parsing_kind_location.py
+python tests/test_source_processing.py
+python tests/test_source_migration.py
 ```
 
-Run the transaction schema/service/API and HTML regressions without a running server:
+Run the transaction and source-processing schema/service/API regressions without a running server:
 
 ```bash
 python tests/test_transaction_service.py
-python tests/test_transactions_web.py
 git diff --check
 ```
+
+`tests/test_transactions_web.py` still targets the removed `SourceEvent` contract and
+is deferred with the [Sources UI follow-up](docs/requirements/SOURCE_PAYLOADS_UI_FOLLOWUP.md).
+Restore it as an acceptance gate during that UI iteration.
 
 These scripts select isolated SQLite databases before importing the app and enable
 foreign keys. They use synthetic data and in-process HTTP clients; they do not access

@@ -69,7 +69,7 @@ The browser UI uses CDN dependencies declared in
 There is no npm build. Web login returns an HTMX redirect and sets a JWT cookie;
 API login returns a bearer token. Both use the same authentication services.
 Transaction forms work with ordinary GET/POST; HTMX adds filtering, pagination and
-source updates. Full GETs return pages, and fragment requests return their specific
+source updates in the legacy UI. Full GETs return pages, and fragment requests return their specific
 partial. Filters and pages live in URLs; transaction-list return URLs are validated
 against a local path and allowed query parameters. Screen behavior is documented
 in [Transactions UI](ui/TRANSACTIONS.md).
@@ -77,11 +77,13 @@ in [Transactions UI](ui/TRANSACTIONS.md).
 ## Domain model
 
 - An **Account** groups **Cards**; a **Transaction** belongs to a card.
-- A **SourceEvent** stores an incoming message or file, parsed data and optional
-  account/card context. Its `transaction_datetime` is supplied context;
-  `parsed_transaction_datetime` is extracted data, and `created_at` is ingestion time.
-- **TransactionSourceLink** connects transactions and sources. The pair is unique;
-  the schema permits multiple sources per transaction and multiple transactions per source.
+- A **SourcePayload** stores the immutable text or private file received by the
+  application, its independent kind/media/ingestion dimensions and processing state.
+- A **TransactionObservation** is one financial assertion extracted from a payload.
+  A payload can produce zero or many observations; item keys are unique per payload.
+- **TransactionSourceLink** connects an observation to at most one canonical
+  transaction. A transaction can be supported by many observations.
+- **BankStatementDetail** stores statement-wide metadata separately from its rows.
 - **User** stores login identity. It currently has no ownership relationship to
   accounts or transactions.
 
@@ -100,7 +102,7 @@ Registration is controlled by `REGISTRATION_ENABLED` in API/web routes. The exam
 creation script calls the user service directly and does not use that switch.
 
 Cookie login uses HttpOnly and SameSite=Lax; Secure depends on the request scheme.
-Transaction pages, fragments, downloads and mutations require an active cookie user.
+Transaction pages, fragments and mutations require an active cookie user.
 Every transaction create/edit/delete/unlink POST validates a server-generated CSRF
 token bound to that login token; an HTMX header alone grants no access. Other cookie
 flows do not inherit this CSRF check automatically. Expired HTMX sessions use a full
@@ -108,11 +110,11 @@ login redirect. These controls preserve the shared dataset; they do not add owne
 Transaction routes reject an explicit cross-origin `Origin` header, including on
 reads, so the existing JSON API CORS policy cannot expose cookie HTML or CSRF tokens.
 
-Transaction responses, including downloads and errors, use `private, no-store` and
+Transaction responses and errors use `private, no-store` and
 vary by cookie/HTMX request headers. Transaction pages disable HTMX history caching
-and do not persist bank data in localStorage; Back/Forward re-fetches the URL. The
-cookie download route accepts a source ID and permits only resolved attachment
-paths within the upload directory. Files are not public static assets.
+and do not persist bank data in localStorage; Back/Forward re-fetches the URL.
+Uploaded files are internal parser inputs: neither JSON nor HTML routes expose their
+paths or contents, and they are not public static assets.
 
 ## Design decisions
 
@@ -120,7 +122,7 @@ paths within the upload directory. Files are not public static assets.
 |----------|------------------------|
 | Shared services for HTML and JSON | Avoid separate business logic for each interface. Route-specific HTTP behavior stays at the boundary. |
 | Server-rendered UI with HTMX | Supports forms and fragments without a SPA build. A future client can use the JSON API, but is not part of the current implementation. |
-| Sources separate from transactions | Preserve evidence and support matching/reprocessing. Link changes need explicit business rules; see service contracts. |
+| Payloads, observations and transactions are separate | Preserve immutable evidence, repeated parser output and multiple independent observations without conflating canonical values. |
 | SQLite locally, PostgreSQL in Docker | Supports lightweight development and the deployed database. Migration behavior must be checked on both backends. |
 
 Current feature scope and future work are listed once in the [README](../README.md).

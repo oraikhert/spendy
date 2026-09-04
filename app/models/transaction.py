@@ -54,7 +54,8 @@ class Transaction(Base):
     source_links: Mapped[list["TransactionSourceLink"]] = relationship(
         "TransactionSourceLink",
         back_populates="transaction",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     
     __table_args__ = (

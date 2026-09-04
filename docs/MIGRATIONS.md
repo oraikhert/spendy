@@ -101,13 +101,12 @@ SQLite has limited ALTER support; use Alembic batch operations when the intended
 change requires rebuilding a table. Enable SQLite foreign keys for constraint checks.
 PostgreSQL must also be checked when constraints, types or backfills are affected.
 
-Known schema differences in the current code/history: the rename migration retains
-`source_events.transaction_datetime` as non-null, while the model permits null;
-the sender migration uses length 200, while the model uses 50. A database created
-with `create_all()` can therefore differ from one upgraded through Alembic. These
-need explicit corrective migrations; documentation changes do not reconcile them.
-In particular, file ingestion omits contextual transaction time and may fail on
-the migrated non-null schema.
+The source split revision reads the schema produced by `recipients_sender_001`,
+including its non-null legacy transaction time and sender length, and moves data into
+`source_payloads` and `transaction_observations`. It deliberately drops legacy links
+whose source has no amount/currency and resolves multiple links for one source by
+old-primary status, then transaction ID. Its downgrade cannot restore discarded links
+or more than one observation per payload. Back up retained data before either direction.
 
 ## Recovery and rollback
 

@@ -100,18 +100,20 @@ database to make tests pass.
 
 ## Source processing or FX fails
 
-**Symptom:** duplicate-content error, unlinked source, upload still `new`, or HTTP 502.
+**Symptom:** idempotency conflict, unlinked observation, upload still `pending`, or FX matching failure.
 
 **Check:** inspect status and link metadata without logging raw messages/files.
-Exact duplicate content is rejected. Missing card/amount/currency or ambiguous
-matches can leave a text source unlinked; file parsing is not implemented.
+Duplicate content is allowed unless the same `Idempotency-Key` is reused with different
+creation data. Missing card/amount/currency or ambiguous matches can leave an
+observation unlinked; file parsing is not implemented.
 
 **Fix:** use the [ingestion and linking contracts](SERVICE_LAYER.md#text-ingestion)
 to decide whether manual linking or reprocessing is appropriate. For FX 502,
 check configured provider reachability and supported currencies before retrying.
-Reprocessing can replace existing links; it is not a harmless diagnostic command.
+Reprocessing deletes and recreates observations and links; it is not a harmless
+diagnostic command and never deletes orphaned canonical transactions.
 
-**Verify:** inspect the resulting source, transaction and links, including currency,
+**Verify:** inspect the resulting payload, observations, transaction and links, including currency,
 original monetary values and dates.
 
 ## Rebuild the Python environment

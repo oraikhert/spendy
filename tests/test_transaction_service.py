@@ -25,7 +25,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.api.v1.transactions import router
 from app.core.security import create_access_token
 from app.database import Base, get_db
-from app.models import Account, Card, SourceEvent, Transaction, TransactionSourceLink, User
+from app.models import (
+    Account, Card, SourcePayload, Transaction, TransactionObservation,
+    TransactionSourceLink, User,
+)
 from app.schemas.transaction import TransactionCreate, TransactionResponse, TransactionUpdate
 from app.services import transaction_service as service
 
@@ -214,7 +217,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.fingerprint, second.fingerprint)
         self.assertEqual(first.amount, Decimal("-12.34"))
         self.assertEqual(first.card.account.name, "Family")
-        self.assertEqual(await self.db.scalar(select(func.count()).select_from(SourceEvent)), 0)
+        self.assertEqual(await self.db.scalar(select(func.count()).select_from(SourcePayload)), 0)
         self.assertEqual(await self.db.scalar(select(func.count()).select_from(TransactionSourceLink)), 0)
 
     async def test_update_preserves_omitted_legacy_fx_dates_and_fee(self):
@@ -263,35 +266,53 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
             await service.update_transaction(self.db, invalid_currency.id, TransactionUpdate(fx_rate="2"))
         self.assertIsNone(await service.update_transaction(self.db, 9999, TransactionUpdate(description="Missing")))
 
-    async def test_source_pages_counts_and_delete_preserve_sources_files_and_other_links(self):
+    async def test_observation_pages_counts_and_delete_preserve_payloads_and_other_links(self):
         transaction = await self.record()
         other = await self.record()
         with tempfile.TemporaryDirectory() as directory:
             attachment = Path(directory) / "synthetic.txt"
             attachment.write_text("Synthetic attachment", encoding="utf-8")
-            sources = [SourceEvent(
-                source_type="manual", raw_hash=f"synthetic-{index}", raw_text=f"Source {index}",
+            payloads = [SourcePayload(
+                source_kind="other", media_type="text/plain", ingestion_method="migration",
+                content_hash=f"{index:064x}", raw_text=f"Source {index}",
                 created_at=datetime(2026, 1, 1), file_path=str(attachment) if index == 0 else None,
             ) for index in range(23)]
-            self.db.add_all(sources)
+            other_payload = SourcePayload(
+                source_kind="other", media_type="text/plain", ingestion_method="migration",
+                content_hash="f" * 64, raw_text="Other source", created_at=datetime(2026, 1, 1),
+            )
+            self.db.add_all([*payloads, other_payload])
             await self.db.flush()
-            self.db.add_all([TransactionSourceLink(transaction_id=transaction.id, source_event_id=source.id) for source in sources])
-            self.db.add(TransactionSourceLink(transaction_id=other.id, source_event_id=sources[0].id))
+            observations = [TransactionObservation(
+                source_payload_id=payload.id, source_item_key="0", raw_fragment=payload.raw_text,
+            ) for payload in payloads]
+            other_observation = TransactionObservation(
+                source_payload_id=other_payload.id, source_item_key="0", raw_fragment="Other source",
+            )
+            self.db.add_all([*observations, other_observation])
+            await self.db.flush()
+            self.db.add_all([TransactionSourceLink(
+                transaction_id=transaction.id, observation_id=observation.id, match_method="manual",
+            ) for observation in observations])
+            self.db.add(TransactionSourceLink(
+                transaction_id=other.id, observation_id=other_observation.id, match_method="manual",
+            ))
             await self.db.commit()
             self.db.expunge_all()
             self.statements.clear()
             counts = await service.get_source_counts(self.db, [transaction.id, other.id, 9999])
             self.assertEqual(counts, {transaction.id: 23, other.id: 1, 9999: 0})
             self.assertEqual(len(self.statements), 1)
-            page, total = await service.get_transaction_sources_page(self.db, transaction.id)
+            page, total = await service.get_transaction_observations_page(self.db, transaction.id)
             self.assertEqual(total, 23)
-            self.assertEqual([link.source_event_id for link in page], [source.id for source in reversed(sources)][0:20])
-            self.assertEqual(page[0].source_event.raw_text, "Source 22")
-            page, total = await service.get_transaction_sources_page(self.db, transaction.id, offset=20)
+            self.assertEqual([link.observation_id for link in page], [value.id for value in reversed(observations)][0:20])
+            self.assertEqual(page[0].observation.payload.raw_text, "Source 22")
+            page, total = await service.get_transaction_observations_page(self.db, transaction.id, offset=20)
             self.assertEqual(len(page), 3)
             self.assertTrue(await service.delete_transaction(self.db, transaction.id))
             self.assertFalse(await service.delete_transaction(self.db, transaction.id))
-            self.assertEqual(await self.db.scalar(select(func.count()).select_from(SourceEvent)), 23)
+            self.assertEqual(await self.db.scalar(select(func.count()).select_from(SourcePayload)), 24)
+            self.assertEqual(await self.db.scalar(select(func.count()).select_from(TransactionObservation)), 24)
             self.assertEqual(await service.get_source_counts(self.db, [other.id]), {other.id: 1})
             self.assertEqual(await self.db.scalar(select(func.count()).select_from(Account)), 2)
             self.assertEqual(await self.db.scalar(select(func.count()).select_from(Card)), 2)
@@ -340,7 +361,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
                     response = await client.get("/api/v1/transactions", params={field: str(identifier)})
                     self.assertEqual(response.status_code, 422)
                     self.assertIn(field, response.json()["detail"])
-                for suffix in ("", "/sources"):
+                for suffix in ("", "/observations"):
                     response = await client.get(f"/api/v1/transactions/{identifier}{suffix}")
                     self.assertEqual(response.status_code, 404)
                 response = await client.patch(f"/api/v1/transactions/{identifier}", json={"description": "Missing"})
@@ -360,9 +381,9 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
             response = await client.get("/api/v1/transactions", params={"currency": "AED", "direction": "out", "min_abs_amount": "12.34", "max_abs_amount": "12.34"})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["total"], 1)
-            self.assertEqual((await client.get(f"/api/v1/transactions/{transaction_id}/sources?limit=1&offset=1")).json(), [])
-            self.assertEqual((await client.get(f"/api/v1/transactions/{transaction_id}/sources?limit=1001")).status_code, 422)
-            self.assertEqual((await client.get("/api/v1/transactions/9999/sources")).status_code, 404)
+            self.assertEqual((await client.get(f"/api/v1/transactions/{transaction_id}/observations?limit=1&offset=1")).json(), [])
+            self.assertEqual((await client.get(f"/api/v1/transactions/{transaction_id}/observations?limit=1001")).status_code, 422)
+            self.assertEqual((await client.get("/api/v1/transactions/9999/observations")).status_code, 404)
             self.assertEqual((await client.delete(f"/api/v1/transactions/{transaction_id}")).status_code, 204)
             self.assertEqual((await client.get(f"/api/v1/transactions/{transaction_id}")).status_code, 404)
 

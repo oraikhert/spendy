@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.routing import APIRoute
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -253,20 +253,6 @@ async def save_form(request, db, user, transaction=None):
 @router.post("/new", response_class=HTMLResponse)
 async def create_page(request: Request, db: DB, user: ActiveUser):
     return await save_form(request, db, user)
-
-
-@router.get("/sources/{source_id}/download")
-async def download_source(request: Request, source_id: str, db: DB, user: ActiveUser):
-    identifier = record_id(source_id)
-    if identifier is None:
-        return error_page(request, user, "File is unavailable")
-    source = await source_event_service.get_source_event(db, identifier)
-    path = await run_in_threadpool(file_path_for, source) if source else None
-    if path is None:
-        return error_page(request, user, "File is unavailable")
-    # Avoid exposing server paths or ingestion hashes in download names.
-    return FileResponse(path, filename=f"attachment{path.suffix}", media_type="application/octet-stream",
-                        headers={"X-Content-Type-Options": "nosniff"})
 
 
 async def lookup(db, transaction_id):

@@ -1,94 +1,136 @@
-"""Canonicalization utilities"""
+"""Deterministic canonical transaction values from linked observations."""
+from datetime import UTC
+from decimal import Decimal
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.models.card import Card
 from app.models.transaction import Transaction
-from app.models.source_event import SourceEvent
 from app.models.transaction_source_link import TransactionSourceLink
+from app.models.transaction_observation import TransactionObservation
+from app.utils.matching import generate_fingerprint, normalize_merchant
+
+
+FINANCIAL_PRIORITY = {"bank_statement": 0, "bank_app": 1, "sms": 2, "other": 3}
+IMMEDIATE_PRIORITY = {"sms": 0, "bank_app": 1, "bank_statement": 2, "other": 3}
+
+
+def _received_timestamp(observation: TransactionObservation) -> float:
+    value = observation.payload.received_at
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.timestamp()
+
+
+def _priority_key(observation: TransactionObservation, priority):
+    confidence = (
+        observation.extraction_confidence
+        if observation.extraction_confidence is not None
+        else Decimal("-1")
+    )
+    return (
+        priority.get(observation.payload.source_kind, len(priority)),
+        -confidence,
+        -_received_timestamp(observation),
+        -observation.id,
+    )
+
+
+def _winner(observations, field, priority):
+    candidates = [value for value in observations if getattr(value, field) is not None]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda value: _priority_key(value, priority))
+
+
+def _money_winner(observations):
+    candidates = [
+        value
+        for value in observations
+        if value.amount is not None and value.currency is not None
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda value: _priority_key(value, FINANCIAL_PRIORITY))
+
+
+async def _canonical_money(db: AsyncSession, transaction: Transaction, observation):
+    # Import lazily so standalone parser imports do not recurse through the eager
+    # app.services package exports back into source processing.
+    from app.services.exchange_rate_service import exchange_rate_service
+
+    amount = observation.amount
+    currency = observation.currency
+    if amount is None or currency is None:
+        return None
+    if observation.original_amount is not None and observation.original_currency is not None:
+        fx_rate = None
+        if observation.original_amount != 0 and currency != observation.original_currency:
+            fx_rate = (amount / observation.original_amount).copy_abs()
+        return amount, currency, observation.original_amount, observation.original_currency, fx_rate
+
+    card = await db.scalar(
+        select(Card).where(Card.id == transaction.card_id).options(selectinload(Card.account))
+    )
+    if card is None or not card.account or currency.upper() == card.account.account_currency.upper():
+        return amount, currency, None, None, None
+    rate = await exchange_rate_service.get_rate(currency, card.account.account_currency)
+    canonical_amount = (amount * rate).quantize(Decimal("0.01"))
+    return canonical_amount, card.account.account_currency, amount, currency, rate
 
 
 async def canonicalize_transaction(
     db: AsyncSession,
     transaction: Transaction
 ) -> Transaction:
-    """
-    Update canonical fields based on linked SourceEvents priority rules.
-    
-    Priority:
-    1. PDF statement (posting_datetime, amount, currency)
-    2. SMS/screenshot (transaction_datetime)
-    3. Description: statement description > longest non-empty from other sources
-    
-    Args:
-        db: Database session
-        transaction: Transaction to canonicalize
-        
-    Returns:
-        Updated transaction
-    """
-    # Load linked source events
+    """Recalculate every source-backed canonical field without committing."""
     query = (
         select(TransactionSourceLink)
         .where(TransactionSourceLink.transaction_id == transaction.id)
-        .options(selectinload(TransactionSourceLink.source_event))
+        .options(
+            selectinload(TransactionSourceLink.observation).selectinload(
+                TransactionObservation.payload
+            )
+        )
     )
     result = await db.execute(query)
     links = result.scalars().all()
-    
     if not links:
         return transaction
-    
-    # Separate sources by type
-    pdf_sources = []
-    sms_screenshot_sources = []
-    other_sources = []
-    
-    for link in links:
-        source = link.source_event
-        if source.source_type == "pdf_statement":
-            pdf_sources.append(source)
-        elif source.source_type in {"sms_text", "sms_screenshot", "bank_screenshot", "telegram_text"}:
-            sms_screenshot_sources.append(source)
-        else:
-            other_sources.append(source)
-    
-    # Apply canonicalization rules
-    
-    # Rule 1: PDF statement for posting_datetime, amount, currency
-    if pdf_sources:
-        pdf_source = pdf_sources[0]  # Take first if multiple
-        if pdf_source.parsed_posting_datetime:
-            transaction.posting_datetime = pdf_source.parsed_posting_datetime
-        if pdf_source.parsed_amount is not None:
-            transaction.amount = pdf_source.parsed_amount
-        if pdf_source.parsed_currency:
-            transaction.currency = pdf_source.parsed_currency
-    
-    # Rule 2: SMS/screenshot for transaction_datetime
-    if sms_screenshot_sources:
-        for source in sms_screenshot_sources:
-            if source.parsed_transaction_datetime:
-                transaction.transaction_datetime = source.parsed_transaction_datetime
-                break
-    
-    # Rule 3: Description - prefer statement, else longest
-    description_sources = []
-    
-    # Check PDF for description
-    if pdf_sources and pdf_sources[0].parsed_description:
-        transaction.description = pdf_sources[0].parsed_description
-    else:
-        # Collect all descriptions from other sources
-        for link in links:
-            source = link.source_event
-            if source.parsed_description:
-                description_sources.append(source.parsed_description)
-            elif source.raw_text:
-                description_sources.append(source.raw_text)
-        
-        # Choose longest
-        if description_sources:
-            transaction.description = max(description_sources, key=len)
-    
+
+    observations = [link.observation for link in links]
+    money_source = _money_winner(observations)
+    if money_source is not None:
+        money = await _canonical_money(db, transaction, money_source)
+        if money is not None:
+            (
+                transaction.amount,
+                transaction.currency,
+                transaction.original_amount,
+                transaction.original_currency,
+                transaction.fx_rate,
+            ) = money
+
+    for field in ("posting_datetime", "description"):
+        source = _winner(observations, field, FINANCIAL_PRIORITY)
+        if source is not None:
+            setattr(transaction, field, getattr(source, field))
+    for field in ("transaction_datetime", "transaction_kind", "location"):
+        source = _winner(observations, field, IMMEDIATE_PRIORITY)
+        if source is not None:
+            setattr(transaction, field, getattr(source, field))
+
+    transaction.merchant_norm = normalize_merchant(transaction.description)
+    transaction.fingerprint = generate_fingerprint(
+        card_id=transaction.card_id,
+        amount=transaction.amount,
+        currency=transaction.currency,
+        posting_datetime=transaction.posting_datetime,
+        transaction_datetime=transaction.transaction_datetime,
+        merchant_norm=transaction.merchant_norm,
+        orig_amount=transaction.original_amount,
+        orig_currency=transaction.original_currency,
+    )
     return transaction

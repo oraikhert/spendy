@@ -125,3 +125,44 @@ GET {{apiV1}}/auth/me
 Authorization: Bearer invalid_token_here
 
 ###
+
+###############################################
+# Source payloads and observations
+###############################################
+
+### Register and synchronously process an SMS
+POST {{apiV1}}/source-payloads/text
+Authorization: Bearer {{accessToken}}
+Idempotency-Key: replace-with-a-unique-phone-delivery-id
+Content-Type: application/json
+
+{
+  "source_kind": "sms",
+  "text": "Purchase of AED 12.34 with Credit Card ending 1111 at SYNTHETIC SHOP, DUBAI.",
+  "transaction_datetime": "2026-09-04T12:00:00+04:00"
+}
+
+###
+
+### List payloads without observations
+GET {{apiV1}}/source-payloads?has_observations=false
+Authorization: Bearer {{accessToken}}
+
+###
+
+### List unlinked observations
+GET {{apiV1}}/transaction-observations?has_transaction=false
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Link one observation to an existing transaction
+POST {{apiV1}}/transaction-observations/1/link
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "transaction_id": 1
+}
+
+### Uploaded files are private parser inputs; there is no download endpoint.

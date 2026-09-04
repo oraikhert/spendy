@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./spendy.db"
+    UPLOAD_DIR: str = "data/uploads"
     
     # Exchange Rate API (Open Access)
     EXCHANGE_RATE_API_BASE_URL: str = "https://open.er-api.com"

@@ -6,6 +6,7 @@ from app.services import (
     card_service,
     transaction_service,
     source_event_service,
+    source_processing_service,
     dashboard_service,
 )
 
@@ -16,6 +17,7 @@ __all__ = [
     "card_service",
     "transaction_service",
     "source_event_service",
+    "source_processing_service",
     "dashboard_service",
 ]
 from app.services.user_service import (
@@ -31,7 +33,7 @@ from app.services.auth_service import (
     create_user_access_token,
 )
 
-__all__ = [
+__all__ += [
     "get_user_by_id",
     "get_user_by_email",
     "get_user_by_username",

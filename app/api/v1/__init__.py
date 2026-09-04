@@ -5,7 +5,8 @@ from app.api.v1 import (
     accounts,
     cards,
     transactions,
-    source_events,
+    source_payloads,
+    transaction_observations,
     dashboard,
     meta,
     exchange_rates,
@@ -18,7 +19,8 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(accounts.router)
 api_router.include_router(cards.router)
 api_router.include_router(transactions.router)
-api_router.include_router(source_events.router)
+api_router.include_router(source_payloads.router)
+api_router.include_router(transaction_observations.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(meta.router)
 api_router.include_router(exchange_rates.router)

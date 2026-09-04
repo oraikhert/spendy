@@ -7,7 +7,7 @@ See [Architecture](ARCHITECTURE.md) for boundaries and the
 
 - [Transactions and errors](#transactions-and-errors)
 - [Accounts, cards and transactions](#accounts-cards-and-transactions)
-- [Text ingestion](#text-ingestion)
+- [Source ingestion](#source-ingestion)
 - [Matching and dates](#matching-and-dates)
 - [Money and exchange rates](#money-and-exchange-rates)
 - [Linking and reprocessing](#linking-and-reprocessing)
@@ -91,12 +91,13 @@ JSON list endpoints default to 100 and permit at most 1000 records. Transaction
 selector references read all options in deterministic batches of 500, so later
 cards/accounts remain reachable. Existing account/card CRUD list methods remain unbounded.
 
-## Text ingestion
+## Source ingestion
 
 [source_processing_service.py](../app/services/source_processing_service.py) registers
 an immutable payload, runs the parser selected by `(source_kind, media_type)`, stores
-its version and creates zero or more observations. The current registry supports only
-`sms` plus `text/plain`; its regex parser emits stable item key `0`.
+its version and creates zero or more observations. The current versioned registry
+supports Emirates NBD `sms` plus `text/plain` and Emirates NBD `bank_statement` plus
+`application/pdf`.
 
 Exact content hashes are indexed but not unique. Without `Idempotency-Key`, identical
 deliveries remain independent. The key is unique within the ingestion method: an
@@ -108,6 +109,16 @@ Known non-transaction messages become `ignored`; missing financial extraction be
 money, resolves a supplied card or matching last four digits, then attempts automatic
 matching. One candidate is linked, no candidates creates a transaction, and multiple
 candidates leave the observation unlinked.
+
+Bank-statement upload validates the PDF signature, normalizes its media type and runs
+PDF extraction outside the event loop. A request-only password may decrypt the input
+but is excluded from storage and idempotency. The Emirates NBD parser extracts card,
+period and statement metadata, multi-page rows, continuation text and FX originals;
+it validates parsed debit and credit totals against the statement summary. Invalid,
+encrypted-with-the-wrong-password and unsupported PDFs are rejected before persistence.
+A recognized statement whose rows cannot be extracted consistently is kept as a failed
+payload/detail without observations. The configured upload limit defaults to 20 MiB,
+and the statement parser rejects more than 100 pages.
 
 ## Matching and dates
 
@@ -121,6 +132,13 @@ falls within that same day (`[midnight, next midnight)`). Creation time is an OR
 condition even when other timestamps exist; this differs from list/summary filters.
 There is no adjacent-day tolerance. The code takes `.date()` and constructs day
 bounds without explicit timezone normalization; do not silently change this behavior.
+
+Statement matching is deliberately narrower: a candidate must match the resolved card,
+booked or original money, and a transaction or posting calendar day from the statement
+row. Creation time is used only if the candidate has neither business timestamp. One existing
+transaction cannot satisfy two rows in the same statement. Description similarity can
+resolve multiple candidates, while an unresolved tie remains unlinked; no candidates
+creates a transaction.
 
 Fingerprint inputs are card, day, amount/currency and normalized merchant. The day
 prefers posting time, then transaction time, otherwise `unknown`; original monetary
@@ -165,7 +183,8 @@ rolls back the replacement. Reprocess is not a read-only preview.
 Uploads stream to a temporary file under configured `UPLOAD_DIR`, calculate SHA-256,
 then move to an opaque storage name. The original name is metadata only. Files are
 private parser inputs: no API/HTML download route or response exposes their path or
-contents. PDF/image uploads remain `pending` until a parser is implemented.
+contents. Emirates NBD credit-card statement PDFs are processed at upload; unsupported
+file formats remain `pending` when no parser is registered.
 
 [canonicalize_transaction](../app/utils/canonicalization.py) runs after link, unlink
 and successful reprocess. Statement observations take monetary, posting and description

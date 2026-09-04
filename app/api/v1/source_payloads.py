@@ -20,6 +20,7 @@ from app.services import source_processing_service
 from app.services.source_processing_service import (
     SourceConflictError,
     SourceNotFoundError,
+    SourceUploadTooLargeError,
     SourceValidationError,
 )
 
@@ -32,6 +33,11 @@ def _raise_source_error(exc: Exception) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if isinstance(exc, SourceConflictError):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if isinstance(exc, SourceUploadTooLargeError):
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
     if isinstance(exc, SourceValidationError):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
@@ -78,6 +84,7 @@ async def create_upload_payload(
     current_user: Annotated[User, Depends(get_current_active_user)],
     account_id: Annotated[int | None, Form(gt=0, le=MAX_RECORD_ID)] = None,
     card_id: Annotated[int | None, Form(gt=0, le=MAX_RECORD_ID)] = None,
+    password: Annotated[str | None, Form(max_length=255)] = None,
     idempotency_key: Annotated[
         str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
     ] = None,
@@ -90,6 +97,7 @@ async def create_upload_payload(
             account_id=account_id,
             card_id=card_id,
             idempotency_key=_normalize_idempotency_key(idempotency_key),
+            password=password,
         )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
         _raise_source_error(exc)
@@ -144,8 +152,13 @@ async def reprocess_source_payload(
     payload_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
+    password: Annotated[str | None, Form(max_length=255)] = None,
 ):
     try:
-        return await source_processing_service.reprocess_source_payload(db, payload_id)
+        return await source_processing_service.reprocess_source_payload(
+            db,
+            payload_id,
+            password=password,
+        )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
         _raise_source_error(exc)

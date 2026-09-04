@@ -6,7 +6,6 @@ from app.utils.matching import (
     find_card_by_last_four,
 )
 from app.utils.canonicalization import canonicalize_transaction
-from app.utils.parsing import parse_text
 
 __all__ = [
     "normalize_merchant",
@@ -14,5 +13,4 @@ __all__ = [
     "find_matching_transactions",
     "find_card_by_last_four",
     "canonicalize_transaction",
-    "parse_text",
 ]

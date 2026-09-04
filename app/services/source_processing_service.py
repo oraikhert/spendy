@@ -2,9 +2,11 @@
 
 import hashlib
 import os
+import re
 import tempfile
+from dataclasses import asdict
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -32,18 +34,32 @@ from app.models.transaction_source_link import MatchMethod, TransactionSourceLin
 from app.schemas.source_payload import SourcePayloadCreateText
 from app.schemas.transaction_observation import TransactionCreateFromObservation
 from app.services.exchange_rate_service import exchange_rate_service
-from app.services.source_parsers import ObservationInput, get_parser
+from app.services.source_parsers import (
+    ObservationInput,
+    get_parsers,
+    run_registered_parser,
+)
+from app.utils.source_parsing.contracts import (
+    InvalidSourceInputError,
+    ParseStatus,
+    SourceParseResult,
+    UnsupportedSourceError,
+)
 from app.utils.canonicalization import canonicalize_transaction
 from app.utils.matching import (
     find_card_by_last_four,
+    find_cards_by_last_four,
     find_matching_transactions,
     generate_fingerprint,
     normalize_merchant,
+    select_statement_match,
 )
 
 
 MATCHER_NAME = "same_day_amount_merchant"
 MATCHER_VERSION = "1"
+STATEMENT_MATCHER_NAME = "statement_same_day_amount_score"
+STATEMENT_MATCHER_VERSION = "1"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
@@ -60,6 +76,10 @@ class SourceNotFoundError(SourceProcessingError):
 
 
 class SourceValidationError(SourceProcessingError):
+    pass
+
+
+class SourceUploadTooLargeError(SourceValidationError):
     pass
 
 
@@ -83,6 +103,86 @@ async def _validate_context(
         raise SourceValidationError("card_id: Card not found")
     if card is not None and account_id is not None and card.account_id != account_id:
         raise SourceValidationError("card_id: Choose a card belonging to the selected account")
+
+
+def _card_last_four(card: Card) -> str | None:
+    digits = re.sub(r"\D", "", card.card_masked_number or "")
+    return digits[-4:] if len(digits) >= 4 else None
+
+
+async def _resolve_statement_context(
+    db: AsyncSession,
+    payload: SourcePayload,
+    result: SourceParseResult,
+) -> tuple[int | None, int | None]:
+    statement = result.bank_statement
+    if statement is None:
+        return None, None
+
+    details = payload.bank_statement_details
+    if details is None:
+        details = BankStatementDetail()
+        payload.bank_statement_details = details
+    details.bank = statement.bank
+    details.statement_period_start = statement.statement_period_start
+    details.statement_period_end = statement.statement_period_end
+    details.statement_currency = statement.statement_currency
+    details.card_type = statement.card_type
+    details.card_last_four = statement.card_last_four
+
+    if result.status != ParseStatus.PROCESSED:
+        return details.account_id, details.card_id
+    if statement.card_last_four is None or statement.statement_currency is None:
+        raise SourceValidationError("The statement card or currency could not be resolved")
+
+    requested_account_id = payload.ingestion_metadata.get("account_id")
+    requested_card_id = payload.ingestion_metadata.get("card_id")
+    card: Card | None
+    if requested_card_id is not None:
+        card = await db.scalar(
+            select(Card)
+            .where(Card.id == requested_card_id)
+            .options(selectinload(Card.account))
+        )
+        if card is None:
+            raise SourceValidationError("card_id: Card not found")
+        if requested_account_id is not None and card.account_id != requested_account_id:
+            raise SourceValidationError(
+                "card_id: Choose a card belonging to the selected account"
+            )
+        if _card_last_four(card) != statement.card_last_four:
+            raise SourceValidationError(
+                "The uploaded statement belongs to a different card"
+            )
+    else:
+        matches = await find_cards_by_last_four(
+            db,
+            statement.card_last_four,
+            requested_account_id,
+        )
+        if not matches:
+            raise SourceValidationError(
+                "No card matches the statement's last four digits"
+            )
+        if len(matches) > 1:
+            raise SourceValidationError(
+                "Multiple cards match the statement's last four digits; provide card_id"
+            )
+        card = await db.scalar(
+            select(Card)
+            .where(Card.id == matches[0].id)
+            .options(selectinload(Card.account))
+        )
+        if card is None:
+            raise SourceValidationError("card_id: Card not found")
+
+    if card.account.account_currency.upper() != statement.statement_currency.upper():
+        raise SourceValidationError(
+            "The statement currency does not match the card account currency"
+        )
+    details.account_id = card.account_id
+    details.card_id = card.id
+    return card.account_id, card.id
 
 
 def _same_creation_request(
@@ -297,7 +397,9 @@ async def _resolved_money(
 
 
 async def _link_automatically(
-    db: AsyncSession, observation: TransactionObservation
+    db: AsyncSession,
+    observation: TransactionObservation,
+    claimed_transaction_ids: set[int] | None = None,
 ) -> int | None:
     if observation.amount is None or observation.currency is None or observation.card_id is None:
         return None
@@ -309,7 +411,12 @@ async def _link_automatically(
         original_currency = observation.original_currency
         fx_rate = None
         if original_amount != 0 and currency.upper() != original_currency.upper():
-            fx_rate = (amount / original_amount).copy_abs()
+            fx_rate = (amount / original_amount).copy_abs().quantize(
+                Decimal("0.000001"),
+                rounding=ROUND_HALF_UP,
+            )
+
+    is_statement = observation.payload.source_kind == SourceKind.BANK_STATEMENT.value
     merchant_norm = normalize_merchant(observation.description or "")
     matches = await find_matching_transactions(
         db=db,
@@ -319,18 +426,40 @@ async def _link_automatically(
         posting_datetime=observation.posting_datetime,
         transaction_datetime=observation.transaction_datetime,
         created_at=observation.payload.received_at,
-        merchant_norm=merchant_norm,
+        merchant_norm=None if is_statement else merchant_norm,
         orig_amount=original_amount,
         orig_currency=original_currency,
+        match_both_source_dates=is_statement,
+        exclude_transaction_ids=claimed_transaction_ids if is_statement else None,
     )
-    if len(matches) > 1:
+
+    confidence = Decimal("1.0000")
+    if is_statement:
+        if observation.transaction_datetime is None:
+            raise RuntimeError("A statement observation must have a transaction date")
+        transaction, confidence = select_statement_match(
+            matches,
+            amount=amount,
+            currency=currency,
+            transaction_datetime=observation.transaction_datetime,
+            posting_datetime=observation.posting_datetime,
+            description=observation.description or "",
+            original_amount=original_amount,
+            original_currency=original_currency,
+        )
+        if matches and transaction is None:
+            observation.extraction_metadata["matching_status"] = "ambiguous"
+            observation.extraction_metadata["candidate_count"] = len(matches)
+            return None
+    elif len(matches) > 1:
         observation.extraction_metadata["matching_status"] = "ambiguous"
         observation.extraction_metadata["candidate_count"] = len(matches)
         return None
-
-    if matches:
-        transaction = matches[0]
     else:
+        transaction = matches[0] if matches else None
+
+    if transaction is None:
+        confidence = Decimal("1.0000")
         transaction = Transaction(
             card_id=observation.card_id,
             amount=amount,
@@ -363,10 +492,12 @@ async def _link_automatically(
         TransactionSourceLink(
             observation_id=observation.id,
             transaction_id=transaction.id,
-            match_confidence=Decimal("1"),
+            match_confidence=confidence,
             match_method=MatchMethod.AUTOMATIC.value,
-            matcher_name=MATCHER_NAME,
-            matcher_version=MATCHER_VERSION,
+            matcher_name=STATEMENT_MATCHER_NAME if is_statement else MATCHER_NAME,
+            matcher_version=(
+                STATEMENT_MATCHER_VERSION if is_statement else MATCHER_VERSION
+            ),
         )
     )
     await db.flush()
@@ -381,24 +512,70 @@ async def _recalculate_transactions(db: AsyncSession, transaction_ids: set[int])
             await canonicalize_transaction(db, transaction)
 
 
-def _observation_from_input(payload_id: int, value: ObservationInput) -> TransactionObservation:
-    return TransactionObservation(source_payload_id=payload_id, **vars(value))
+def _observation_from_input(
+    payload_id: int,
+    value: ObservationInput,
+    *,
+    default_account_id: int | None = None,
+    default_card_id: int | None = None,
+) -> TransactionObservation:
+    fields = asdict(value)
+    fields["account_id"] = fields["account_id"] or default_account_id
+    fields["card_id"] = fields["card_id"] or default_card_id
+    return TransactionObservation(source_payload_id=payload_id, **fields)
+
+
+async def _run_payload_parser(
+    payload: SourcePayload,
+    *,
+    file_content: bytes | None,
+    password: str | None,
+):
+    if file_content is None and payload.file_path is not None:
+        try:
+            file_content = await run_in_threadpool(Path(payload.file_path).read_bytes)
+        except OSError as exc:
+            raise SourceValidationError("The stored source file could not be read") from exc
+
+    try:
+        if file_content is not None:
+            return await run_in_threadpool(
+                run_registered_parser,
+                payload,
+                file_content=file_content,
+                password=password,
+            )
+        return run_registered_parser(payload, password=password)
+    except (InvalidSourceInputError, UnsupportedSourceError) as exc:
+        raise SourceValidationError(str(exc)) from exc
 
 
 async def _process_payload(
-    db: AsyncSession, payload: SourcePayload, *, replace_existing: bool
+    db: AsyncSession,
+    payload: SourcePayload,
+    *,
+    replace_existing: bool,
+    file_content: bytes | None = None,
+    password: str | None = None,
 ) -> None:
-    parser = get_parser(payload.source_kind, payload.media_type)
-    if parser is None:
+    if not get_parsers(payload.source_kind, payload.media_type):
         if replace_existing:
             raise SourceConflictError("No parser is registered for this source kind and media type")
         payload.processing_status = ProcessingStatus.PENDING.value
         return
 
-    result = parser.parse(payload)
+    parser, result = await _run_payload_parser(
+        payload,
+        file_content=file_content,
+        password=password,
+    )
     keys = [value.source_item_key for value in result.observations]
     if len(keys) != len(set(keys)):
         raise RuntimeError("Parser returned duplicate source_item_key values")
+
+    default_account_id, default_card_id = await _resolve_statement_context(
+        db, payload, result
+    )
 
     affected_transactions: set[int] = set()
     if replace_existing:
@@ -432,16 +609,31 @@ async def _process_payload(
     payload.parser_version = parser.version
     payload.processing_error = result.error
 
-    observations = [_observation_from_input(payload.id, value) for value in result.observations]
+    observations = [
+        _observation_from_input(
+            payload.id,
+            value,
+            default_account_id=default_account_id,
+            default_card_id=default_card_id,
+        )
+        for value in result.observations
+    ]
     db.add_all(observations)
     await db.flush()
+    claimed_transaction_ids: set[int] = set()
     for observation in observations:
         observation.payload = payload
         await _resolve_observation_card(db, observation)
         try:
-            transaction_id = await _link_automatically(db, observation)
+            transaction_id = await _link_automatically(
+                db,
+                observation,
+                claimed_transaction_ids,
+            )
             if transaction_id is not None:
                 affected_transactions.add(transaction_id)
+                if payload.source_kind == SourceKind.BANK_STATEMENT.value:
+                    claimed_transaction_ids.add(transaction_id)
         except HTTPException as exc:
             payload.processing_status = ProcessingStatus.FAILED.value
             payload.processing_error = f"Matching failed: {exc.detail}"
@@ -515,7 +707,11 @@ async def create_text_payload(
     return await get_source_payload(db, payload.id), False
 
 
-async def _write_upload(file: UploadFile, upload_dir: Path) -> tuple[Path, str, int]:
+async def _write_upload(
+    file: UploadFile,
+    upload_dir: Path,
+    max_size: int,
+) -> tuple[Path, str, int]:
     await run_in_threadpool(upload_dir.mkdir, parents=True, exist_ok=True)
     descriptor, temporary_name = await run_in_threadpool(
         tempfile.mkstemp, ".part", ".upload-", upload_dir
@@ -526,8 +722,12 @@ async def _write_upload(file: UploadFile, upload_dir: Path) -> tuple[Path, str, 
     handle = os.fdopen(descriptor, "wb")
     try:
         while chunk := await file.read(UPLOAD_CHUNK_SIZE):
-            digest.update(chunk)
             size += len(chunk)
+            if size > max_size:
+                raise SourceUploadTooLargeError(
+                    f"file: The uploaded file exceeds the {max_size}-byte limit"
+                )
+            digest.update(chunk)
             await run_in_threadpool(handle.write, chunk)
     except Exception:
         await run_in_threadpool(handle.close)
@@ -545,16 +745,33 @@ async def create_upload_payload(
     account_id: int | None,
     card_id: int | None,
     idempotency_key: str | None,
+    password: str | None = None,
 ) -> tuple[SourcePayload, bool]:
     await _validate_context(db, account_id, card_id)
     original_filename = Path((file.filename or "unnamed").replace("\\", "/")).name[:255]
     media_type = (file.content_type or "application/octet-stream").split(";", 1)[0].lower()[:255]
     metadata = _compact_metadata(account_id=account_id, card_id=card_id)
     upload_dir = Path(settings.UPLOAD_DIR).resolve()
-    temporary_path, content_hash, size = await _write_upload(file, upload_dir)
+    temporary_path, content_hash, size = await _write_upload(
+        file,
+        upload_dir,
+        settings.MAX_UPLOAD_SIZE_BYTES,
+    )
     if size == 0:
         await run_in_threadpool(temporary_path.unlink, missing_ok=True)
         raise SourceValidationError("file: The uploaded file is empty")
+
+    file_content: bytes | None = None
+    if source_kind is SourceKind.BANK_STATEMENT:
+        try:
+            file_content = await run_in_threadpool(temporary_path.read_bytes)
+        except OSError as exc:
+            await run_in_threadpool(temporary_path.unlink, missing_ok=True)
+            raise SourceValidationError("file: The uploaded file could not be read") from exc
+        if not file_content.startswith(b"%PDF-"):
+            await run_in_threadpool(temporary_path.unlink, missing_ok=True)
+            raise SourceValidationError("file: The uploaded bank statement is not a PDF")
+        media_type = "application/pdf"
 
     try:
         existing = await _idempotent_payload(
@@ -597,6 +814,14 @@ async def create_upload_payload(
             payload.bank_statement_details = BankStatementDetail(
                 account_id=account_id, card_id=card_id
             )
+        await db.flush()
+        await _process_payload(
+            db,
+            payload,
+            replace_existing=False,
+            file_content=file_content,
+            password=password,
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -621,12 +846,21 @@ async def create_upload_payload(
     return await get_source_payload(db, payload.id), False
 
 
-async def reprocess_source_payload(db: AsyncSession, payload_id: int) -> SourcePayload:
+async def reprocess_source_payload(
+    db: AsyncSession,
+    payload_id: int,
+    password: str | None = None,
+) -> SourcePayload:
     payload = await get_source_payload(db, payload_id)
     if payload is None:
         raise SourceNotFoundError("Source payload not found")
     try:
-        await _process_payload(db, payload, replace_existing=True)
+        await _process_payload(
+            db,
+            payload,
+            replace_existing=True,
+            password=password,
+        )
         await db.commit()
     except Exception:
         await db.rollback()

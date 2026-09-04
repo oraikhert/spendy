@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -46,6 +46,11 @@ from app.services.source_parsers import (
 )
 from app.utils.canonicalization import canonicalize_transaction
 from app.utils.matching import normalize_merchant
+from app.utils.source_parsing import (
+    InvalidSourceInputError,
+    ParsedBankStatement,
+    ParseStatus,
+)
 
 
 SMS = (
@@ -292,11 +297,11 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         upload = await self.client.post(
             "/api/v1/source-payloads/upload",
             data={
-                "source_kind": "bank_statement",
+                "source_kind": "other",
                 "account_id": str(self.account_id),
                 "card_id": str(self.card_id),
             },
-            files={"file": ("statement.pdf", b"synthetic-pdf", "application/pdf")},
+            files={"file": ("source.bin", b"synthetic-file", "application/octet-stream")},
             headers={"Idempotency-Key": "statement-upload-1"},
         )
         self.assertEqual(upload.status_code, 201, upload.text)
@@ -305,17 +310,17 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(files_after_create - files_before), 1)
         self.assertEqual(uploaded["processing_status"], "pending")
         self.assertTrue(uploaded["has_file"])
-        self.assertEqual(uploaded["bank_statement_details"]["card_id"], self.card_id)
+        self.assertIsNone(uploaded["bank_statement_details"])
         self.assertNotIn("file_path", uploaded)
 
         replay = await self.client.post(
             "/api/v1/source-payloads/upload",
             data={
-                "source_kind": "bank_statement",
+                "source_kind": "other",
                 "account_id": str(self.account_id),
                 "card_id": str(self.card_id),
             },
-            files={"file": ("statement.pdf", b"synthetic-pdf", "application/pdf")},
+            files={"file": ("source.bin", b"synthetic-file", "application/octet-stream")},
             headers={"Idempotency-Key": "statement-upload-1"},
         )
         self.assertEqual(replay.status_code, 200, replay.text)
@@ -324,8 +329,8 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
 
         conflict = await self.client.post(
             "/api/v1/source-payloads/upload",
-            data={"source_kind": "bank_statement"},
-            files={"file": ("statement.pdf", b"different-pdf", "application/pdf")},
+            data={"source_kind": "other"},
+            files={"file": ("source.bin", b"different-file", "application/octet-stream")},
             headers={"Idempotency-Key": "statement-upload-1"},
         )
         self.assertEqual(conflict.status_code, 409, conflict.text)
@@ -333,8 +338,8 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
 
         metadata_conflict = await self.client.post(
             "/api/v1/source-payloads/upload",
-            data={"source_kind": "other"},
-            files={"file": ("statement.pdf", b"synthetic-pdf", "application/pdf")},
+            data={"source_kind": "bank_app"},
+            files={"file": ("source.bin", b"synthetic-file", "application/octet-stream")},
             headers={"Idempotency-Key": "statement-upload-1"},
         )
         self.assertEqual(metadata_conflict.status_code, 409, metadata_conflict.text)
@@ -343,11 +348,11 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         duplicate = await self.client.post(
             "/api/v1/source-payloads/upload",
             data={
-                "source_kind": "bank_statement",
+                "source_kind": "other",
                 "account_id": str(self.account_id),
                 "card_id": str(self.card_id),
             },
-            files={"file": ("statement.pdf", b"synthetic-pdf", "application/pdf")},
+            files={"file": ("source.bin", b"synthetic-file", "application/octet-stream")},
         )
         self.assertEqual(duplicate.status_code, 201, duplicate.text)
         self.assertNotEqual(duplicate.json()["id"], uploaded["id"])
@@ -382,6 +387,111 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             f"/transactions/sources/{uploaded['id']}/download",
         ):
             self.assertEqual((await self.client.get(path)).status_code, 404)
+
+    async def test_statement_upload_matches_and_failed_reprocess_preserves_state(self):
+        observed_at = datetime(2026, 1, 5, 12, tzinfo=UTC)
+        async with self.sessions() as db:
+            existing = Transaction(
+                card_id=self.card_id,
+                amount=Decimal("-12.34"),
+                currency="AED",
+                transaction_datetime=observed_at,
+                description="SMS merchant text",
+                transaction_kind="purchase",
+                merchant_norm=normalize_merchant("SMS merchant text"),
+            )
+            db.add(existing)
+            await db.commit()
+            existing_id = existing.id
+
+        passwords = []
+
+        def parse_statement(source):
+            passwords.append(source.password)
+            return ParserResult(
+                status=ParseStatus.PROCESSED,
+                observations=(
+                    ObservationInput(
+                        source_item_key="1",
+                        amount=Decimal("-12.34"),
+                        currency="AED",
+                        transaction_datetime=observed_at,
+                        posting_datetime=observed_at + timedelta(days=1),
+                        description="Statement merchant text",
+                        transaction_kind="purchase",
+                        card_last_four="1111",
+                        raw_fragment="synthetic statement row",
+                    ),
+                ),
+                bank_statement=ParsedBankStatement(
+                    bank="Emirates NBD",
+                    statement_period_start=date(2026, 1, 1),
+                    statement_period_end=date(2026, 1, 31),
+                    statement_currency="AED",
+                    card_type="Synthetic Rewards",
+                    card_last_four="1111",
+                    page_count=1,
+                ),
+            )
+
+        parser = RegisteredParser(
+            name="emirates_nbd_credit_card_statement_pdf",
+            version="1-test",
+            parse=parse_statement,
+        )
+        key = (SourceKind.BANK_STATEMENT.value, "application/pdf")
+        with patch.dict(PARSER_REGISTRY, {key: (parser,)}):
+            response = await self.client.post(
+                "/api/v1/source-payloads/upload",
+                data={
+                    "source_kind": "bank_statement",
+                    "password": "synthetic-secret",
+                },
+                files={"file": ("statement.bin", b"%PDF-synthetic", "application/octet-stream")},
+            )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        payload = response.json()
+        self.assertEqual(payload["processing_status"], "processed")
+        self.assertEqual(payload["media_type"], "application/pdf")
+        self.assertEqual(payload["bank_statement_details"]["bank"], "Emirates NBD")
+        self.assertEqual(payload["bank_statement_details"]["card_id"], self.card_id)
+        self.assertEqual(len(payload["observations"]), 1)
+        self.assertNotIn("synthetic-secret", response.text)
+        self.assertEqual(passwords, ["synthetic-secret"])
+        observation_id = payload["observations"][0]["id"]
+
+        async with self.sessions() as db:
+            self.assertEqual(
+                await db.scalar(select(func.count()).select_from(Transaction)),
+                1,
+            )
+            link = await db.get(TransactionSourceLink, observation_id)
+            self.assertEqual(link.transaction_id, existing_id)
+
+        def reject_password(_source):
+            raise InvalidSourceInputError("The PDF password is missing or incorrect")
+
+        invalid_parser = RegisteredParser(
+            name=parser.name,
+            version=parser.version,
+            parse=reject_password,
+        )
+        with patch.dict(PARSER_REGISTRY, {key: (invalid_parser,)}):
+            failed = await self.client.post(
+                f"/api/v1/source-payloads/{payload['id']}/reprocess",
+                data={"password": "wrong-secret"},
+            )
+        self.assertEqual(failed.status_code, 422, failed.text)
+
+        async with self.sessions() as db:
+            stored_payload = await db.get(SourcePayload, payload["id"])
+            self.assertEqual(stored_payload.processing_status, "processed")
+            self.assertNotIn("password", stored_payload.ingestion_metadata)
+            self.assertNotIn("synthetic-secret", str(stored_payload.ingestion_metadata))
+            self.assertNotIn("wrong-secret", str(stored_payload.ingestion_metadata))
+            self.assertIsNotNone(await db.get(TransactionObservation, observation_id))
+            self.assertIsNotNone(await db.get(TransactionSourceLink, observation_id))
 
     async def test_reprocess_replaces_observations_and_preserves_orphan(self):
         created = await self.client.post(

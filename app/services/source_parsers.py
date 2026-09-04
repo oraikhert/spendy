@@ -1,106 +1,82 @@
 """Versioned parser registry for immutable source payloads."""
 
-from dataclasses import dataclass, field
-from datetime import datetime
-from decimal import Decimal
-from typing import Any, Callable
+from dataclasses import dataclass
+from typing import Callable
 
-from app.models.source_payload import ProcessingStatus, SourceKind, SourcePayload
-from app.utils.parsing import parse_text
-
-
-@dataclass(frozen=True)
-class ObservationInput:
-    source_item_key: str
-    amount: Decimal | None = None
-    currency: str | None = None
-    original_amount: Decimal | None = None
-    original_currency: str | None = None
-    transaction_datetime: datetime | None = None
-    posting_datetime: datetime | None = None
-    description: str | None = None
-    transaction_kind: str | None = None
-    location: str | None = None
-    account_id: int | None = None
-    card_id: int | None = None
-    card_last_four: str | None = None
-    raw_fragment: str | None = None
-    extraction_confidence: Decimal | None = None
-    extraction_metadata: dict[str, Any] = field(default_factory=dict)
+from app.models.source_payload import SourceKind, SourcePayload
+from app.utils.source_parsing.contracts import (
+    ParsedObservation,
+    SourceParseResult,
+    SourceParserInput,
+    UnsupportedSourceError,
+)
+from app.utils.source_parsing.emirates_nbd.credit_card_statement import (
+    parse_emirates_nbd_credit_card_statement,
+)
+from app.utils.source_parsing.emirates_nbd.sms import parse_emirates_nbd_sms
 
 
-@dataclass(frozen=True)
-class ParserResult:
-    status: ProcessingStatus
-    observations: tuple[ObservationInput, ...] = ()
-    error: str | None = None
+ObservationInput = ParsedObservation
+ParserResult = SourceParseResult
 
 
 @dataclass(frozen=True)
 class RegisteredParser:
     name: str
     version: str
-    parse: Callable[[SourcePayload], ParserResult]
+    parse: Callable[[SourceParserInput], SourceParseResult]
 
 
-def _metadata_datetime(payload: SourcePayload, key: str) -> datetime | None:
-    value = payload.ingestion_metadata.get(key)
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def parse_sms_text(payload: SourcePayload) -> ParserResult:
-    parsed = parse_text(payload.raw_text or "")
-    if parsed["parse_status"] == "skipped":
-        return ParserResult(ProcessingStatus.IGNORED, error=parsed.get("parse_error"))
-    if parsed["parse_status"] == "failed":
-        return ParserResult(
-            ProcessingStatus.FAILED,
-            error=parsed.get("parse_error") or "The SMS could not be parsed",
-        )
-    if parsed.get("parsed_amount") is None or not parsed.get("parsed_currency"):
-        return ParserResult(
-            ProcessingStatus.FAILED,
-            error="No financial transaction could be extracted from the SMS",
-        )
-
-    return ParserResult(
-        ProcessingStatus.PROCESSED,
-        observations=(
-            ObservationInput(
-                source_item_key="0",
-                amount=parsed["parsed_amount"],
-                currency=parsed["parsed_currency"],
-                transaction_datetime=(
-                    parsed.get("parsed_transaction_datetime")
-                    or _metadata_datetime(payload, "transaction_datetime")
-                ),
-                posting_datetime=parsed.get("parsed_posting_datetime"),
-                description=parsed.get("parsed_description"),
-                transaction_kind=parsed.get("parsed_transaction_kind"),
-                location=parsed.get("parsed_location"),
-                account_id=payload.ingestion_metadata.get("account_id"),
-                card_id=payload.ingestion_metadata.get("card_id"),
-                card_last_four=parsed.get("parsed_card_number"),
-                raw_fragment=payload.raw_text,
-            ),
+PARSER_REGISTRY: dict[tuple[str, str], tuple[RegisteredParser, ...]] = {
+    (SourceKind.SMS.value, "text/plain"): (
+        RegisteredParser(
+            name="emirates_nbd_sms_text",
+            version="1",
+            parse=parse_emirates_nbd_sms,
         ),
-    )
-
-
-PARSER_REGISTRY: dict[tuple[str, str], RegisteredParser] = {
-    (SourceKind.SMS.value, "text/plain"): RegisteredParser(
-        name="sms_regex",
-        version="1",
-        parse=parse_sms_text,
+    ),
+    (SourceKind.BANK_STATEMENT.value, "application/pdf"): (
+        RegisteredParser(
+            name="emirates_nbd_credit_card_statement_pdf",
+            version="1",
+            parse=parse_emirates_nbd_credit_card_statement,
+        ),
     ),
 }
 
 
-def get_parser(source_kind: str, media_type: str) -> RegisteredParser | None:
-    """Return the exact parser for a source/media pair."""
-    return PARSER_REGISTRY.get((source_kind, media_type.lower()))
+def get_parsers(source_kind: str, media_type: str) -> tuple[RegisteredParser, ...]:
+    """Return every candidate registered for a source/media pair."""
+    registered = PARSER_REGISTRY.get((source_kind, media_type.lower()), ())
+    # Tests and extensions may temporarily install a single parser.
+    if isinstance(registered, RegisteredParser):
+        return (registered,)
+    return registered
+
+
+def run_registered_parser(
+    payload: SourcePayload,
+    *,
+    file_content: bytes | None = None,
+    password: str | None = None,
+) -> tuple[RegisteredParser, SourceParseResult]:
+    """Run candidates until one recognizes the source."""
+    parsers = get_parsers(payload.source_kind, payload.media_type)
+    if not parsers:
+        raise UnsupportedSourceError(
+            "No parser is registered for this source kind and media type"
+        )
+
+    source = SourceParserInput(
+        raw_text=payload.raw_text,
+        file_content=file_content,
+        password=password,
+        ingestion_metadata=payload.ingestion_metadata,
+    )
+    last_error: UnsupportedSourceError | None = None
+    for parser in parsers:
+        try:
+            return parser, parser.parse(source)
+        except UnsupportedSourceError as exc:
+            last_error = exc
+    raise last_error or UnsupportedSourceError("No parser recognized the source")

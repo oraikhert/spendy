@@ -59,7 +59,19 @@ test_cases = [
 ]
 
 try:
-    from app.utils.parsing import parse_text
+    from app.utils.source_parsing import SourceParserInput
+    from app.utils.source_parsing.emirates_nbd.sms import parse_emirates_nbd_sms
+
+    def parse_sms_fields(text):
+        parsed = parse_emirates_nbd_sms(SourceParserInput(raw_text=text))
+        observation = parsed.observations[0] if parsed.observations else None
+        return {
+            "parsed_amount": observation.amount if observation else None,
+            "parsed_currency": observation.currency if observation else None,
+            "parsed_description": observation.description if observation else None,
+            "parsed_card_number": observation.card_last_four if observation else None,
+            "parse_status": parsed.status.value,
+        }
     
     print("\n" + "="*80)
     print("Testing Enhanced SMS Parser")
@@ -71,7 +83,7 @@ try:
         print(f"\n📝 Test {i}:")
         print(f"Input: {test['text'][:80]}...")
         
-        result = parse_text(test['text'])
+        result = parse_sms_fields(test['text'])
         expected = test['expected']
         
         # Check amount

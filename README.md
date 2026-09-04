@@ -6,8 +6,9 @@ The web UI provides login, optional registration, a dashboard and transaction
 list/detail/create/edit pages with filters and deletion. Its legacy Sources panel is
 awaiting adaptation to the payload/observation model; see the
 [UI follow-up](docs/requirements/SOURCE_PAYLOADS_UI_FOLLOWUP.md). Uploaded files are
-private backend inputs and cannot be downloaded. PDF/image parsing is not implemented. Family groups,
-budgets, reports, and account/card management pages remain future work.
+private backend inputs and cannot be downloaded. The API parses Emirates NBD credit-card
+statement PDFs; other PDF/image formats are not implemented. Family groups, budgets,
+reports, and account/card management pages remain future work.
 
 Built with FastAPI, async SQLAlchemy, Pydantic, Alembic and SQLite/PostgreSQL.
 The UI uses Jinja2, HTMX, Tailwind CSS and DaisyUI; no frontend build is required.
@@ -94,6 +95,15 @@ provide per-user budget isolation: see [the current access model](docs/ARCHITECT
 For exact validation limits and payloads, use Swagger and
 [input schemas](app/schemas/), rather than maintaining a second endpoint catalog.
 
+Emirates NBD credit-card statements can be submitted as multipart data to
+`POST /api/v1/source-payloads/upload` with `source_kind=bank_statement`, the PDF in
+`file`, and the optional PDF `password`. An optional `account_id` narrows automatic
+card selection, while `card_id` selects and validates a specific card. The password is
+used only for that request and is never persisted or returned. Reprocessing an encrypted
+statement uses the same transient field at `POST /api/v1/source-payloads/{id}/reprocess`.
+Uploads are limited by `MAX_UPLOAD_SIZE_BYTES` (20 MiB by default), and statements are
+limited to 100 pages.
+
 ## Development checks
 
 With `venv` active, install [development dependencies](requirements-dev.txt), then
@@ -103,6 +113,7 @@ run the parser checks (they do not need a server or database):
 python -m pip install -r requirements-dev.txt
 python tests/test_parsing.py
 python tests/test_parsing_kind_location.py
+python tests/test_statement_parsing.py
 python tests/test_source_processing.py
 python tests/test_source_migration.py
 ```

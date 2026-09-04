@@ -2,6 +2,7 @@
 import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from difflib import SequenceMatcher
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,17 +32,29 @@ async def find_card_by_last_four(
     if not last_four or len(last_four) != 4 or not last_four.isdigit():
         return None
 
-    query = select(Card)
+    cards = await find_cards_by_last_four(db, last_four, account_id)
+    return cards[0] if cards else None
+
+
+async def find_cards_by_last_four(
+    db: AsyncSession,
+    last_four: str,
+    account_id: int | None = None,
+) -> list[Card]:
+    """Return all cards with the requested normalized suffix."""
+    if not last_four or len(last_four) != 4 or not last_four.isdigit():
+        return []
+
+    query = select(Card).order_by(Card.id)
     if account_id is not None:
         query = query.where(Card.account_id == account_id)
     result = await db.execute(query)
-    cards = result.scalars().all()
-
-    for card in cards:
+    matches = []
+    for card in result.scalars().all():
         digits_only = re.sub(r"\D", "", card.card_masked_number or "")
         if len(digits_only) >= 4 and digits_only[-4:] == last_four:
-            return card
-    return None
+            matches.append(card)
+    return matches
 
 
 def normalize_merchant(description: str) -> str:
@@ -118,6 +131,8 @@ async def find_matching_transactions(
     merchant_norm: str | None = None,
     orig_amount: Decimal | None = None,
     orig_currency: str | None = None,
+    match_both_source_dates: bool = False,
+    exclude_transaction_ids: set[int] | None = None,
 ) -> list[Transaction]:
     """
     Find matching transactions based on card_id, amount, currency, and date.
@@ -138,19 +153,23 @@ async def find_matching_transactions(
     Returns:
         List of matching transactions
     """
-    # Determine the date to match on.  By default matching is restricted to
-    # the same calendar day.  A one-day tolerance can incorrectly merge two
-    # separate purchases with the same amount and merchant on adjacent days.
-    if posting_datetime:
-        match_date = posting_datetime.date()
-    elif transaction_datetime:
-        match_date = transaction_datetime.date()
+    if match_both_source_dates:
+        match_dates = {
+            value.date()
+            for value in (posting_datetime, transaction_datetime)
+            if value is not None
+        }
+        has_explicit_date = bool(match_dates)
+        if not match_dates:
+            match_dates = {created_at.date()}
     else:
-        # No date to match on
-        match_date = created_at.date()
-
-    match_start = datetime.combine(match_date, datetime.min.time())
-    match_end = match_start + timedelta(days=1)
+        if posting_datetime:
+            match_dates = {posting_datetime.date()}
+        elif transaction_datetime:
+            match_dates = {transaction_datetime.date()}
+        else:
+            match_dates = {created_at.date()}
+        has_explicit_date = posting_datetime is not None or transaction_datetime is not None
 
     amount_currency_match = and_(
         Transaction.amount == amount,
@@ -173,31 +192,133 @@ async def find_matching_transactions(
         )
     )
     
-    # Add date filter.  Match on the same calendar date by default.
-    query = query.where(
-        or_(
-            and_(
-                Transaction.posting_datetime.isnot(None),
-                Transaction.posting_datetime >= match_start,
-                Transaction.posting_datetime < match_end,
-            ),
-            and_(
-                Transaction.transaction_datetime.isnot(None),
-                Transaction.transaction_datetime >= match_start,
-                Transaction.transaction_datetime < match_end,
-            ),
-            and_(
-                Transaction.created_at >= match_start,
-                Transaction.created_at < match_end,
-            )
+    date_conditions = []
+    for match_date in sorted(match_dates):
+        match_start = datetime.combine(match_date, datetime.min.time())
+        match_end = match_start + timedelta(days=1)
+        date_conditions.extend(
+            [
+                and_(
+                    Transaction.posting_datetime.isnot(None),
+                    Transaction.posting_datetime >= match_start,
+                    Transaction.posting_datetime < match_end,
+                ),
+                and_(
+                    Transaction.transaction_datetime.isnot(None),
+                    Transaction.transaction_datetime >= match_start,
+                    Transaction.transaction_datetime < match_end,
+                ),
+            ]
         )
-    )
+        if not match_both_source_dates or not has_explicit_date:
+            date_conditions.append(
+                and_(
+                    Transaction.created_at >= match_start,
+                    Transaction.created_at < match_end,
+                )
+            )
+    query = query.where(or_(*date_conditions))
+
+    if exclude_transaction_ids:
+        query = query.where(Transaction.id.not_in(exclude_transaction_ids))
     
     # Optional: filter by merchant_norm if provided
     if merchant_norm:
         query = query.where(Transaction.merchant_norm == merchant_norm)
     
-    result = await db.execute(query)
+    result = await db.execute(query.order_by(Transaction.id))
     transactions = result.scalars().all()
     
     return list(transactions)
+
+
+def merchant_similarity(left: str | None, right: str | None) -> Decimal:
+    """Return a conservative similarity score for two descriptions."""
+    left_norm = normalize_merchant(left or "")
+    right_norm = normalize_merchant(right or "")
+    if not left_norm or not right_norm:
+        return Decimal("0")
+    if left_norm == right_norm:
+        return Decimal("1")
+    left_tokens = set(left_norm.split())
+    right_tokens = set(right_norm.split())
+    token_score = len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+    sequence_score = SequenceMatcher(None, left_norm, right_norm).ratio()
+    return Decimal(str(max(token_score, sequence_score)))
+
+
+def select_statement_match(
+    candidates: list[Transaction],
+    *,
+    amount: Decimal,
+    currency: str,
+    transaction_datetime: datetime,
+    posting_datetime: datetime | None,
+    description: str,
+    original_amount: Decimal | None = None,
+    original_currency: str | None = None,
+) -> tuple[Transaction | None, Decimal | None]:
+    """Select a decisive statement candidate, leaving ties unlinked."""
+    if not candidates:
+        return None, None
+    if len(candidates) == 1:
+        return candidates[0], Decimal("0.9500")
+
+    source_transaction_date = transaction_datetime.date()
+    source_posting_date = posting_datetime.date() if posting_datetime else None
+    ranked: list[tuple[Decimal, Decimal, Decimal, Decimal, Transaction]] = []
+    for candidate in candidates:
+        money_score = Decimal("0")
+        if candidate.amount == amount and candidate.currency == currency:
+            money_score += Decimal("3")
+        if (
+            original_amount is not None
+            and original_currency is not None
+            and candidate.original_amount == original_amount
+            and candidate.original_currency == original_currency
+        ):
+            money_score += Decimal("4")
+
+        candidate_transaction_date = (
+            candidate.transaction_datetime.date()
+            if candidate.transaction_datetime is not None
+            else None
+        )
+        candidate_posting_date = (
+            candidate.posting_datetime.date()
+            if candidate.posting_datetime is not None
+            else None
+        )
+        date_score = Decimal("0")
+        if candidate_transaction_date == source_transaction_date:
+            date_score += Decimal("3")
+        if source_posting_date is not None and candidate_posting_date == source_posting_date:
+            date_score += Decimal("3")
+        if source_posting_date is not None and candidate_transaction_date == source_posting_date:
+            date_score += Decimal("1")
+        if candidate_posting_date == source_transaction_date:
+            date_score += Decimal("1")
+
+        description_score = merchant_similarity(
+            candidate.merchant_norm or candidate.description,
+            description,
+        )
+        total = money_score + date_score + (description_score * Decimal("2"))
+        ranked.append((total, money_score, date_score, description_score, candidate))
+
+    ranked.sort(key=lambda item: (-item[0], item[4].id))
+    best, second = ranked[0], ranked[1]
+    decisive_description = (
+        best[3] >= Decimal("0.25") and best[3] - second[3] >= Decimal("0.15")
+    )
+    decisive_dates = best[2] - second[2] >= Decimal("2")
+    decisive_money = best[1] - second[1] >= Decimal("3")
+    if best[0] - second[0] >= Decimal("1") and (
+        decisive_description or decisive_dates or decisive_money
+    ):
+        confidence = min(
+            Decimal("0.9900"),
+            Decimal("0.75") + min(best[0], Decimal("12")) / Decimal("50"),
+        ).quantize(Decimal("0.0001"))
+        return best[4], confidence
+    return None, None

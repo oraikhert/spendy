@@ -95,20 +95,36 @@ test_cases = [
         "name": "Statement - Should be skipped",
         "text": "Emirates NBD Credit Card Mini Stmt for Card ending 3278: Statement date 25/12/25. Total Amt Due AED 12368.30, Due Date 19/01/26. Min Amt Due AED 1647.58",
         "expected": {
-            "parse_status": "skipped"
+            "parse_status": "ignored"
         }
     },
     {
         "name": "Beneficiary - Should be skipped",
         "text": "Your newly added beneficiary: Vijay Shanmugam has been activated successfully. If you did not initiate this request, please call 600540000 within UAE or +971600540000 outside UAE and report Fraud.",
         "expected": {
-            "parse_status": "skipped"
+            "parse_status": "ignored"
         }
     }
 ]
 
 try:
-    from app.utils.parsing import parse_text
+    from app.utils.source_parsing import SourceParserInput
+    from app.utils.source_parsing.emirates_nbd.sms import parse_emirates_nbd_sms
+
+    def parse_sms_fields(text):
+        parsed = parse_emirates_nbd_sms(SourceParserInput(raw_text=text))
+        observation = parsed.observations[0] if parsed.observations else None
+        return {
+            "parsed_amount": observation.amount if observation else None,
+            "parsed_currency": observation.currency if observation else None,
+            "parsed_description": observation.description if observation else None,
+            "parsed_location": observation.location if observation else None,
+            "parsed_card_number": observation.card_last_four if observation else None,
+            "parsed_transaction_kind": (
+                observation.transaction_kind if observation else None
+            ),
+            "parse_status": parsed.status.value,
+        }
     
     print("\n" + "="*80)
     print("Testing SMS Parser with Kind and Location Detection")
@@ -122,14 +138,14 @@ try:
         print(f"\n📝 Test {i}: {test['name']}")
         print(f"Input: {test['text'][:80]}...")
         
-        result = parse_text(test['text'])
+        result = parse_sms_fields(test['text'])
         expected = test['expected']
         
         test_passed = True
         
         # Check if should be skipped
-        if 'parse_status' in expected and expected['parse_status'] == 'skipped':
-            if result['parse_status'] == 'skipped':
+        if 'parse_status' in expected and expected['parse_status'] == 'ignored':
+            if result['parse_status'] == 'ignored':
                 print(f"  ✅ Correctly skipped non-transaction message")
                 passed_count += 1
             else:

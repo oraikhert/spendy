@@ -318,6 +318,7 @@
       if (!dialog || !form || !observationId) return;
       form.elements.observation_id.value = observationId;
       form.elements.transaction_id.value = "";
+      form.elements.allow_date_mismatch.checked = false;
       const title = dialog.querySelector("#move-observation-title");
       if (title) title.textContent = `Move observation #${observationId}`;
       dialog.showModal();

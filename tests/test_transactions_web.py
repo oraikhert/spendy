@@ -672,12 +672,14 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         }]))[0]
         details = await self.client.get(f"/transactions/{transaction}")
         move_path = f"/transactions/{transaction}/sources/move"
-        self.assertIn("/static/js/transactions.js?v=pagination-scroll-1", details.text)
+        self.assertIn("/static/js/transactions.js?v=move-date-mismatch-1", details.text)
         self.assertIn('data-move-observation-trigger', details.text)
         self.assertIn("Move observation", details.text)
         self.assertIn('id="move-observation-dialog"', details.text)
         fields = Forms(details.text).for_action(move_path)
         self.assertIn("Destination transaction ID", details.text)
+        self.assertIn("Allow date mismatch", details.text)
+        self.assertNotIn("allow_date_mismatch", fields)
         self.assertIn(str(target), details.text)
         async with self.sessions() as db:
             self.assertEqual((await db.get(TransactionSourceLink, source)).transaction_id, transaction)
@@ -759,6 +761,22 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("date conflicts", rejected.text)
         async with self.sessions() as db:
             self.assertEqual((await db.get(TransactionSourceLink, source)).transaction_id, transaction)
+
+        overridden = await self.client.post(
+            move_path,
+            data={
+                **fields,
+                "observation_id": str(source),
+                "transaction_id": str(target),
+                "allow_date_mismatch": "true",
+            },
+        )
+        self.assertEqual(overridden.status_code, 303, overridden.text[:800])
+        async with self.sessions() as db:
+            self.assertEqual(
+                (await db.get(TransactionSourceLink, source)).transaction_id,
+                target,
+            )
 
     async def test_htmx_unlink_refreshes_canonical_transaction_and_checks_parent(self):
         async with self.sessions() as db:

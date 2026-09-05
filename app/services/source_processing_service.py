@@ -1148,6 +1148,7 @@ async def move_observation_to_transaction(
     transaction_id: int,
     *,
     expected_transaction_id: int | None = None,
+    allow_date_mismatch: bool = False,
 ) -> TransactionSourceLink:
     observation = await get_transaction_observation(db, observation_id)
     if observation is None:
@@ -1162,7 +1163,8 @@ async def move_observation_to_transaction(
     target = await db.get(Transaction, transaction_id)
     if target is None:
         raise SourceNotFoundError("Transaction not found")
-    await _require_date_consistency(db, observation, transaction_id)
+    if not allow_date_mismatch:
+        await _require_date_consistency(db, observation, transaction_id)
 
     old_transaction = await db.get(Transaction, link.transaction_id)
     link.transaction_id = transaction_id

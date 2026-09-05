@@ -442,6 +442,9 @@ async def sources_context(request, db, transaction, return_url, page=None, messa
             "move_targets": move_targets, "move_targets_truncated": candidate_total > 1000,
             "move_observation_id": move_state.get("observation_id"),
             "move_transaction_id": move_state.get("transaction_id", ""),
+            "move_allow_date_mismatch": move_state.get(
+                "allow_date_mismatch", False
+            ),
             "move_error": move_state.get("error")}
 
 
@@ -535,7 +538,8 @@ async def move_context(db, transaction, observation_id):
 
 
 async def move_error_response(
-    request, db, user, transaction, return_url, page, observation_id, transaction_id, message, status
+    request, db, user, transaction, return_url, page, observation_id,
+    transaction_id, message, status, allow_date_mismatch=False,
 ):
     response = await detail_response(
         request,
@@ -548,6 +552,7 @@ async def move_error_response(
         move_state={
             "observation_id": observation_id,
             "transaction_id": transaction_id,
+            "allow_date_mismatch": allow_date_mismatch,
             "error": message,
         },
     )
@@ -565,6 +570,7 @@ async def move_observation_page(
         "source_page": str(posted.get("source_page", "")),
         "observation_id": str(posted.get("observation_id", "")),
         "transaction_id": str(posted.get("transaction_id", "")),
+        "allow_date_mismatch": posted.get("allow_date_mismatch") == "true",
     }
     return_url = safe_return_url(values["return_url"])
     page = page_number(values["source_page"])
@@ -594,16 +600,19 @@ async def move_observation_page(
         return await move_error_response(
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"], "Choose a destination transaction.", 422,
+            values["allow_date_mismatch"],
         )
     if target_id == transaction.id:
         return await move_error_response(
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"], "Choose a different destination transaction.", 422,
+            values["allow_date_mismatch"],
         )
     if await transaction_service.get_transaction(db, target_id) is None:
         return await move_error_response(
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"], "Destination transaction not found.", 422,
+            values["allow_date_mismatch"],
         )
     try:
         await source_processing_service.move_observation_to_transaction(
@@ -611,11 +620,13 @@ async def move_observation_page(
             identifier,
             target_id,
             expected_transaction_id=transaction.id,
+            allow_date_mismatch=values["allow_date_mismatch"],
         )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
         return await move_error_response(
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"], str(exc), 422,
+            values["allow_date_mismatch"],
         )
     except SQLAlchemyError:
         await db.rollback()
@@ -623,6 +634,7 @@ async def move_observation_page(
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"],
             "The move could not be confirmed. Refresh and check both transactions.", 503,
+            values["allow_date_mismatch"],
         )
     message = f"Observation moved to transaction #{target_id}. Both transactions were recanonicalized."
     if is_htmx(request):

@@ -13,6 +13,7 @@ from app.schemas.transaction import MAX_RECORD_ID, TransactionResponse
 from app.schemas.transaction_observation import (
     TransactionCreateFromObservation,
     TransactionLinkCreate,
+    TransactionMoveCreate,
     TransactionObservationDetail,
     TransactionObservationListResponse,
     TransactionSourceLinkResponse,
@@ -109,13 +110,16 @@ async def link_observation(
 )
 async def move_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
-    link_data: TransactionLinkCreate,
+    link_data: TransactionMoveCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     try:
         return await source_processing_service.move_observation_to_transaction(
-            db, observation_id, link_data.transaction_id
+            db,
+            observation_id,
+            link_data.transaction_id,
+            allow_date_mismatch=link_data.allow_date_mismatch,
         )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
         _raise_source_error(exc)

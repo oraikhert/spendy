@@ -72,6 +72,10 @@ class TransactionLinkCreate(BaseModel):
     transaction_id: int = Field(gt=0, le=MAX_RECORD_ID)
 
 
+class TransactionMoveCreate(TransactionLinkCreate):
+    allow_date_mismatch: bool = False
+
+
 class TransactionCreateFromObservation(BaseModel):
     """Optional overrides used only where the observation has no canonical value."""
 

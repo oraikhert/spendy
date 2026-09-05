@@ -1210,6 +1210,16 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 old_id,
             )
 
+        overridden = await self.client.post(
+            f"/api/v1/transaction-observations/{moving_id}/move",
+            json={
+                "transaction_id": conflicting_id,
+                "allow_date_mismatch": True,
+            },
+        )
+        self.assertEqual(overridden.status_code, 200, overridden.text)
+        self.assertEqual(overridden.json()["transaction_id"], conflicting_id)
+
         moved = await self.client.post(
             f"/api/v1/transaction-observations/{moving_id}/move",
             json={"transaction_id": target_id},

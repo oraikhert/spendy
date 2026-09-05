@@ -20,9 +20,9 @@
 {%- endmacro %}
 
 {% macro effective_date(transaction) -%}
-  <span class="block">{{ display_date(transaction.posting_datetime or transaction.transaction_datetime, 'No date') }}</span>
-  {% if transaction.posting_datetime %}<span class="block text-xs text-base-content/65 mt-1">Posted</span>
-  {% elif transaction.transaction_datetime %}<span class="block text-xs text-base-content/65 mt-1">Transaction date</span>{% endif %}
+  <span class="block">{{ display_date(transaction.transaction_datetime or transaction.posting_datetime, 'No date') }}</span>
+  {% if transaction.transaction_datetime %}<span class="block text-xs text-base-content/65 mt-1">Transaction date</span>
+  {% elif transaction.posting_datetime %}<span class="block text-xs text-base-content/65 mt-1">Posted</span>{% endif %}
 {%- endmacro %}
 
 {% macro description(transaction, return_url, source_counts) -%}

@@ -502,6 +502,20 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.listed_ids(all_time.text), [ids[5], ids[3], ids[1], ids[0], ids[2], ids[4]])
         self.assertIn("No date", all_time.text)
 
+    async def test_list_displays_transaction_date_before_posting_date(self):
+        await self.add_transactions([
+            {"description": "Display date precedence", "transaction_datetime": datetime(2026, 4, 2, 10, 30),
+             "posting_datetime": datetime(2026, 4, 3, 11, 45)},
+            {"description": "Display date posting fallback", "posting_datetime": datetime(2026, 4, 4, 12, 15)},
+        ])
+        response = await self.client.get("/transactions", params={"q": "Display date"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.text.count("02 Apr 2026, 10:30"), 2)
+        self.assertNotIn("03 Apr 2026, 11:45", response.text)
+        self.assertEqual(response.text.count("04 Apr 2026, 12:15"), 2)
+        self.assertEqual(response.text.count(">Transaction date</span>"), 2)
+        self.assertEqual(response.text.count(">Posted</span>"), 2)
+
     async def test_this_month_uses_explicit_dates_for_ordinary_and_htmx_history(self):
         today = datetime.now().date()
         first_day = today.replace(day=1)

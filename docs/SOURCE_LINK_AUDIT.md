@@ -16,11 +16,12 @@ docker compose exec -T db \
   < scripts/audit_source_links.sql
 ```
 
-The first result set reports identical SMS observations linked to one transaction
-on adjacent UTC calendar days. The second reports transactions whose observations
-disagree on their business transaction date. Both are candidate lists for review,
-not repair commands: delayed delivery, missing transaction dates and legitimate
-duplicates can require human interpretation.
+The first result set reports transactions linked to SMS observations from more than
+one payload. Automatic matching treats those payloads as separate messages, regardless
+of their timestamps. The second reports transactions whose observations disagree on
+their business transaction date. Both are candidate lists for review, not repair
+commands: migrated links, delayed delivery and missing transaction dates can require
+human interpretation.
 
 The audit intentionally excludes raw payload text, file contents and internal file
 paths. Treat merchant descriptions and identifiers as private financial metadata and

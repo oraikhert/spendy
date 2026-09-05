@@ -90,6 +90,8 @@ storage path.
 - `pending`: stored, but no compatible parser exists yet.
 - `processing`: processing is currently in progress.
 - `processed`: parsing completed; it can have linked or unlinked observations.
+- `possible_duplicate`: an observation from identical SMS content without enough
+  reliable message identifiers; show it as unlinked and requiring review.
 - `ignored`: recognized as non-financial and normally has no observations.
 - `failed`: processing failed. Show the safe general error in expanded details.
 - Unlinked observations, candidate review, manual link/create-transaction and reprocess

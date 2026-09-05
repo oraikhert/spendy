@@ -57,7 +57,7 @@ from app.utils.matching import (
 
 
 MATCHER_NAME = "same_day_amount_merchant"
-MATCHER_VERSION = "2"
+MATCHER_VERSION = "3"
 STATEMENT_MATCHER_NAME = "statement_same_day_amount_score"
 STATEMENT_MATCHER_VERSION = "2"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
@@ -234,6 +234,38 @@ async def _idempotent_payload(
     ):
         raise SourceConflictError("Idempotency-Key was already used for a different payload")
     return await get_source_payload(db, existing.id)
+
+
+async def _possible_duplicate_payload_ids(
+    db: AsyncSession, payload: SourcePayload
+) -> list[int]:
+    if (
+        payload.source_kind != SourceKind.SMS.value
+        or payload.media_type != "text/plain"
+    ):
+        return []
+    rows = await db.execute(
+        select(SourcePayload.id, SourcePayload.idempotency_key)
+        .where(
+            SourcePayload.id != payload.id,
+            SourcePayload.ingestion_method == payload.ingestion_method,
+            SourcePayload.source_kind == payload.source_kind,
+            SourcePayload.media_type == payload.media_type,
+            SourcePayload.content_hash == payload.content_hash,
+        )
+        .order_by(SourcePayload.id)
+    )
+    peers = list(rows.all())
+    if not peers:
+        return []
+    if payload.idempotency_key is None:
+        return [payload_id for payload_id, _key in peers]
+    if any(
+        peer_key is not None and peer_key != payload.idempotency_key
+        for _payload_id, peer_key in peers
+    ):
+        return []
+    return [payload_id for payload_id, _key in peers]
 
 
 async def get_source_payload(db: AsyncSession, payload_id: int) -> SourcePayload | None:
@@ -448,6 +480,30 @@ async def _require_date_consistency(
         )
 
 
+async def _transactions_with_sms_from_other_payload(
+    db: AsyncSession,
+    observation: TransactionObservation,
+    transaction_ids: set[int],
+) -> set[int]:
+    if not transaction_ids:
+        return set()
+    result = await db.scalars(
+        select(TransactionSourceLink.transaction_id)
+        .join(
+            TransactionObservation,
+            TransactionObservation.id == TransactionSourceLink.observation_id,
+        )
+        .join(SourcePayload, SourcePayload.id == TransactionObservation.source_payload_id)
+        .where(
+            TransactionSourceLink.transaction_id.in_(transaction_ids),
+            SourcePayload.source_kind == SourceKind.SMS.value,
+            TransactionObservation.source_payload_id != observation.source_payload_id,
+        )
+        .distinct()
+    )
+    return set(result.all())
+
+
 async def _link_automatically(
     db: AsyncSession,
     observation: TransactionObservation,
@@ -496,6 +552,19 @@ async def _link_automatically(
             for transaction in matches
             if transaction.id not in date_conflicts
         ]
+    if observation.payload.source_kind == SourceKind.SMS.value:
+        same_source_candidates = await _transactions_with_sms_from_other_payload(
+            db, observation, {transaction.id for transaction in matches}
+        )
+        if same_source_candidates:
+            observation.extraction_metadata["same_source_candidate_count"] = len(
+                same_source_candidates
+            )
+            matches = [
+                transaction
+                for transaction in matches
+                if transaction.id not in same_source_candidates
+            ]
 
     confidence = Decimal("1.0000")
     if is_statement:
@@ -684,10 +753,18 @@ async def _process_payload(
     ]
     db.add_all(observations)
     await db.flush()
+    possible_duplicate_ids = await _possible_duplicate_payload_ids(db, payload)
     claimed_transaction_ids: set[int] = set()
     for observation in observations:
         observation.payload = payload
         await _resolve_observation_card(db, observation)
+        if possible_duplicate_ids:
+            observation.extraction_metadata["matching_status"] = "possible_duplicate"
+            observation.extraction_metadata["duplicate_payload_id"] = possible_duplicate_ids[0]
+            observation.extraction_metadata["duplicate_payload_count"] = len(
+                possible_duplicate_ids
+            )
+            continue
         try:
             transaction_id = await _link_automatically(
                 db,

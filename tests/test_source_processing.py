@@ -153,17 +153,60 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         duplicate = await self.client.post("/api/v1/source-payloads/text", json=body)
         self.assertEqual(duplicate.status_code, 201, duplicate.text)
         self.assertNotEqual(duplicate.json()["id"], payload["id"])
+        duplicate_observation = duplicate.json()["observations"][0]
+        self.assertEqual(
+            duplicate_observation["extraction_metadata"]["matching_status"],
+            "possible_duplicate",
+        )
+        self.assertEqual(
+            duplicate_observation["extraction_metadata"]["duplicate_payload_id"],
+            payload["id"],
+        )
+
+        distinct_message = await self.client.post(
+            "/api/v1/source-payloads/text",
+            json=body,
+            headers={"Idempotency-Key": "phone-delivery-2"},
+        )
+        self.assertEqual(distinct_message.status_code, 201, distinct_message.text)
+        self.assertEqual(
+            distinct_message.json()["observations"][0]["extraction_metadata"][
+                "same_source_candidate_count"
+            ],
+            1,
+        )
+
+        distinct_content = await self.client.post(
+            "/api/v1/source-payloads/text",
+            json={**body, "text": SMS.replace("100.00", "99.00")},
+        )
+        self.assertEqual(distinct_content.status_code, 201, distinct_content.text)
+        self.assertEqual(
+            distinct_content.json()["observations"][0]["extraction_metadata"][
+                "same_source_candidate_count"
+            ],
+            2,
+        )
 
         payload_list = await self.client.get(
             "/api/v1/source-payloads?has_observations=true"
         )
         self.assertEqual(payload_list.status_code, 200, payload_list.text)
-        self.assertEqual(payload_list.json()["total"], 2)
+        self.assertEqual(payload_list.json()["total"], 4)
         observation_list = await self.client.get(
             "/api/v1/transaction-observations?has_transaction=true"
         )
         self.assertEqual(observation_list.status_code, 200, observation_list.text)
-        self.assertEqual(observation_list.json()["total"], 2)
+        self.assertEqual(observation_list.json()["total"], 3)
+        unlinked_list = await self.client.get(
+            "/api/v1/transaction-observations?has_transaction=false"
+        )
+        self.assertEqual(unlinked_list.status_code, 200, unlinked_list.text)
+        self.assertEqual(unlinked_list.json()["total"], 1)
+        async with self.sessions() as db:
+            self.assertEqual(
+                await db.scalar(select(func.count()).select_from(Transaction)), 3
+            )
         detail = await self.client.get(
             f"/api/v1/transaction-observations/{observation_id}"
         )

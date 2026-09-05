@@ -99,10 +99,13 @@ its version and creates zero or more observations. The current versioned registr
 supports Emirates NBD `sms` plus `text/plain` and Emirates NBD `bank_statement` plus
 `application/pdf`.
 
-Exact content hashes are indexed but not unique. Without `Idempotency-Key`, identical
-deliveries remain independent. The key is unique within the ingestion method: an
-identical replay returns the existing resource, while reuse with different content or
-creation metadata is a conflict.
+Exact content hashes are indexed but not unique. The key is unique within the ingestion
+method: an identical replay returns the existing resource without parsing or matching
+again, while reuse with different content or creation metadata is a conflict. Identical
+SMS content with different non-null idempotency keys represents distinct messages and
+is processed independently. When identical content cannot be distinguished by reliable
+keys, the new payload and observation are preserved, but the observation is marked
+`possible_duplicate` and remains unlinked without creating a transaction.
 
 Known non-transaction messages become `ignored`; missing financial extraction becomes
 `failed`; both produce no observations. A successful SMS observation preserves source
@@ -150,6 +153,12 @@ transaction. `transaction_datetime` is preferred and `posting_datetime` is the
 fallback. A conflicting candidate is excluded from automatic matching; a manual link
 or move returns a business-validation error. Missing observation dates cannot prove a
 conflict and therefore do not block a link.
+
+An SMS candidate is also excluded when its transaction already has an SMS observation
+from another payload. SMS receipt time is not transaction identity and is not used to
+override this rule. With no remaining candidate, a distinct SMS creates its own
+transaction. Reliable retries must reuse their original `Idempotency-Key`; content hash
+alone is only sufficient to mark an unkeyed delivery as a possible duplicate.
 
 Fingerprint inputs are card, day, amount/currency and normalized merchant. The day
 prefers posting time, then transaction time, otherwise `unknown`; original monetary

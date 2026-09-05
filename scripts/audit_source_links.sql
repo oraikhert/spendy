@@ -2,7 +2,7 @@
 
 BEGIN TRANSACTION READ ONLY;
 
--- Identical SMS observations assigned to one transaction on adjacent UTC days.
+-- Multiple SMS payloads assigned to one transaction.
 -- Any returned row requires review; the query never modifies data.
 WITH sms AS (
     SELECT
@@ -48,17 +48,17 @@ SELECT
     b.source_payload_id AS source_payload_id_2,
     b.source_date AS source_date_2,
     b.match_method AS match_method_2,
-    a.amount,
-    a.currency,
-    a.merchant_key
+    a.amount AS amount_1,
+    a.currency AS currency_1,
+    a.merchant_key AS merchant_key_1,
+    b.amount AS amount_2,
+    b.currency AS currency_2,
+    b.merchant_key AS merchant_key_2
 FROM sms AS a
 JOIN sms AS b
     ON b.transaction_id = a.transaction_id
    AND b.observation_id > a.observation_id
-   AND b.amount = a.amount
-   AND b.currency = a.currency
-   AND b.merchant_key = a.merchant_key
-   AND abs(b.source_date - a.source_date) = 1
+   AND b.source_payload_id != a.source_payload_id
 ORDER BY a.transaction_id, a.source_date, a.observation_id;
 
 -- Transactions whose linked observations disagree on the business transaction day.

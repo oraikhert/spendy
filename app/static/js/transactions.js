@@ -414,7 +414,8 @@
     if (request?.sourcePage || (request?.form && ["sources", "transaction-detail"].includes(target.id))) {
       document.getElementById("sources-heading")?.focus();
     } else if (request?.resultPage) {
-      document.getElementById("transaction-result-count")?.focus();
+      document.getElementById("transaction-results")?.scrollIntoView({block: "start"});
+      document.getElementById("transaction-result-count")?.focus({preventScroll: true});
     } else if (request?.focusId) {
       document.getElementById(request.focusId)?.focus({preventScroll: true});
     }

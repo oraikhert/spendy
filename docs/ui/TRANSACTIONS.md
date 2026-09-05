@@ -60,6 +60,7 @@ and counted; the amount-bound pair counts once. Applying filters starts at page 
 Results sort by transaction date descending; when it is absent, posting date is used.
 Undated records come last, then equal dates sort by record ID descending.
 Pages contain 50 records, `Previous` / `Next`, and `1–50 of 128`; unavailable directions are disabled.
+Changing a page scrolls to the beginning of the results and moves keyboard focus to its count.
 URLs preserve applied filters and page across reload and Back/Forward. `This month`
 uses the application's server calendar and stores explicit dates; reopening shows Custom range.
 Pages beyond the remaining results resolve to the last available page, or page one when empty.

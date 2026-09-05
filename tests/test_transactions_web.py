@@ -499,22 +499,22 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 422, response.text[:600])
                 self.assertNotIn("Filter fixture positive", response.text)
 
-    async def test_dates_include_complete_days_and_use_posting_fallback_without_creation_date(self):
+    async def test_dates_include_complete_days_and_use_transaction_date_then_posting_fallback(self):
         ids = await self.add_transactions([
             {"description": "Boundary fixture start", "transaction_datetime": datetime(2026, 4, 2)},
             {"description": "Boundary fixture end", "posting_datetime": datetime(2026, 4, 2, 23, 59, 59, 999999)},
             {"description": "Boundary fixture yesterday", "transaction_datetime": datetime(2026, 4, 1, 23, 59, 59, 999999)},
             {"description": "Boundary fixture tomorrow", "transaction_datetime": datetime(2026, 4, 3)},
             {"description": "Boundary fixture undated", "created_at": datetime(2026, 4, 2)},
-            {"description": "Boundary fixture posting precedence", "transaction_datetime": datetime(2026, 4, 2),
+            {"description": "Boundary fixture transaction precedence", "transaction_datetime": datetime(2026, 4, 2),
              "posting_datetime": datetime(2026, 4, 3)},
         ])
         day = await self.client.get("/transactions", params={"q": "Boundary fixture", "period": "custom",
                                                              "date_from": "2026-04-02", "date_to": "2026-04-02"})
         self.assertEqual(day.status_code, 200)
-        self.assertEqual(self.listed_ids(day.text), [ids[1], ids[0]])
+        self.assertEqual(self.listed_ids(day.text), [ids[1], ids[5], ids[0]])
         all_time = await self.client.get("/transactions", params={"q": "Boundary fixture"})
-        self.assertEqual(self.listed_ids(all_time.text), [ids[5], ids[3], ids[1], ids[0], ids[2], ids[4]])
+        self.assertEqual(self.listed_ids(all_time.text), [ids[3], ids[1], ids[5], ids[0], ids[2], ids[4]])
         self.assertIn("No date", all_time.text)
 
     async def test_list_displays_transaction_date_before_posting_date(self):
@@ -672,7 +672,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         }]))[0]
         details = await self.client.get(f"/transactions/{transaction}")
         move_path = f"/transactions/{transaction}/sources/move"
-        self.assertIn("/static/js/transactions.js?v=move-observation-modal-1", details.text)
+        self.assertIn("/static/js/transactions.js?v=pagination-scroll-1", details.text)
         self.assertIn('data-move-observation-trigger', details.text)
         self.assertIn("Move observation", details.text)
         self.assertIn('id="move-observation-dialog"', details.text)

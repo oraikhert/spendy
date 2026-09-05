@@ -158,7 +158,7 @@ async def get_transactions(
         if min_abs_amount is not None and max_abs_amount is not None and min_abs_amount > max_abs_amount:
             raise ValueError("max_abs_amount: The maximum amount must be at least the minimum")
 
-    effective_date = func.coalesce(Transaction.posting_datetime, Transaction.transaction_datetime)
+    effective_date = func.coalesce(Transaction.transaction_datetime, Transaction.posting_datetime)
     filters = []
     if card_id is not None:
         filters.append(Transaction.card_id == card_id)

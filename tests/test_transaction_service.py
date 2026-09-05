@@ -135,7 +135,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.db.commit()
         return transaction
 
-    async def test_effective_date_sort_ties_undated_and_relationships(self):
+    async def test_transaction_date_sort_ties_undated_and_relationships(self):
         undated = await self.record(description="No date", created_at=datetime(2030, 1, 1))
         older = await self.record(posting_datetime=datetime(2026, 2, 1), transaction_datetime=datetime(2026, 3, 1))
         newer = await self.record(transaction_datetime=datetime(2026, 2, 10))
@@ -143,10 +143,17 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.db.expunge_all()
         rows, total = await service.get_transactions(self.db, limit=2)
         self.assertEqual(total, 4)
-        self.assertEqual([row.id for row in rows], [tie.id, newer.id])
+        self.assertEqual([row.id for row in rows], [older.id, tie.id])
         self.assertEqual(rows[0].card.account.name, "Family")
         rows, _ = await service.get_transactions(self.db, limit=2, offset=2)
-        self.assertEqual([row.id for row in rows], [older.id, undated.id])
+        self.assertEqual([row.id for row in rows], [newer.id, undated.id])
+        rows, total = await service.get_transactions(
+            self.db,
+            date_from=datetime(2026, 2, 1),
+            date_to=datetime(2026, 2, 28, 23, 59, 59, 999999),
+        )
+        self.assertEqual(total, 2)
+        self.assertEqual([row.id for row in rows], [tie.id, newer.id])
         selected = await service.get_transaction(self.db, newer.id)
         self.assertEqual(selected.card.account.institution, "Synthetic bank")
 

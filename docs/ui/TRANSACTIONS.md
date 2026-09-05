@@ -48,7 +48,8 @@ Defaults: `All time`, all accounts, cards, types, directions, and currencies; em
 
 Conditions combine with AND. Changing currency clears amount bounds. Invalid combinations
 show errors without applying a broader search. Date ranges include both complete calendar
-days using the effective date; undated records appear only in All time.
+days using the transaction date, or the posting date when the transaction date is absent;
+undated records appear only in All time.
 
 `Apply filters` or Enter applies the form; changing fields alone does not. `Reset`
 immediately restores defaults. Active advanced filters keep `More filters` expanded
@@ -56,7 +57,8 @@ and counted; the amount-bound pair counts once. Applying filters starts at page 
 
 ### Navigation
 
-Results sort by effective date descending, undated last, then record ID descending.
+Results sort by transaction date descending; when it is absent, posting date is used.
+Undated records come last, then equal dates sort by record ID descending.
 Pages contain 50 records, `Previous` / `Next`, and `1–50 of 128`; unavailable directions are disabled.
 URLs preserve applied filters and page across reload and Back/Forward. `This month`
 uses the application's server calendar and stores explicit dates; reopening shows Custom range.

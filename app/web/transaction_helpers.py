@@ -132,15 +132,7 @@ def money(value, currency=""):
 def display_date(value, missing="Not specified"):
     if value is None:
         return missing
-    result = value.strftime("%d %b %Y, %H:%M")
-    if value.second or value.microsecond:
-        result += value.strftime(":%S")
-        if value.microsecond:
-            result += f".{value.microsecond:06d}".rstrip("0")
-    offset = value.strftime("%z")
-    if offset:
-        result += f" UTC{offset[:3]}:{offset[3:]}"
-    return result
+    return value.strftime("%a, %d %b %Y %H:%M:%S")
 
 
 def account_label(account):

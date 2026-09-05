@@ -10,10 +10,13 @@ Interface labels are English; user content retains its language.
 - Type is `Purchase`, `Top-up`, `Refund`, or `Other`; it does not determine the sign.
 - Cards show their name and masked number; accounts show bank and account name.
   The transaction currency can differ from the account currency.
-- The effective date is the posting date, falling back to the transaction date.
+- The list date is the transaction date, falling back to the posting date.
   Undated records show `No date`; the record's creation date never substitutes.
-- Dates use `16 Feb 2026` and 24-hour time. Stored UTC offsets remain visible;
-  dates without offsets have no timezone label or browser timezone conversion.
+- All displayed timestamps use one browser-local format: abbreviated weekday, date,
+  and 24-hour time to seconds (for example, `Sat, 05 Sep 2026 08:11:25`).
+  Microseconds and timezone labels are not displayed. Timestamps with a stored UTC
+  offset are converted; timestamps without an offset remain the local wall time
+  entered by the user.
 - Empty descriptions show `No description`. Location appears only when populated
   and different from the description. Source counts describe links, not verification.
 

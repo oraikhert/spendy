@@ -510,11 +510,19 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         ])
         response = await self.client.get("/transactions", params={"q": "Display date"})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.text.count("02 Apr 2026, 10:30"), 2)
-        self.assertNotIn("03 Apr 2026, 11:45", response.text)
-        self.assertEqual(response.text.count("04 Apr 2026, 12:15"), 2)
+        self.assertEqual(response.text.count("Thu, 02 Apr 2026 10:30:00"), 2)
+        self.assertNotIn("Fri, 03 Apr 2026 11:45:00", response.text)
+        self.assertEqual(response.text.count("Sat, 04 Apr 2026 12:15:00"), 2)
+        self.assertEqual(response.text.count('data-local-datetime'), 4)
+        self.assertIn('datetime="2026-04-02T10:30:00"', response.text)
         self.assertEqual(response.text.count(">Transaction date</span>"), 2)
         self.assertEqual(response.text.count(">Posted</span>"), 2)
+
+    async def test_detail_and_sources_mark_timestamps_for_localized_display_without_microseconds(self):
+        response = await self.client.get(f"/transactions/{self.data['transaction']}")
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(response.text.count('data-local-datetime'), 7)
+        self.assertIn(">Mon, 16 Feb 2026 12:34:56</time>", response.text)
 
     async def test_this_month_uses_explicit_dates_for_ordinary_and_htmx_history(self):
         today = datetime.now().date()

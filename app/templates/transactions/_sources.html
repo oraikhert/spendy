@@ -1,4 +1,4 @@
-{% from "transactions/_macros.html" import detail_row with context %}
+{% from "transactions/_macros.html" import detail_row, local_datetime with context %}
 <section id="sources" class="card bg-base-100 shadow-sm" aria-labelledby="sources-heading" hx-history="false">
   <div class="card-body gap-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
@@ -16,7 +16,7 @@
         <div class="rounded-box bg-base-200 p-3 space-y-1 text-sm">
           <p class="font-medium">Payload #{{ source.payload.id }} · {{ source.payload.kind_label }}</p>
           <p class="text-base-content/70">{{ source.payload.media_type }} · {{ source.payload.ingestion_label }}</p>
-          <p class="text-base-content/70">Received {{ source.payload.received_at }}</p>
+          <p class="text-base-content/70">Received {{ local_datetime(source.payload.received_at) }}</p>
           {% if source.payload.original_filename %}<p class="transaction-text">Original filename: {{ source.payload.original_filename }}</p>{% endif %}
           {% if source.payload.has_file %}<p>Private attachment stored</p>{% endif %}
           {% if source.payload.parser %}<p class="transaction-text">Parser: {{ source.payload.parser }}</p>{% endif %}

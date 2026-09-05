@@ -1,5 +1,6 @@
 """Cookie-authenticated transaction pages. Business operations live in services."""
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 from urllib.parse import parse_qsl, urlencode, urlsplit
@@ -63,7 +64,7 @@ class SourcePayloadView:
     ingestion_label: str
     original_filename: str | None
     has_file: bool
-    received_at: str
+    received_at: datetime
     status_label: str
     status_is_error: bool
     parser: str | None
@@ -78,8 +79,8 @@ class TransactionObservationView:
 
     id: int
     payload: SourcePayloadView
-    extracted: tuple[tuple[str, str], ...]
-    match: tuple[tuple[str, str], ...]
+    extracted: tuple[tuple[str, str | datetime], ...]
+    match: tuple[tuple[str, str | datetime], ...]
     raw_fragment: str | None
 
 
@@ -325,8 +326,8 @@ def source_view(link, accounts, cards):
     elif observation.original_currency:
         extracted.append(("Extracted original currency", observation.original_currency))
     for label, value in (
-        ("Transaction date", display_date(observation.transaction_datetime) if observation.transaction_datetime else None),
-        ("Posting date", display_date(observation.posting_datetime) if observation.posting_datetime else None),
+        ("Transaction date", observation.transaction_datetime),
+        ("Posting date", observation.posting_datetime),
         ("Description", observation.description),
         ("Type", KINDS.get(observation.transaction_kind, "Other") if observation.transaction_kind else None),
         ("Location", observation.location),
@@ -334,11 +335,11 @@ def source_view(link, accounts, cards):
         ("Extraction confidence", confidence(observation.extraction_confidence)),
     ):
         if value is not None and value != "":
-            extracted.append((label, str(value)))
+            extracted.append((label, value if isinstance(value, datetime) else str(value)))
 
     match = [
         ("Match method", MATCH_METHODS.get(link.match_method, "Unknown method")),
-        ("Matched", display_date(link.matched_at)),
+        ("Matched", link.matched_at),
     ]
     if link.match_confidence is not None:
         match.append(("Match confidence", confidence(link.match_confidence)))
@@ -377,7 +378,7 @@ def source_view(link, accounts, cards):
             ingestion_label=INGESTION_METHODS.get(payload.ingestion_method, "Unknown ingestion method"),
             original_filename=payload.original_filename,
             has_file=payload.has_file,
-            received_at=display_date(payload.received_at),
+            received_at=payload.received_at,
             status_label=PROCESSING_STATES.get(payload.processing_status, "Unknown status"),
             status_is_error=payload.processing_status == "failed",
             parser=parser,

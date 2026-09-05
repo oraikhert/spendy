@@ -19,8 +19,12 @@
   {% endif %}
 {%- endmacro %}
 
+{% macro local_datetime(value, missing='Not specified') -%}
+  {% if value %}<time class="block" datetime="{{ value.isoformat() }}" data-local-datetime>{{ display_date(value) }}</time>{% else %}{{ missing }}{% endif %}
+{%- endmacro %}
+
 {% macro effective_date(transaction) -%}
-  <span class="block">{{ display_date(transaction.transaction_datetime or transaction.posting_datetime, 'No date') }}</span>
+  {{ local_datetime(transaction.transaction_datetime or transaction.posting_datetime, 'No date') }}
   {% if transaction.transaction_datetime %}<span class="block text-xs text-base-content/65 mt-1">Transaction date</span>
   {% elif transaction.posting_datetime %}<span class="block text-xs text-base-content/65 mt-1">Posted</span>{% endif %}
 {%- endmacro %}
@@ -35,5 +39,5 @@
 {%- endmacro %}
 
 {% macro detail_row(label, value) -%}
-  <div class="transaction-detail-row"><dt class="text-base-content/65">{{ label }}</dt><dd class="transaction-text font-medium">{{ value }}</dd></div>
+  <div class="transaction-detail-row"><dt class="text-base-content/65">{{ label }}</dt><dd class="transaction-text font-medium">{% if value is not none and value.isoformat is defined %}{{ local_datetime(value) }}{% else %}{{ value }}{% endif %}</dd></div>
 {%- endmacro %}

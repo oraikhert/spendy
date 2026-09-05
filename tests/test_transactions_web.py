@@ -389,6 +389,19 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created.status_code, 303)
         self.assertEqual(await self.snapshot(), (before[0] + 1, *before[1:]))
 
+    async def test_same_origin_transaction_write_uses_https_reported_by_reverse_proxy(self):
+        token = await self.csrf()
+        response = await self.client.post(
+            "/transactions/new",
+            data=self.valid_fields(token),
+            headers={
+                "Host": "spendy.example.test",
+                "Origin": "https://spendy.example.test",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+        self.assertEqual(response.status_code, 303, response.text[:300])
+
     async def test_create_normalizes_values_and_has_no_ingestion_side_effects(self):
         before = await self.snapshot()
         fields = self.valid_fields(await self.csrf())

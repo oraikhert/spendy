@@ -77,7 +77,8 @@ WITH dated_observations AS (
         l.transaction_id,
         o.id AS observation_id,
         p.source_kind,
-        COALESCE(o.transaction_datetime, o.posting_datetime) AS observed_at,
+        o.transaction_datetime,
+        o.posting_datetime,
         COALESCE(
             NULLIF(p.ingestion_metadata ->> 'source_timezone', ''),
             c.timezone,
@@ -101,14 +102,32 @@ WITH dated_observations AS (
         left_observation.observation_id AS observation_id_1,
         right_observation.observation_id AS observation_id_2,
         comparison.source_timezone,
-        (
-            left_observation.observed_at
-            AT TIME ZONE comparison.source_timezone
-        )::date AS observation_date_1,
-        (
-            right_observation.observed_at
-            AT TIME ZONE comparison.source_timezone
-        )::date AS observation_date_2
+        array_remove(
+            ARRAY[
+                (
+                    left_observation.transaction_datetime
+                    AT TIME ZONE comparison.source_timezone
+                )::date,
+                (
+                    left_observation.posting_datetime
+                    AT TIME ZONE comparison.source_timezone
+                )::date
+            ],
+            NULL
+        ) AS observation_dates_1,
+        array_remove(
+            ARRAY[
+                (
+                    right_observation.transaction_datetime
+                    AT TIME ZONE comparison.source_timezone
+                )::date,
+                (
+                    right_observation.posting_datetime
+                    AT TIME ZONE comparison.source_timezone
+                )::date
+            ],
+            NULL
+        ) AS observation_dates_2
     FROM dated_observations AS left_observation
     JOIN dated_observations AS right_observation
         ON right_observation.transaction_id = left_observation.transaction_id
@@ -126,12 +145,12 @@ WITH dated_observations AS (
 SELECT
     transaction_id,
     observation_id_1,
-    observation_date_1,
+    observation_dates_1,
     observation_id_2,
-    observation_date_2,
+    observation_dates_2,
     source_timezone
 FROM inconsistent_pairs
-WHERE observation_date_1 IS DISTINCT FROM observation_date_2
+WHERE NOT (observation_dates_1 && observation_dates_2)
 ORDER BY transaction_id, observation_id_1, observation_id_2;
 
 -- Statement/SMS observations that agree on card, business date and either booked

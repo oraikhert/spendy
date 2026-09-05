@@ -485,12 +485,18 @@ async def _resolved_money(
     )
 
 
-def _observation_business_date(
+def _observation_business_dates(
     observation: TransactionObservation,
     timezone_name: str = DEFAULT_TIMEZONE,
-) -> date | None:
-    value = observation.transaction_datetime or observation.posting_datetime
-    return business_date(value, timezone_name) if value is not None else None
+) -> set[date]:
+    return {
+        business_date(value, timezone_name)
+        for value in (
+            observation.transaction_datetime,
+            observation.posting_datetime,
+        )
+        if value is not None
+    }
 
 
 async def _date_consistency_conflicts(
@@ -517,12 +523,12 @@ async def _date_consistency_conflicts(
         timezone_name = _comparison_timezone(
             observation, existing, fallback_timezone
         )
-        incoming_date = _observation_business_date(observation, timezone_name)
-        existing_date = _observation_business_date(existing, timezone_name)
+        incoming_dates = _observation_business_dates(observation, timezone_name)
+        existing_dates = _observation_business_dates(existing, timezone_name)
         if (
-            incoming_date is not None
-            and existing_date is not None
-            and existing_date != incoming_date
+            incoming_dates
+            and existing_dates
+            and incoming_dates.isdisjoint(existing_dates)
         ):
             conflicts.setdefault(transaction_id, []).append(existing.id)
     return conflicts

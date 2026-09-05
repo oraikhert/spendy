@@ -384,7 +384,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 card_id=self.card_id,
                 amount=Decimal("-12.34"),
                 currency="AED",
-                transaction_datetime=first_day,
+                transaction_datetime=second_day,
                 posting_datetime=second_day,
                 description="SYNTHETIC SHOP",
                 transaction_kind="purchase",
@@ -398,7 +398,6 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 amount=Decimal("-12.34"),
                 currency="AED",
                 transaction_datetime=first_day,
-                posting_datetime=second_day,
                 description="SYNTHETIC SHOP",
                 transaction_kind="purchase",
                 card_id=self.card_id,
@@ -714,17 +713,17 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                         amount=Decimal("-12.34"),
                         currency="AED",
                         transaction_datetime=local_midnight_utc(
-                            date(2026, 8, 5), "Asia/Dubai"
+                            date(2026, 8, 4), "Asia/Dubai"
                         ),
                         posting_datetime=local_midnight_utc(
-                            date(2026, 8, 6), "Asia/Dubai"
+                            date(2026, 8, 5), "Asia/Dubai"
                         ),
                         description="SYNTHETIC SHOP DUBAI ARE",
                         transaction_kind="purchase",
                         card_last_four="1111",
                         extraction_metadata={
-                            "local_transaction_date": "2026-08-05",
-                            "local_posting_date": "2026-08-06",
+                            "local_transaction_date": "2026-08-04",
+                            "local_posting_date": "2026-08-05",
                         },
                     ),
                 ),
@@ -775,7 +774,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             transaction = await db.get(Transaction, sms_transaction_id)
             self.assertEqual(
                 transaction.posting_datetime,
-                local_midnight_utc(date(2026, 8, 6), "Asia/Dubai").replace(
+                local_midnight_utc(date(2026, 8, 5), "Asia/Dubai").replace(
                     tzinfo=None
                 ),
             )

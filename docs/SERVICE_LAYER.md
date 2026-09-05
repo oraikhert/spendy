@@ -156,11 +156,13 @@ calendar dates in observation `extraction_metadata`. Their datetime fields repre
 midnight in the persisted payload `source_timezone`, converted to UTC for storage.
 
 Before an automatic or manual link is created, the incoming observation's business
-date is compared with every dated observation already linked to the candidate
-transaction. `transaction_datetime` is preferred and `posting_datetime` is the
-fallback. A conflicting candidate is excluded from automatic matching; a manual link
-or move returns a business-validation error. Missing observation dates cannot prove a
-conflict and therefore do not block a link.
+transaction/posting dates are compared with every dated observation already linked to
+the candidate transaction. Two observations are consistent when these date sets share
+at least one day; this permits a statement posting date to align with an SMS receipt
+date when the statement transaction date is the preceding day. A candidate is
+conflicting only when both sets are non-empty and disjoint. It is then excluded from
+automatic matching; a manual link or move returns a business-validation error. Missing
+observation dates cannot prove a conflict and therefore do not block a link.
 
 An SMS candidate is also excluded when its transaction already has an SMS observation
 from another payload. SMS receipt time is not transaction identity and is not used to

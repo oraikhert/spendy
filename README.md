@@ -3,10 +3,8 @@
 Spendy tracks accounts, cards, transactions and their source messages/files.
 The JSON API supports transaction management, SMS parsing, matching and summaries.
 The web UI provides login, optional registration, a dashboard and transaction
-list/detail/create/edit pages with filters and deletion. Its legacy Sources panel is
-awaiting adaptation to the payload/observation model; see the
-[UI follow-up](docs/requirements/SOURCE_PAYLOADS_UI_FOLLOWUP.md). Uploaded files are
-private backend inputs and cannot be downloaded. The API parses Emirates NBD credit-card
+list/detail/create/edit pages with filters, deletion and linked source-observation
+details. Uploaded files are private backend inputs and cannot be downloaded. The API parses Emirates NBD credit-card
 statement PDFs; other PDF/image formats are not implemented. Family groups, budgets,
 reports, and account/card management pages remain future work.
 
@@ -122,12 +120,9 @@ Run the transaction and source-processing schema/service/API regressions without
 
 ```bash
 python tests/test_transaction_service.py
+python tests/test_transactions_web.py
 git diff --check
 ```
-
-`tests/test_transactions_web.py` still targets the removed `SourceEvent` contract and
-is deferred with the [Sources UI follow-up](docs/requirements/SOURCE_PAYLOADS_UI_FOLLOWUP.md).
-Restore it as an acceptance gate during that UI iteration.
 
 These scripts select isolated SQLite databases before importing the app and enable
 foreign keys. They use synthetic data and in-process HTTP clients; they do not access

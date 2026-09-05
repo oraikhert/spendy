@@ -282,7 +282,7 @@
     const link = event.target.closest?.("a[href]");
     if (!link || !isDirty() || event.defaultPrevented || event.button !== 0 ||
         event.metaKey || event.ctrlKey || event.shiftKey || event.altKey ||
-        link.hasAttribute("download") || link.matches("[data-file-download]") || link.target === "_blank") return;
+        link.hasAttribute("download") || link.target === "_blank") return;
     const destination = new URL(link.href, window.location.href);
     if (destination.pathname === location.pathname && destination.search === location.search && destination.hash) return;
     event.preventDefault();
@@ -366,7 +366,7 @@
         "The save could not be confirmed. Refresh and check the transaction before trying again.");
       return;
     }
-    if (request?.sourcePage || (request?.form && target.id === "sources")) {
+    if (request?.sourcePage || (request?.form && ["sources", "transaction-detail"].includes(target.id))) {
       document.getElementById("sources-heading")?.focus();
     } else if (request?.resultPage) {
       document.getElementById("transaction-result-count")?.focus();

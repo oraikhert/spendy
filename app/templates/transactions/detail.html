@@ -1,55 +1,5 @@
 {% extends "transactions/layout.html" %}
-{% from "transactions/_macros.html" import amount, detail_row with context %}
 {% block title %}Transaction - Spendy{% endblock %}
 {% block transaction_content %}
-<div class="flex flex-wrap items-center justify-between gap-3">
-  <a class="link link-hover" href="{{ back_url }}">← Back to transactions</a>
-  <a class="btn btn-outline" href="{{ edit_url }}">Edit</a>
-</div>
-{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
-<header class="card bg-base-100 shadow-sm"><div class="card-body gap-3">
-  <p class="text-sm text-base-content/65">Transaction</p>
-  <div>{{ amount(transaction, true) }}</div>
-  <h1 class="text-xl sm:text-2xl font-semibold transaction-text">{{ transaction.description or 'No description' }}</h1>
-  <span class="badge badge-ghost">{{ kind_label(transaction.transaction_kind) }}</span>
-</div></header>
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-  <section class="card bg-base-100 shadow-sm" aria-labelledby="transaction-details-heading"><div class="card-body">
-    <h2 id="transaction-details-heading" class="card-title mb-2">Details</h2>
-    <dl class="space-y-4">
-      {{ detail_row('Card', card_label(transaction.card)) }}
-      {{ detail_row('Account', account_label(transaction.card.account)) }}
-      {{ detail_row('Card type', transaction.card.card_type|capitalize) }}
-      {{ detail_row('Account currency', transaction.card.account.account_currency) }}
-      {{ detail_row('Transaction date', display_date(transaction.transaction_datetime)) }}
-      {{ detail_row('Posting date', display_date(transaction.posting_datetime)) }}
-      {% if transaction.location %}{{ detail_row('Location', transaction.location) }}{% endif %}
-      {% if transaction.original_amount is not none and transaction.original_currency %}
-        {{ detail_row('Original amount', money(transaction.original_amount, transaction.original_currency)) }}
-      {% elif transaction.original_amount is not none or transaction.original_currency %}
-        {{ detail_row('Original amount', 'Incomplete original amount') }}
-        {% if transaction.original_amount is not none %}{{ detail_row('Saved original amount', transaction.original_amount) }}{% endif %}
-        {% if transaction.original_currency %}{{ detail_row('Saved original currency', transaction.original_currency) }}{% endif %}
-      {% endif %}
-      {% if transaction.fx_rate is not none %}
-        {{ detail_row('Exchange rate', transaction.fx_rate) }}
-        {% if transaction.original_currency %}<div class="text-sm text-base-content/65">1 {{ transaction.original_currency }} = {{ transaction.fx_rate }} {{ transaction.currency }}</div>{% endif %}
-      {% endif %}
-    </dl>
-    <details class="transaction-expander border-t border-base-300 mt-5 pt-4">
-      <summary class="font-medium cursor-pointer">Record info</summary>
-      <dl class="space-y-4 mt-4">
-        {{ detail_row('Added', display_date(transaction.created_at)) }}
-        {{ detail_row('Updated', display_date(transaction.updated_at)) }}
-        {% if transaction.fx_fee is not none %}{{ detail_row('Recorded FX fee', transaction.fx_fee) }}<p class="text-sm text-base-content/65">Fee currency is not recorded. This fee is read-only and excluded from calculations.</p>{% endif %}
-      </dl>
-    </details>
-    <form method="post" action="/transactions/{{ transaction.id }}/delete" hx-post="/transactions/{{ transaction.id }}/delete" class="mt-6" data-transaction-mutation data-confirm-title="Delete transaction?" data-confirm-message="Delete {{ transaction.description or 'No description' }} ({{ money(transaction.amount, transaction.currency) }})? This cannot be undone. Sources, files, accounts, cards, and other source links will remain." data-confirm-label="Delete transaction">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}">
-      <button class="btn btn-outline btn-error" type="submit">Delete transaction</button>
-      <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
-    </form>
-  </div></section>
-  {% include "transactions/_sources.html" %}
-</div>
+  {% include "transactions/_detail.html" %}
 {% endblock %}

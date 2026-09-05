@@ -35,7 +35,15 @@ with patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}):
     from app.core.security import create_access_token
     from app.database import Base, get_db
     from app.main import app
-    from app.models import Account, Card, SourceEvent, Transaction, TransactionSourceLink, User
+    from app.models import (
+        Account,
+        Card,
+        SourcePayload,
+        Transaction,
+        TransactionObservation,
+        TransactionSourceLink,
+        User,
+    )
 
 
 class Forms(HTMLParser):
@@ -132,19 +140,59 @@ async def seed_web_fixtures(db, upload_dir):
     upload_dir.mkdir(parents=True, exist_ok=True)
     fixture_file = upload_dir / "synthetic.txt"
     fixture_file.write_text("Synthetic attachment only", encoding="utf-8")
-    source = SourceEvent(source_type="sms_text", raw_text="Synthetic original source", raw_hash="a" * 64,
-                         file_path=str(fixture_file), parse_status="parsed", parsed_amount=Decimal("-3.36"),
-                         parsed_currency="USD", parsed_description="Source extraction", transaction_datetime=precise,
-                         created_at=datetime(2026, 4, 1))
-    db.add_all([transaction, other_transaction, source])
+    payload = SourcePayload(
+        source_kind="sms", media_type="text/plain", ingestion_method="phone_api",
+        raw_text="Synthetic original source <script>alert('unsafe')</script>",
+        file_path=str(fixture_file), original_filename="statement <unsafe>.txt",
+        content_hash="a" * 64, received_at=datetime(2026, 4, 1),
+        processing_status="processed", parser_name="synthetic_parser", parser_version="1-test",
+        ingestion_metadata={
+            "account_id": account.id, "card_id": card.id, "sender": "Synthetic sender",
+            "recipients": "Synthetic recipients", "private_unknown": "must not render",
+        },
+    )
+    other_payload = SourcePayload(
+        source_kind="bank_statement", media_type="application/pdf", ingestion_method="manual_upload",
+        file_path=str(fixture_file), original_filename="other-statement.pdf", content_hash="b" * 64,
+        received_at=datetime(2026, 3, 1), processing_status="processed",
+        ingestion_metadata={},
+    )
+    db.add_all([transaction, other_transaction, payload, other_payload])
     await db.flush()
-    db.add_all([TransactionSourceLink(transaction_id=transaction.id, source_event_id=source.id, is_primary=True),
-                TransactionSourceLink(transaction_id=other_transaction.id, source_event_id=source.id)])
+    observation = TransactionObservation(
+        source_payload_id=payload.id, source_item_key="sms-0", amount=Decimal("-12.34"),
+        currency="AED", original_amount=Decimal("-3.36"), original_currency="USD",
+        transaction_datetime=precise, posting_datetime=precise + timedelta(hours=1),
+        description="Source extraction", transaction_kind="purchase", location="Observed location",
+        account_id=account.id, card_id=card.id, card_last_four="1234",
+        raw_fragment="Synthetic observation fragment <b>unsafe</b>",
+        extraction_confidence=Decimal("0.8750"), extraction_metadata={},
+    )
+    other_observation = TransactionObservation(
+        source_payload_id=other_payload.id, source_item_key="statement-0", amount=Decimal("4.00"),
+        currency="USD", description="Other source extraction", transaction_kind="refund",
+        card_id=foreign_card.id, card_last_four="9876", extraction_metadata={},
+    )
+    db.add_all([observation, other_observation])
+    await db.flush()
+    db.add_all([
+        TransactionSourceLink(
+            transaction_id=transaction.id, observation_id=observation.id,
+            match_method="automatic", match_confidence=Decimal("0.9000"),
+            matcher_name="synthetic_matcher", matcher_version="1-test",
+        ),
+        TransactionSourceLink(
+            transaction_id=other_transaction.id, observation_id=other_observation.id,
+            match_method="manual",
+        ),
+    ])
     await db.commit()
     return {"active": active.id, "other": other.id, "inactive": inactive.id, "account": account.id,
             "foreign_account": foreign_account.id, "card": card.id, "foreign_card": foreign_card.id,
             "transaction": transaction.id, "other_transaction": other_transaction.id,
-            "source": source.id, "file": fixture_file, "precise": precise}
+            "source": observation.id, "other_source": other_observation.id,
+            "payload": payload.id, "other_payload": other_payload.id,
+            "file": fixture_file, "precise": precise}
 
 
 class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
@@ -173,12 +221,8 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         app.dependency_overrides[get_db] = isolated_db
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
         self.login(self.data["active"])
-        # The download boundary is production code; only its fixture root changes.
-        self.upload_patch = patch("app.web.transactions.UPLOAD_DIR", self.upload_dir)
-        self.upload_patch.start()
 
     async def asyncTearDown(self):
-        self.upload_patch.stop()
         await self.client.aclose()
         app.dependency_overrides.clear()
         app.dependency_overrides.update(self.old_overrides)
@@ -207,7 +251,8 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
     async def snapshot(self):
         async with self.sessions() as db:
             return tuple([await db.scalar(select(func.count()).select_from(model))
-                          for model in (Transaction, SourceEvent, TransactionSourceLink, Card, Account)])
+                          for model in (Transaction, SourcePayload, TransactionObservation,
+                                        TransactionSourceLink, Card, Account)])
 
     async def add_transactions(self, entries):
         async with self.sessions() as db:
@@ -219,24 +264,39 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
 
     async def add_sources(self, count):
         async with self.sessions() as db:
-            sources = []
-            states = ["new", "parsed", "failed", "skipped", "future-state"]
-            kinds = ["telegram_text", "sms_text", "sms_screenshot", "bank_screenshot", "pdf_statement", "manual"]
+            payloads = []
+            states = ["pending", "processing", "processed", "ignored", "failed", "future-state"]
+            kinds = ["sms", "bank_statement", "bank_app", "other"]
             for number in range(count):
-                sources.append(SourceEvent(
-                    source_type=kinds[number % len(kinds)], raw_hash=f"{number + 100:064x}",
-                    raw_text=f"Synthetic source {number:02d} <script>alert('unsafe')</script>",
-                    parse_status=states[number % len(states)], parse_error="Synthetic parse error <img src=x onerror=alert(1)>",
-                    parsed_amount=Decimal("-2.00") if number % 2 else None,
-                    parsed_currency="USD" if number % 2 else None,
-                    created_at=datetime(2026, 3, 1) + timedelta(minutes=number),
+                payloads.append(SourcePayload(
+                    source_kind=kinds[number % len(kinds)], media_type="text/plain",
+                    ingestion_method="migration", raw_text=f"Synthetic raw payload {number:02d}",
+                    file_path=str(self.upload_dir / f"private-{number}.payload") if number == 0 else None,
+                    original_filename=f"source-{number:02d}.txt", content_hash=f"{number + 100:064x}",
+                    received_at=datetime(2026, 3, 1) + timedelta(minutes=number),
+                    processing_status=states[number % len(states)],
+                    processing_error="Synthetic parse error <img src=x onerror=alert(1)>",
+                    parser_name="synthetic", parser_version="1",
+                    ingestion_metadata={"sender": f"Sender {number:02d}", "unsafe": "hidden metadata"},
                 ))
-            db.add_all(sources)
+            db.add_all(payloads)
             await db.flush()
-            db.add_all([TransactionSourceLink(transaction_id=self.data["transaction"], source_event_id=source.id)
-                        for source in sources])
+            observations = [TransactionObservation(
+                source_payload_id=payload.id, source_item_key="0",
+                amount=Decimal("-2.00") if number % 2 else None,
+                currency="AED" if number % 2 else None,
+                description="Source extraction" if number == 0 else None,
+                raw_fragment=f"Synthetic source {number:02d} <script>alert('unsafe')</script>",
+                extraction_metadata={},
+            ) for number, payload in enumerate(payloads)]
+            db.add_all(observations)
+            await db.flush()
+            db.add_all([TransactionSourceLink(
+                transaction_id=self.data["transaction"], observation_id=observation.id,
+                match_method="migration",
+            ) for observation in observations])
             await db.commit()
-            return [source.id for source in sources]
+            return [observation.id for observation in observations]
 
     def listed_ids(self, html):
         # Responsive table/card views may repeat the same record link.
@@ -261,8 +321,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_surfaces_require_an_active_cookie_session(self):
         transaction, source = self.data["transaction"], self.data["source"]
         paths = ["/transactions", "/transactions/new", f"/transactions/{transaction}",
-                 f"/transactions/{transaction}/edit", f"/transactions/{transaction}/sources",
-                 f"/transactions/sources/{source}/download"]
+                 f"/transactions/{transaction}/edit", f"/transactions/{transaction}/sources"]
         before = await self.snapshot()
         for identity in ["anonymous", "inactive", "expired"]:
             if identity == "anonymous":
@@ -312,8 +371,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         before = await self.snapshot()
         transaction, source = self.data["transaction"], self.data["source"]
         for origin in ["http://testserver:9999", "https://evil.example", "null"]:
-            for path in ["/transactions", "/transactions/new", f"/transactions/{transaction}",
-                         f"/transactions/sources/{source}/download"]:
+            for path in ["/transactions", "/transactions/new", f"/transactions/{transaction}"]:
                 with self.subTest(origin=origin, path=path):
                     response = await self.client.get(path, headers={"Origin": origin})
                     self.assertEqual(response.status_code, 403)
@@ -480,15 +538,16 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 303, response.text[:800])
         async with self.sessions() as db:
             transaction = await db.get(Transaction, self.data["transaction"])
-            source = await db.get(SourceEvent, self.data["source"])
+            payload = await db.get(SourcePayload, self.data["payload"])
+            observation = await db.get(TransactionObservation, self.data["source"])
             self.assertEqual(transaction.transaction_datetime, self.data["precise"])
             self.assertEqual(transaction.posting_datetime, self.data["precise"] + timedelta(hours=1))
             self.assertEqual(transaction.original_amount, Decimal("-3.36"))
             self.assertIsNone(transaction.original_currency)
             self.assertEqual(transaction.fx_rate, Decimal("3.672500"))
             self.assertEqual(transaction.fx_fee, Decimal("0.25"))
-            self.assertEqual(source.raw_text, "Synthetic original source")
-            self.assertEqual(source.parsed_description, "Source extraction")
+            self.assertIn("Synthetic original source", payload.raw_text)
+            self.assertEqual(observation.description, "Source extraction")
         self.assertEqual(await self.snapshot(), before)
 
     async def test_edit_clears_nullable_fields_and_rejects_card_change(self):
@@ -543,13 +602,15 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         confirmation = await self.client.post(unlink_path, data={"csrf_token": token})
         self.assertEqual(confirmation.status_code, 200)
         self.assertIn("Unlink", confirmation.text)
+        self.assertIn("canonical transaction values may change", confirmation.text)
         self.assertEqual(await self.snapshot(), before)
         unlinked = await self.client.post(unlink_path, data={"csrf_token": token, "confirmed": "yes"})
-        self.assertIn(unlinked.status_code, (200, 303))
+        self.assertEqual(unlinked.status_code, 303)
         async with self.sessions() as db:
-            self.assertIsNone(await db.get(TransactionSourceLink, (transaction, source)))
-            self.assertIsNotNone(await db.get(TransactionSourceLink, (self.data["other_transaction"], source)))
-            self.assertIsNotNone(await db.get(SourceEvent, source))
+            self.assertIsNone(await db.get(TransactionSourceLink, source))
+            self.assertIsNotNone(await db.get(TransactionSourceLink, self.data["other_source"]))
+            self.assertIsNotNone(await db.get(TransactionObservation, source))
+            self.assertIsNotNone(await db.get(SourcePayload, self.data["payload"]))
         self.assertTrue(self.data["file"].is_file())
         delete_path = f"/transactions/{self.data['other_transaction']}/delete"
         confirmation = await self.client.post(delete_path, data={"csrf_token": token})
@@ -561,10 +622,67 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         async with self.sessions() as db:
             self.assertIsNone(await db.get(Transaction, self.data["other_transaction"]))
             self.assertIsNotNone(await db.get(Transaction, transaction))
-            self.assertIsNotNone(await db.get(SourceEvent, source))
+            self.assertIsNotNone(await db.get(TransactionObservation, self.data["other_source"]))
+            self.assertIsNotNone(await db.get(SourcePayload, self.data["other_payload"]))
             self.assertIsNotNone(await db.get(Card, self.data["foreign_card"]))
             self.assertIsNotNone(await db.get(Account, self.data["foreign_account"]))
         self.assertTrue(self.data["file"].is_file())
+
+    async def test_htmx_unlink_refreshes_canonical_transaction_and_checks_parent(self):
+        async with self.sessions() as db:
+            statement = SourcePayload(
+                source_kind="bank_statement", media_type="application/pdf",
+                ingestion_method="manual_upload", original_filename="canonical.pdf",
+                content_hash="d" * 64, received_at=datetime(2026, 4, 2),
+                processing_status="processed", ingestion_metadata={},
+            )
+            db.add(statement)
+            await db.flush()
+            observation = TransactionObservation(
+                source_payload_id=statement.id, source_item_key="row-1",
+                amount=Decimal("-50.00"), currency="AED",
+                posting_datetime=datetime(2026, 2, 17), description="Statement canonical",
+                transaction_kind="purchase", extraction_metadata={},
+            )
+            db.add(observation)
+            await db.flush()
+            db.add(TransactionSourceLink(
+                transaction_id=self.data["transaction"], observation_id=observation.id,
+                match_method="automatic",
+            ))
+            transaction = await db.get(Transaction, self.data["transaction"])
+            transaction.amount = Decimal("-50.00")
+            transaction.description = "Statement canonical"
+            await db.commit()
+            observation_id = observation.id
+
+        response = await self.client.post(
+            f"/transactions/{self.data['transaction']}/sources/{observation_id}/unlink",
+            data={"csrf_token": await self.csrf(), "confirmed": "yes"},
+            headers={"HX-Request": "true", "HX-Target": "transaction-detail"},
+        )
+        self.assertEqual(response.status_code, 200, response.text[:800])
+        self.assertIn('id="transaction-detail"', response.text)
+        self.assertNotIn("<html", response.text.lower())
+        self.assertIn("−12.34 AED", response.text)
+        self.assertIn("Source extraction", response.text)
+        self.assertNotIn("Statement canonical", response.text)
+        async with self.sessions() as db:
+            transaction = await db.get(Transaction, self.data["transaction"])
+            self.assertEqual(transaction.amount, Decimal("-12.34"))
+            self.assertEqual(transaction.description, "Source extraction")
+            self.assertIsNone(await db.get(TransactionSourceLink, observation_id))
+            self.assertIsNotNone(await db.get(TransactionObservation, observation_id))
+
+        wrong_parent = await self.client.post(
+            f"/transactions/{self.data['transaction']}/sources/{self.data['other_source']}/unlink",
+            data={"csrf_token": await self.csrf(), "confirmed": "yes"},
+            headers={"HX-Request": "true"},
+        )
+        self.assertEqual(wrong_parent.status_code, 200)
+        self.assertIn("This link no longer exists", wrong_parent.text)
+        async with self.sessions() as db:
+            self.assertIsNotNone(await db.get(TransactionSourceLink, self.data["other_source"]))
 
     async def test_missing_ids_and_missing_links_have_safe_recovery(self):
         for path in ["/transactions/999999", "/transactions/999999/edit", "/transactions/not-an-id",
@@ -588,7 +706,8 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(read=path):
                     response = await self.client.get(path)
                     self.assertEqual(response.status_code, 404)
-                    self.assertIn("Back to transactions", response.text)
+                    if not path.endswith("/download"):
+                        self.assertIn("Back to transactions", response.text)
             for name in ["account_id", "card_id"]:
                 with self.subTest(filter=name, identifier=identifier):
                     response = await self.client.get("/transactions", params={name: identifier})
@@ -607,21 +726,45 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
     async def test_source_states_escaping_pagination_and_preserved_extraction(self):
         await self.add_sources(22)
         transaction = self.data["transaction"]
+        async with self.sessions() as db:
+            shared = TransactionObservation(
+                source_payload_id=self.data["payload"], source_item_key="sms-1",
+                description="Second observation from shared payload", extraction_metadata={},
+            )
+            db.add(shared)
+            await db.flush()
+            db.add(TransactionSourceLink(
+                transaction_id=transaction, observation_id=shared.id, match_method="manual",
+            ))
+            await db.commit()
+            shared_id = shared.id
         before = await self.snapshot()
         first = await self.client.get(f"/transactions/{transaction}/sources", params={"source_page": 1})
         second = await self.client.get(f"/transactions/{transaction}/sources", params={"source_page": 2})
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         joined = first.text + second.text
-        for label in ["Not processed", "Parsed", "Could not parse", "Not a transaction", "Unknown status"]:
+        for label in ["Pending", "Processing", "Processed", "Ignored", "Failed", "Unknown status"]:
             self.assertIn(label, joined)
         self.assertIn("&lt;script&gt;", joined)
         self.assertNotIn("<script>alert('unsafe')</script>", joined)
         self.assertNotIn("<img src=x onerror=alert(1)>", joined)
         self.assertNotIn("a" * 64, joined)
         self.assertNotIn(str(self.upload_dir), joined)
+        self.assertNotIn("hidden metadata", joined)
+        self.assertNotIn("Download file", joined)
         self.assertIn("No extracted data", joined)
         self.assertIn("Source extraction", joined)
+        self.assertIn(f"Observation #{shared_id}", joined)
+        self.assertEqual(joined.count(f"Payload #{self.data['payload']} · SMS"), 2)
+        for value in [
+            "text/plain · Phone API", "Original filename: statement &lt;unsafe&gt;.txt",
+            "Private attachment stored", "Parser: synthetic_parser · version 1-test",
+            "Card last four digits", "Extraction confidence", "87.50%",
+            "Match method", "Automatic", "Match confidence", "90.00%",
+            "Synthetic sender", "Synthetic recipients",
+        ]:
+            self.assertIn(value, joined)
         previews1 = set(re.findall(r"Synthetic source (\d{2})", first.text))
         previews2 = set(re.findall(r"Synthetic source (\d{2})", second.text))
         self.assertFalse(previews1 & previews2)
@@ -642,8 +785,10 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Synthetic source 19", response.text)
         self.assertNotIn("Synthetic source 00", response.text)
         async with self.sessions() as db:
-            self.assertIsNotNone(await db.get(SourceEvent, source_id))
-            self.assertIsNone(await db.get(TransactionSourceLink, (transaction, source_id)))
+            observation = await db.get(TransactionObservation, source_id)
+            self.assertIsNotNone(observation)
+            self.assertIsNotNone(await db.get(SourcePayload, observation.source_payload_id))
+            self.assertIsNone(await db.get(TransactionSourceLink, source_id))
 
     async def test_return_urls_reject_external_paths_and_unapproved_parameters(self):
         bad_urls = ["https://evil.example/transactions", "//evil.example/transactions", "/auth/logout",
@@ -665,45 +810,38 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_cards_disables_creation_and_shows_explanation(self):
         async with self.sessions() as db:
-            for model in [TransactionSourceLink, Transaction, Card]:
+            for model in [TransactionSourceLink, TransactionObservation, Transaction, Card]:
                 await db.execute(delete(model))
             await db.commit()
         response = await self.client.get("/transactions/new")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Add a card before creating a transaction", response.text)
 
-    async def test_files_require_auth_and_reject_missing_outside_and_symlink_paths(self):
-        valid = await self.client.get(f"/transactions/sources/{self.data['source']}/download")
-        self.assertEqual(valid.status_code, 200)
-        self.assertEqual(valid.content, b"Synthetic attachment only")
-        self.assertIn("no-store", valid.headers.get("cache-control", ""))
-        outside = Path(self.tempdir.name) / "outside.txt"
-        outside.write_text("must never be served", encoding="utf-8")
-        symlink = self.upload_dir / "escape.txt"
-        symlink.symlink_to(outside)
-        paths = [self.upload_dir / "missing.txt", outside, symlink, self.upload_dir / ".." / "outside.txt"]
+    async def test_private_files_and_unlinked_observations_are_not_exposed(self):
+        old_download = await self.client.get(f"/transactions/sources/{self.data['source']}/download")
+        self.assertEqual(old_download.status_code, 404)
         async with self.sessions() as db:
-            sources = [SourceEvent(source_type="manual", raw_hash=f"{number + 1000:064x}", file_path=str(path))
-                       for number, path in enumerate(paths)]
-            db.add_all(sources)
-            await db.commit()
-            ids = [source.id for source in sources]
-        for source_id in ids:
-            with self.subTest(source_id=source_id):
-                response = await self.client.get(f"/transactions/sources/{source_id}/download")
-                self.assertEqual(response.status_code, 404)
-                self.assertNotIn("must never be served", response.text)
-                self.assertNotIn(str(outside), response.text)
-        async with self.sessions() as db:
-            source = await db.get(SourceEvent, self.data["source"])
-            source.raw_text = None
-            source.parse_status = "new"
-            source.file_path = str(self.upload_dir / "missing-linked-attachment.pdf")
+            payload = SourcePayload(
+                source_kind="sms", media_type="text/plain", ingestion_method="phone_api",
+                raw_text="Unlinked private source", file_path="/private/storage/secret.payload",
+                original_filename="private-source.txt", content_hash="c" * 64,
+                processing_status="processed", ingestion_metadata={},
+            )
+            db.add(payload)
+            await db.flush()
+            observation = TransactionObservation(
+                source_payload_id=payload.id, source_item_key="unlinked",
+                description="Unlinked observation must stay hidden", extraction_metadata={},
+            )
+            db.add(observation)
             await db.commit()
         details = await self.client.get(f"/transactions/{self.data['transaction']}")
         self.assertEqual(details.status_code, 200)
-        self.assertIn("Stored file", details.text)
-        self.assertIn("File is unavailable", details.text)
+        self.assertIn("Private attachment stored", details.text)
+        self.assertNotIn(str(self.upload_dir), details.text)
+        self.assertNotIn("Synthetic attachment only", details.text)
+        self.assertNotIn("Unlinked observation must stay hidden", details.text)
+        self.assertNotIn("/private/storage/secret.payload", details.text)
 
     async def test_read_failures_offer_retry_and_writes_never_replay(self):
         transaction, source = self.data["transaction"], self.data["source"]
@@ -714,7 +852,6 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             (f"/transactions/{transaction}", "app.web.transactions.transaction_service.get_transaction", {"return_url": return_url}),
             (f"/transactions/{transaction}/sources", "app.web.transactions.transaction_service.get_transaction", {"source_page": "2", "return_url": return_url}),
             (f"/transactions/{transaction}/edit", "app.web.transactions.transaction_service.get_transaction", {"return_url": return_url}),
-            (f"/transactions/sources/{source}/download", "app.web.transactions.source_event_service.get_source_event", {}),
         ]:
             with self.subTest(read=path), patch(target, new_callable=AsyncMock, side_effect=SQLAlchemyError("synthetic read failure")) as call:
                 response = await self.client.get(path, params=params)
@@ -734,7 +871,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
              {"csrf_token": token, "description": "This write fails"}),
             (f"/transactions/{transaction}/delete", "app.web.transactions.transaction_service.delete_transaction",
              {"csrf_token": token, "confirmed": "yes"}),
-            (f"/transactions/{transaction}/sources/{source}/unlink", "app.web.transactions.source_event_service.unlink_source_from_transaction",
+            (f"/transactions/{transaction}/sources/{source}/unlink", "app.web.transactions.source_processing_service.unlink_observation",
              {"csrf_token": token, "confirmed": "yes"}),
         ]
         for path, target, fields in writes:

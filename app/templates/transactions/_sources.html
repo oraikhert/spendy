@@ -5,36 +5,45 @@
       <h2 id="sources-heading" class="card-title" tabindex="-1">Sources <span class="badge badge-ghost">{{ source_total }}</span></h2>
       <span id="sources-loading" class="htmx-indicator text-sm" role="status">Loading sources…</span>
     </div>
-    <p class="text-sm text-base-content/65">Messages and files linked to this transaction.</p>
+    <p class="text-sm text-base-content/65">Extracted observations linked to this transaction.</p>
     {% if source_message %}<div class="alert alert-info" role="status">{{ source_message }}</div>{% endif %}
     {% for source in sources %}
-      {% set event = source.event %}
       <article class="border border-base-300 rounded-box p-4 space-y-3">
-        <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="font-semibold">{{ source.type_label }}</h3><span class="badge badge-sm {% if event.parse_status == 'failed' %}badge-error{% else %}badge-ghost{% endif %}">{{ source.status_label }}</span></div>
-        <p class="text-xs text-base-content/65">Added {{ display_date(event.created_at) }}</p>
-        <p class="source-preview transaction-text text-sm">{% if event.raw_text %}{{ event.raw_text }}{% elif event.file_path %}Attached file{% else %}No source text{% endif %}</p>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="font-semibold">Observation #{{ source.id }}</h3>
+          <span class="badge badge-sm {% if source.payload.status_is_error %}badge-error{% else %}badge-ghost{% endif %}">{{ source.payload.status_label }}</span>
+        </div>
+        <div class="rounded-box bg-base-200 p-3 space-y-1 text-sm">
+          <p class="font-medium">Payload #{{ source.payload.id }} · {{ source.payload.kind_label }}</p>
+          <p class="text-base-content/70">{{ source.payload.media_type }} · {{ source.payload.ingestion_label }}</p>
+          <p class="text-base-content/70">Received {{ source.payload.received_at }}</p>
+          {% if source.payload.original_filename %}<p class="transaction-text">Original filename: {{ source.payload.original_filename }}</p>{% endif %}
+          {% if source.payload.has_file %}<p>Private attachment stored</p>{% endif %}
+          {% if source.payload.parser %}<p class="transaction-text">Parser: {{ source.payload.parser }}</p>{% endif %}
+        </div>
         <details class="transaction-expander">
           <summary class="text-sm font-medium cursor-pointer">Source details</summary>
           <div class="mt-3 space-y-4">
-            {% if event.raw_text %}<div><h4 class="text-sm font-semibold mb-1">Full text</h4><p class="transaction-text source-full-text text-sm">{{ event.raw_text }}</p></div>{% endif %}
-            {% if event.parse_status == 'failed' %}<div class="alert alert-error text-sm"><span class="transaction-text">{{ event.parse_error or 'The source could not be parsed.' }}</span></div>{% endif %}
+            {% if source.payload.raw_text %}<div><h4 class="text-sm font-semibold mb-1">Original SMS text</h4><p class="transaction-text source-full-text text-sm">{{ source.payload.raw_text }}</p></div>{% endif %}
+            {% if source.raw_fragment %}<div><h4 class="text-sm font-semibold mb-1">Observation fragment</h4><p class="transaction-text source-full-text text-sm">{{ source.raw_fragment }}</p></div>{% endif %}
+            {% if source.payload.status_is_error %}<div class="alert alert-error text-sm"><span class="transaction-text">{{ source.payload.processing_error or 'The source could not be processed.' }}</span></div>{% endif %}
             <div><h4 class="text-sm font-semibold mb-2">Extracted data</h4>
               {% if source.extracted %}<dl class="space-y-3 text-sm">{% for label, value in source.extracted %}{{ detail_row(label, value) }}{% endfor %}</dl>
               {% else %}<p class="text-sm text-base-content/65">No extracted data</p>{% endif %}
             </div>
-            {% if source.context %}<details class="transaction-expander"><summary class="font-medium text-sm cursor-pointer">Import context</summary><dl class="space-y-3 text-sm mt-3">{% for label, value in source.context %}{{ detail_row(label, value) }}{% endfor %}</dl></details>{% endif %}
+            <div><h4 class="text-sm font-semibold mb-2">Match</h4><dl class="space-y-3 text-sm">{% for label, value in source.match %}{{ detail_row(label, value) }}{% endfor %}</dl></div>
+            {% if source.payload.context %}<details class="transaction-expander"><summary class="font-medium text-sm cursor-pointer">Ingestion context</summary><dl class="space-y-3 text-sm mt-3">{% for label, value in source.payload.context %}{{ detail_row(label, value) }}{% endfor %}</dl></details>{% endif %}
           </div>
         </details>
         <div class="flex flex-wrap items-start justify-between gap-2 pt-1">
-          {% if event.file_path %}{% if source.file_available %}<a href="{{ source.download_url }}" class="btn btn-outline btn-sm" data-file-download>Download file</a>{% else %}<p class="text-sm text-base-content/65">File is unavailable</p>{% endif %}{% endif %}
-          <form method="post" action="/transactions/{{ transaction.id }}/sources/{{ event.id }}/unlink" hx-post="/transactions/{{ transaction.id }}/sources/{{ event.id }}/unlink" hx-target="#sources" hx-swap="outerHTML" class="ml-auto" data-transaction-mutation data-confirm-title="Unlink source?" data-confirm-message="Only this link will be removed. The source, file, other links, and transaction values will remain." data-confirm-label="Unlink source">
+          <form method="post" action="/transactions/{{ transaction.id }}/sources/{{ source.id }}/unlink" hx-post="/transactions/{{ transaction.id }}/sources/{{ source.id }}/unlink" hx-target="#transaction-detail" hx-swap="outerHTML" class="ml-auto" data-transaction-mutation data-confirm-title="Unlink observation?" data-confirm-message="Only this link will be removed. The payload, observation, private file and transaction will remain. Other links will remain, but canonical transaction values may change." data-confirm-label="Unlink observation">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}"><input type="hidden" name="source_page" value="{{ source_page }}">
-            <button type="submit" class="btn btn-ghost btn-sm text-error">Unlink source</button>
+            <button type="submit" class="btn btn-ghost btn-sm text-error">Unlink observation</button>
             <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
           </form>
         </div>
       </article>
-    {% else %}<p class="text-base-content/65 py-4">No sources linked</p>{% endfor %}
+    {% else %}<p class="text-base-content/65 py-4">No source observations linked</p>{% endfor %}
     {% if source_total %}
     <nav class="flex flex-wrap items-center justify-between gap-3 pt-2" aria-label="Source pages">
       <p class="text-sm text-base-content/65" role="status">{{ source_start }}–{{ source_end }} of {{ source_total }}</p>

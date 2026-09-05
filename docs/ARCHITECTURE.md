@@ -69,7 +69,7 @@ The browser UI uses CDN dependencies declared in
 There is no npm build. Web login returns an HTMX redirect and sets a JWT cookie;
 API login returns a bearer token. Both use the same authentication services.
 Transaction forms work with ordinary GET/POST; HTMX adds filtering, pagination and
-source updates in the legacy UI. Full GETs return pages, and fragment requests return their specific
+linked-observation updates. Full GETs return pages, and fragment requests return their specific
 partial. Filters and pages live in URLs; transaction-list return URLs are validated
 against a local path and allowed query parameters. Screen behavior is documented
 in [Transactions UI](ui/TRANSACTIONS.md).

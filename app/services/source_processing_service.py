@@ -981,9 +981,16 @@ async def create_transaction_from_observation(
     return transaction
 
 
-async def unlink_observation(db: AsyncSession, observation_id: int) -> bool:
+async def unlink_observation(
+    db: AsyncSession,
+    observation_id: int,
+    transaction_id: int | None = None,
+) -> bool:
+    """Unlink an observation, optionally only from the expected transaction."""
     link = await db.get(TransactionSourceLink, observation_id)
-    if link is None:
+    if link is None or (
+        transaction_id is not None and link.transaction_id != transaction_id
+    ):
         return False
     try:
         transaction = await db.get(Transaction, link.transaction_id)

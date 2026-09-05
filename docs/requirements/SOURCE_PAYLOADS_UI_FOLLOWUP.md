@@ -2,14 +2,16 @@
 
 ## Status and scope
 
-This is the implementation brief for the UI iteration after the backend split of
-`SourceEvent`. The current transaction Sources panel was deliberately not adapted
-as part of that backend change and may fail against the new ORM/service contracts.
-Do not treat the legacy panel as the current backend contract.
+Status: **Completed on 2026-09-05**.
+
+This is the implementation brief for the transaction Sources UI iteration after the
+backend split of `SourceEvent`.
 
 The follow-up must update cookie-authenticated HTML routes, view models, templates,
 HTMX behavior and source-specific web tests. It must not add PDF/image parsing or
-restore file downloads.
+restore file downloads. Its HTML scope is limited to observations linked to the current
+transaction. Separate unlinked-observation pages and reprocessing controls are excluded;
+those workflows remain available through the JSON API.
 
 ## Backend concepts
 
@@ -84,19 +86,14 @@ storage path.
 
 ## States and actions
 
-- `pending`: stored, but no compatible parser exists yet. Reprocess is unavailable
-  until backend support is added.
+- `pending`: stored, but no compatible parser exists yet.
+- `processing`: processing is currently in progress.
 - `processed`: parsing completed; it can have linked or unlinked observations.
 - `ignored`: recognized as non-financial and normally has no observations.
-- `failed`: processing failed. Show the safe general error and offer reprocess only
-  when the backend accepts it.
-- Unlinked observations need separate review/link/create-transaction affordances;
-  ambiguous automatic matches remain unlinked rather than showing candidate links.
-- Reprocess is destructive to observations and links. Confirm it, then replace all
-  cached IDs and results from the response. Canonical transactions left without a
-  source are retained and may require separate review.
-- A `409` can mean an unsupported parser, an already linked observation or another
-  state conflict. A `404` means the item changed/disappeared; refresh the relevant list.
+- `failed`: processing failed. Show the safe general error in expanded details.
+- Unlinked observations, candidate review, manual link/create-transaction and reprocess
+  are not exposed by the transaction HTML pages.
+- A stale or missing link refreshes the current transaction Sources list.
 
 ## HTML implementation areas
 
@@ -116,10 +113,19 @@ storage path.
 - Adapt `tests/test_transactions_web.py` to payloads/observations and restore the full
   HTML suite as an acceptance gate.
 - Cover multiple observations from one payload, shared payload summaries, all processing
-  states, linked/unlinked records, reprocess ID replacement and canonical refresh.
+  states, exclusion of unlinked records and canonical refresh after unlink.
 - Verify unlink with ordinary POST and HTMX, page clamping, missing/stale IDs, auth,
   CSRF, escaping and database failure recovery.
 - Assert that no rendered page contains a storage path or download control and that
   old HTML download URLs return 404.
 - Browser-check desktop and 360 px layouts, keyboard focus, screen-reader status text,
   session expiry and Back/Forward behavior without storing bank data in browser history.
+
+## Completion record
+
+Completed on **2026-09-05** without schema, JSON API or dependency changes.
+`tests/test_transactions_web.py` passed all 25 cases, `git diff --check` passed, and
+the transaction detail/Sources/confirmation flow was browser-checked at desktop and
+360 px widths against an isolated SQLite fixture. The destructive confirmation was
+cancelled in the browser; ordinary and HTMX unlink mutations, canonical refresh and
+page clamping were exercised by the isolated HTML regression suite.

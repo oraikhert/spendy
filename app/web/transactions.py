@@ -1,6 +1,6 @@
 """Cookie-authenticated transaction pages. Business operations live in services."""
-from pathlib import Path
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Annotated
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -11,13 +11,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.concurrency import run_in_threadpool
-
 from app.core.deps import get_current_user_from_cookie_required
 from app.database import get_db
 from app.models.user import User
 from app.schemas.transaction import TransactionCreate, TransactionUpdate
-from app.services import transaction_service, source_event_service
+from app.services import source_processing_service, transaction_service
 from app.web.transaction_helpers import (
     KINDS, ListFilters, account_label, card_label, csrf_token, detail_url,
     display_date, money, parse_filters, safe_return_url, valid_csrf, validation_errors,
@@ -55,13 +53,42 @@ class WebUser:
     username: str
 
 
+@dataclass(frozen=True)
+class SourcePayloadView:
+    """Safe payload presentation without private storage or technical hashes."""
+
+    id: int
+    kind_label: str
+    media_type: str
+    ingestion_label: str
+    original_filename: str | None
+    has_file: bool
+    received_at: str
+    status_label: str
+    status_is_error: bool
+    parser: str | None
+    processing_error: str | None
+    raw_text: str | None
+    context: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class TransactionObservationView:
+    """One linked observation and the safe evidence shown with it."""
+
+    id: int
+    payload: SourcePayloadView
+    extracted: tuple[tuple[str, str], ...]
+    match: tuple[tuple[str, str], ...]
+    raw_fragment: str | None
+
+
 async def web_user(request: Request, user: Annotated[User, Depends(get_current_user_from_cookie_required)]) -> WebUser:
     request.state.transaction_user = WebUser(username=user.username)
     return request.state.transaction_user
 
 
 ActiveUser = Annotated[WebUser, Depends(web_user)]
-UPLOAD_DIR = Path("data/uploads")
 FORM_FIELDS = ("card_id", "amount", "currency", "transaction_kind", "description", "transaction_datetime",
                "posting_datetime", "location", "original_amount", "original_currency", "fx_rate")
 OPTIONAL_FIELDS = {"transaction_datetime", "posting_datetime", "location", "original_amount", "original_currency", "fx_rate"}
@@ -89,20 +116,6 @@ def navigate(request, url):
 def error_page(request, user, message, status=404, back_url="/transactions", retry_url=None):
     return render(request, user, "error", {"title": "Transaction unavailable" if status == 404 else "Unable to continue",
                   "message": message, "back_url": back_url, "retry_url": retry_url}, status)
-
-
-def file_path_for(source):
-    """Resolve symlinks as well as .. before allowing an attachment download."""
-    if not source.file_path:
-        return None
-    try:
-        root = UPLOAD_DIR.resolve(strict=True)
-        path = Path(source.file_path).resolve(strict=True)
-        if path.is_relative_to(root) and path.is_file():
-            return path
-    except (OSError, RuntimeError, ValueError):
-        pass
-    return None
 
 
 def page_number(raw):
@@ -262,46 +275,137 @@ async def lookup(db, transaction_id):
     return await transaction_service.get_transaction(db, identifier)
 
 
+SOURCE_KINDS = {
+    "sms": "SMS",
+    "bank_statement": "Bank statement",
+    "bank_app": "Bank app",
+    "other": "Other",
+}
+INGESTION_METHODS = {
+    "phone_api": "Phone API",
+    "manual_upload": "Manual upload",
+    "telegram_api": "Telegram API",
+    "email": "Email",
+    "migration": "Migration",
+}
+PROCESSING_STATES = {
+    "pending": "Pending",
+    "processing": "Processing",
+    "processed": "Processed",
+    "ignored": "Ignored",
+    "failed": "Failed",
+}
+MATCH_METHODS = {
+    "automatic": "Automatic",
+    "manual": "Manual",
+    "migration": "Migration",
+}
+
+
+def confidence(value):
+    return f"{Decimal(value) * 100:.2f}%" if value is not None else None
+
+
+def source_view(link, accounts, cards):
+    observation = link.observation
+    payload = observation.payload
+    extracted = []
+    if observation.amount is not None:
+        extracted.append((
+            "Extracted amount",
+            money(observation.amount, observation.currency),
+        ))
+    elif observation.currency:
+        extracted.append(("Extracted currency", observation.currency))
+    if observation.original_amount is not None:
+        extracted.append((
+            "Extracted original amount",
+            money(observation.original_amount, observation.original_currency),
+        ))
+    elif observation.original_currency:
+        extracted.append(("Extracted original currency", observation.original_currency))
+    for label, value in (
+        ("Transaction date", display_date(observation.transaction_datetime) if observation.transaction_datetime else None),
+        ("Posting date", display_date(observation.posting_datetime) if observation.posting_datetime else None),
+        ("Description", observation.description),
+        ("Type", KINDS.get(observation.transaction_kind, "Other") if observation.transaction_kind else None),
+        ("Location", observation.location),
+        ("Card last four digits", observation.card_last_four),
+        ("Extraction confidence", confidence(observation.extraction_confidence)),
+    ):
+        if value is not None and value != "":
+            extracted.append((label, str(value)))
+
+    match = [
+        ("Match method", MATCH_METHODS.get(link.match_method, "Unknown method")),
+        ("Matched", display_date(link.matched_at)),
+    ]
+    if link.match_confidence is not None:
+        match.append(("Match confidence", confidence(link.match_confidence)))
+    if link.matcher_name:
+        matcher = link.matcher_name
+        if link.matcher_version:
+            matcher += f" · version {link.matcher_version}"
+        match.append(("Matcher", matcher))
+    elif link.matcher_version:
+        match.append(("Matcher version", link.matcher_version))
+
+    metadata = payload.ingestion_metadata or {}
+    context = []
+    for label, value in (
+        ("Observation account", accounts.get(observation.account_id)),
+        ("Observation card", cards.get(observation.card_id)),
+        ("Requested account", accounts.get(metadata.get("account_id"))),
+        ("Requested card", cards.get(metadata.get("card_id"))),
+        ("Sender", metadata.get("sender")),
+        ("Recipients", metadata.get("recipients")),
+    ):
+        if value is not None and value != "":
+            context.append((label, str(value)))
+
+    parser = payload.parser_name
+    if parser and payload.parser_version:
+        parser += f" · version {payload.parser_version}"
+    elif payload.parser_version:
+        parser = f"Version {payload.parser_version}"
+    return TransactionObservationView(
+        id=observation.id,
+        payload=SourcePayloadView(
+            id=payload.id,
+            kind_label=SOURCE_KINDS.get(payload.source_kind, "Unknown source"),
+            media_type=payload.media_type,
+            ingestion_label=INGESTION_METHODS.get(payload.ingestion_method, "Unknown ingestion method"),
+            original_filename=payload.original_filename,
+            has_file=payload.has_file,
+            received_at=display_date(payload.received_at),
+            status_label=PROCESSING_STATES.get(payload.processing_status, "Unknown status"),
+            status_is_error=payload.processing_status == "failed",
+            parser=parser,
+            processing_error=payload.processing_error,
+            raw_text=payload.raw_text if payload.source_kind == "sms" else None,
+            context=tuple(context),
+        ),
+        extracted=tuple(extracted),
+        match=tuple(match),
+        raw_fragment=observation.raw_fragment,
+    )
+
+
 async def sources_context(request, db, transaction, return_url, page=None, message=None):
     page = page or page_number(request.query_params.get("source_page"))
-    links, total = await transaction_service.get_transaction_sources_page(db, transaction.id, limit=20, offset=(page - 1) * 20)
+    links, total = await transaction_service.get_transaction_observations_page(
+        db, transaction.id, limit=20, offset=(page - 1) * 20
+    )
     pages = max(1, (total + 19) // 20)
     if page > pages:
         page = pages
-        links, total = await transaction_service.get_transaction_sources_page(db, transaction.id, limit=20, offset=(page - 1) * 20)
+        links, total = await transaction_service.get_transaction_observations_page(
+            db, transaction.id, limit=20, offset=(page - 1) * 20
+        )
     refs = await transaction_service.get_transaction_references(db)
     accounts = {value["id"]: value["label"] for value in refs["accounts"]}
     cards = {value["id"]: value["label"] for value in refs["cards"]}
-    available = await run_in_threadpool(lambda: {link.source_event_id: file_path_for(link.source_event) is not None for link in links})
-    source_types = {"telegram_text": "Telegram message", "sms_text": "SMS", "sms_screenshot": "SMS screenshot",
-                    "bank_screenshot": "Bank screenshot", "pdf_statement": "PDF statement", "manual": "Manual entry"}
-    states = {"new": "Not processed", "parsed": "Parsed", "failed": "Could not parse", "skipped": "Not a transaction"}
-    sources = []
-    for link in links:
-        event = link.source_event
-        extracted = []
-        for name, label in (("parsed_amount", "Extracted amount"), ("parsed_currency", "Extracted currency"),
-                            ("parsed_transaction_datetime", "Transaction date"), ("parsed_posting_datetime", "Posting date"),
-                            ("parsed_description", "Description"), ("parsed_card_number", "Card last four digits"),
-                            ("parsed_transaction_kind", "Type"), ("parsed_location", "Location")):
-            value = getattr(event, name)
-            if value is not None and value != "":
-                if name.endswith("datetime"):
-                    value = display_date(value)
-                elif name == "parsed_amount":
-                    value = money(value, event.parsed_currency)
-                elif name == "parsed_transaction_kind":
-                    value = KINDS.get(value, "Other")
-                extracted.append((label, value))
-        context = [(label, value) for label, value in (
-            ("Account", accounts.get(event.account_id)), ("Card", cards.get(event.card_id)), ("Sender", event.sender),
-            ("Recipients", event.recipients), ("Transaction date", display_date(event.transaction_datetime) if event.transaction_datetime else None)) if value]
-        state = states.get(event.parse_status, "Unknown status")
-        if event.parse_status == "new" and event.file_path and not event.raw_text:
-            state = "Stored file"
-        sources.append({"event": event, "type_label": source_types.get(event.source_type, "Unknown source"), "status_label": state,
-                        "file_available": available[event.id], "download_url": f"/transactions/sources/{event.id}/download",
-                        "extracted": extracted, "context": context})
+    sources = [source_view(link, accounts, cards) for link in links]
     def source_url(target):
         return f"/transactions/{transaction.id}/sources?" + urlencode({"source_page": target, "return_url": return_url}) + "#sources"
     return {"sources": sources, "source_page": page, "source_pages": pages, "source_total": total,
@@ -310,15 +414,24 @@ async def sources_context(request, db, transaction, return_url, page=None, messa
             "source_next_url": source_url(page + 1) if page < pages else None, "source_message": message}
 
 
-async def detail_response(request, db, user, transaction, return_url=None, page=None, message=None):
+async def detail_response(
+    request, db, user, transaction, return_url=None, page=None, message=None,
+    sources_only=False,
+):
     return_url = safe_return_url(return_url or request.query_params.get("return_url"))
     if not message and request.query_params.get("unlinked"):
-        message = "Source unlinked. The source and file were preserved." if request.query_params.get("unlinked") == "1" else "This link no longer exists. Sources have been refreshed."
+        message = (
+            "Observation unlinked. The payload, observation, private file and transaction were preserved."
+            if request.query_params.get("unlinked") == "1"
+            else "This link no longer exists. Sources have been refreshed."
+        )
     context = await sources_context(request, db, transaction, return_url, page, message)
     context.update(transaction=transaction, return_url=return_url, back_url=return_url,
                    edit_url=f"/transactions/{transaction.id}/edit?" + urlencode({"return_url": return_url}),
                    message="Transaction saved." if request.query_params.get("saved") == "1" else None)
-    return render(request, user, "_sources" if is_htmx(request) else "detail", context)
+    if is_htmx(request):
+        return render(request, user, "_sources" if sources_only else "_detail", context)
+    return render(request, user, "detail", context)
 
 
 @router.get("/{transaction_id}/edit", response_class=HTMLResponse)
@@ -344,22 +457,28 @@ async def transaction_detail(request: Request, transaction_id: str, db: DB, user
         transaction = await lookup(db, transaction_id)
         if transaction is None:
             return error_page(request, user, "This transaction no longer exists.", back_url=safe_return_url(request.query_params.get("return_url")))
-        return await detail_response(request, db, user, transaction)
+        return await detail_response(
+            request,
+            db,
+            user,
+            transaction,
+            sources_only=request.url.path.endswith("/sources"),
+        )
     except SQLAlchemyError:
         await db.rollback()
         return error_page(request, user, "This transaction could not be loaded. Please retry.", 503, retry_url=current_path(request))
 
 
-async def confirm_mutation(request, user, posted, transaction, source_id=None):
+async def confirm_mutation(request, user, posted, transaction, observation_id=None):
     return_url = safe_return_url(posted.get("return_url"))
     if not valid_csrf(request, posted.get("csrf_token")):
         return error_page(request, user, "Security token is invalid. Refresh the page before trying again.", 403, return_url)
     if posted.get("confirmed") == "yes":
         return None
-    unlink = source_id is not None
+    unlink = observation_id is not None
     return render(request, user, "confirmation", {
         "title": "Unlink source?" if unlink else "Delete transaction?",
-        "message": "Only this link will be removed. The source, file, other links and transaction values will remain." if unlink else
+        "message": "Only this link will be removed. The payload, observation, private file and transaction will remain. Other links will remain, but canonical transaction values may change." if unlink else
             f"Permanently delete {transaction.description or 'No description'} ({money(transaction.amount, transaction.currency)})? Sources, files, accounts, cards and other links will remain.",
         "form_action": request.url.path, "cancel_url": detail_url(transaction.id, return_url, "sources" if unlink else ""),
         "submit_label": "Unlink source" if unlink else "Delete transaction",
@@ -385,21 +504,28 @@ async def delete_page(request: Request, transaction_id: str, db: DB, user: Activ
     return navigate(request, return_url)
 
 
-@router.post("/{transaction_id}/sources/{source_id}/unlink", response_class=HTMLResponse)
-async def unlink_page(request: Request, transaction_id: str, source_id: str, db: DB, user: ActiveUser):
+@router.post("/{transaction_id}/sources/{observation_id}/unlink", response_class=HTMLResponse)
+async def unlink_page(request: Request, transaction_id: str, observation_id: str, db: DB, user: ActiveUser):
     posted = await request.form()
     return_url = safe_return_url(posted.get("return_url"))
     transaction = await lookup(db, transaction_id)
     if transaction is None:
         return error_page(request, user, "This transaction no longer exists.", back_url=return_url)
-    confirmation = await confirm_mutation(request, user, posted, transaction, source_id)
+    confirmation = await confirm_mutation(request, user, posted, transaction, observation_id)
     if confirmation is not None:
         return confirmation
     try:
-        identifier = record_id(source_id)
-        changed = await source_event_service.unlink_source_from_transaction(db, identifier, transaction.id) if identifier is not None else False
+        identifier = record_id(observation_id)
+        changed = await source_processing_service.unlink_observation(
+            db, identifier, transaction.id
+        ) if identifier is not None else False
         page = page_number(posted.get("source_page"))
-        message = "Source unlinked. The source and file were preserved." if changed else "This link no longer exists. Sources have been refreshed."
+        message = (
+            "Observation unlinked. The payload, observation, private file and transaction were preserved. Canonical transaction values may have changed."
+            if changed else "This link no longer exists. Sources have been refreshed."
+        )
+        if changed:
+            await db.refresh(transaction)
         if is_htmx(request):
             return await detail_response(request, db, user, transaction, return_url, page, message)
         # A GET renders the refreshed count and clamps the source page after ordinary POST.

@@ -60,14 +60,6 @@
   padding-block: .25rem;
 }
 
-.source-preview {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  white-space: pre-wrap;
-}
-
 .source-full-text {
   white-space: pre-wrap;
 }

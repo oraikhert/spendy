@@ -171,7 +171,7 @@ All operations below live in [source_processing_service.py](../app/services/sour
 |-----------|----------|
 | Manual link | Rejects an already linked observation, links it to one existing transaction and recanonicalizes. |
 | Create-and-link | Requires effective card, amount and currency; observation values precede request fallbacks. Creates a transaction and manual link atomically. |
-| Unlink | Removes only the link, preserves payload/observation/transaction and recanonicalizes from remaining observations. |
+| Unlink | Removes only the link, preserves payload/observation/transaction and recanonicalizes from remaining observations. HTML callers also supply the expected transaction ID so a stale/mismatched parent URL cannot unlink another transaction's observation. |
 | Reprocess | Requires a registered parser, deletes every old observation/link, recreates output, reruns matching and preserves orphaned transactions. |
 
 Observation IDs may change during reprocessing. A deliberate parser failure commits

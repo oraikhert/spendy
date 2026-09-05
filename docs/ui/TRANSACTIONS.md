@@ -74,28 +74,38 @@ That fee is read-only and excluded from calculations. `Delete transaction` appea
 
 ### Sources
 
-Sources are read-only messages or files. Each shows type, Added date, processing state,
-and a two-line text preview or neutral attachment label. Types are Telegram message,
-SMS, SMS screenshot, Bank screenshot, PDF statement, and Manual entry.
+Sources shows only observations linked to the current transaction, with one card per
+observation. Several observations from one payload remain separate cards and repeat a
+compact payload summary so their shared evidence is clear. Unlinked observations and
+payload reprocessing remain available through the JSON API, not these pages.
+
+Each card identifies its observation and payload. The compact payload summary shows
+source kind, media type, ingestion method, receipt time, processing state, parser
+name/version, original filename when present, and whether a private attachment exists.
+Storage paths, content hashes, file contents and download controls are never rendered.
 
 | State | Label |
 |---|---|
-| new | Not processed; a file without text shows Stored file, without a queue indicator. |
-| parsed | Parsed; extracted fields may be incomplete. |
-| failed | Could not parse; expanded details include a readable error. |
-| skipped | Not a transaction. |
+| pending | Pending |
+| processing | Processing |
+| processed | Processed |
+| ignored | Ignored |
+| failed | Failed; expanded details include the safe processing error. |
 | Other | Unknown status. |
 
-`Source details` expands full text and populated extracted values: amount/currency,
-dates, description, card's last four digits, type, and location. Empty extraction shows
-`No extracted data`. Separate `Import context` contains supplied account/card, sender,
-recipients, and transaction date. Extracted source amounts remain distinct from transaction FX data.
+`Source details` expands SMS text and observation fragments plus populated extracted
+values: monetary pairs, dates, description, card's last four digits, type, location and
+extraction confidence. It also shows match method/time/confidence and matcher identity.
+Known ingestion context fields contain observation/requested account and card, sender,
+and recipients. Arbitrary metadata is not dumped. Extracted source amounts remain
+distinct from transaction FX data.
 
-`Download file` retrieves attachments; missing files show `File is unavailable`.
-`Unlink source` confirms that only this link is removed; source, file, other links,
-and transaction values remain. Sources paginate independently, newest first, 20 per page.
-The count includes all links; empty results show `No sources linked`. Removing a page's
-last source returns to the preceding available page. Viewing sources does not process them.
+`Unlink observation` confirms that only the link is removed. The payload, observation,
+private file, transaction and other links remain, but canonical transaction values can
+change. Ordinary POST reloads the record; HTMX refreshes the complete detail content so
+canonical fields and Sources stay consistent. Sources paginate independently by payload
+receipt time descending and observation ID descending, 20 per page. Removing the last
+item on a page returns to the preceding available page. Viewing sources does not process them.
 
 ## Create and edit
 

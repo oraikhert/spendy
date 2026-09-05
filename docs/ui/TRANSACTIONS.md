@@ -110,6 +110,12 @@ canonical fields and Sources stay consistent. Sources paginate independently by 
 receipt time descending and observation ID descending, 20 per page. Removing the last
 item on a page returns to the preceding available page. Viewing sources does not process them.
 
+`Move observation`, next to the unlink control, opens a modal destination selector on
+the same transaction page. It moves the existing link in one atomic operation rather
+than unlinking and linking separately, marks the resulting link as manual, and
+recanonicalizes both transactions. The current transaction is excluded from suggestions;
+date conflicts and stale links leave the link unchanged and return an explanatory error.
+
 ## Create and edit
 
 `Add transaction` opens `/transactions/new`; `Edit` opens `/transactions/{id}/edit`.

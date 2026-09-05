@@ -10,6 +10,7 @@
 
   const snapshots = new WeakMap();
   const initialized = new WeakSet();
+  const moveDialogs = new WeakSet();
   const pendingRequests = new WeakMap();
   let allowLeave = false;
   let dialogAction = null;
@@ -175,6 +176,16 @@
       if (form.matches("[data-transaction-filters]")) initializeFilters(form);
       if (form.matches("[data-transaction-editor]")) initializeEditor(form);
     });
+    const dialogs = scope.matches?.("#move-observation-dialog") ? [scope] : [];
+    dialogs.push(...scope.querySelectorAll("#move-observation-dialog"));
+    dialogs.forEach((dialog) => {
+      if (!moveDialogs.has(dialog)) {
+        moveDialogs.add(dialog);
+        dialog.querySelector("[data-move-observation-cancel]")?.addEventListener("click", () => dialog.close("cancel"));
+        dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close("cancel"); });
+      }
+      if (dialog.dataset.openOnLoad === "true" && !dialog.open) dialog.showModal();
+    });
   }
 
   function askConfirmation({title, message, label, trigger, action}) {
@@ -299,6 +310,20 @@
   }, true);
 
   document.addEventListener("click", (event) => {
+    const moveTrigger = event.target.closest?.("[data-move-observation-trigger]");
+    if (moveTrigger) {
+      const dialog = document.getElementById("move-observation-dialog");
+      const form = dialog?.querySelector("form");
+      const observationId = moveTrigger.dataset.observationId;
+      if (!dialog || !form || !observationId) return;
+      form.elements.observation_id.value = observationId;
+      form.elements.transaction_id.value = "";
+      const title = dialog.querySelector("#move-observation-title");
+      if (title) title.textContent = `Move observation #${observationId}`;
+      dialog.showModal();
+      form.elements.transaction_id.focus();
+      return;
+    }
     const link = event.target.closest?.("a[href]");
     if (!link || !isDirty() || event.defaultPrevented || event.button !== 0 ||
         event.metaKey || event.ctrlKey || event.shiftKey || event.altKey ||

@@ -1,4 +1,5 @@
-{% from "transactions/_macros.html" import detail_row, local_datetime with context %}
+{% from "transactions/_macros.html" import detail_row, field_attrs, field_error, local_datetime with context %}
+{% set move_errors = {'transaction_id': move_error} if move_error else {} %}
 <section id="sources" class="card bg-base-100 shadow-sm" aria-labelledby="sources-heading" hx-history="false">
   <div class="card-body gap-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
@@ -36,14 +37,38 @@
           </div>
         </details>
         <div class="flex flex-wrap items-start justify-between gap-2 pt-1">
-          <form method="post" action="/transactions/{{ transaction.id }}/sources/{{ source.id }}/unlink" hx-post="/transactions/{{ transaction.id }}/sources/{{ source.id }}/unlink" hx-target="#transaction-detail" hx-swap="outerHTML" class="ml-auto" data-transaction-mutation data-confirm-title="Unlink observation?" data-confirm-message="Only this link will be removed. The payload, observation, private file and transaction will remain. Other links will remain, but canonical transaction values may change." data-confirm-label="Unlink observation">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}"><input type="hidden" name="source_page" value="{{ source_page }}">
-            <button type="submit" class="btn btn-ghost btn-sm text-error">Unlink observation</button>
-            <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
-          </form>
+          <div class="ml-auto flex flex-wrap items-start gap-2">
+            <button type="button" class="btn btn-ghost btn-sm" data-move-observation-trigger data-observation-id="{{ source.id }}">Move observation</button>
+            <noscript><form method="post" action="/transactions/{{ transaction.id }}/sources/move" class="flex flex-wrap items-end gap-2"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}"><input type="hidden" name="source_page" value="{{ source_page }}"><input type="hidden" name="observation_id" value="{{ source.id }}"><label class="form-control"><span class="label-text">Destination transaction ID</span><input class="input input-bordered input-sm" name="transaction_id" type="number" min="1" max="2147483647" required></label><button type="submit" class="btn btn-ghost btn-sm">Move observation</button></form></noscript>
+            <form method="post" action="/transactions/{{ transaction.id }}/sources/{{ source.id }}/unlink" hx-post="/transactions/{{ transaction.id }}/sources/{{ source.id }}/unlink" hx-target="#transaction-detail" hx-swap="outerHTML" data-transaction-mutation data-confirm-title="Unlink observation?" data-confirm-message="Only this link will be removed. The payload, observation, private file and transaction will remain. Other links will remain, but canonical transaction values may change." data-confirm-label="Unlink observation">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}"><input type="hidden" name="source_page" value="{{ source_page }}">
+              <button type="submit" class="btn btn-ghost btn-sm text-error">Unlink observation</button>
+              <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
+            </form>
+          </div>
         </div>
       </article>
     {% else %}<p class="text-base-content/65 py-4">No source observations linked</p>{% endfor %}
+    <dialog id="move-observation-dialog" class="modal" aria-labelledby="move-observation-title" aria-describedby="move-observation-description"{% if move_observation_id %} data-open-on-load="true"{% endif %}>
+      <div class="modal-box">
+        <header><h2 id="move-observation-title" class="text-2xl font-bold">Move observation{% if move_observation_id %} #{{ move_observation_id }}{% endif %}</h2><p id="move-observation-description" class="text-base-content/65 mt-2 transaction-text">Choose the destination transaction. The link will be reassigned atomically and both transactions will be recanonicalized.</p></header>
+        <form method="post" action="/transactions/{{ transaction.id }}/sources/move" hx-post="/transactions/{{ transaction.id }}/sources/move" hx-target="#transaction-detail" hx-swap="outerHTML" class="mt-4" data-transaction-mutation>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}"><input type="hidden" name="source_page" value="{{ source_page }}"><input type="hidden" name="observation_id" value="{{ move_observation_id or '' }}">
+          <fieldset class="space-y-5 min-w-0">
+            <legend class="sr-only">Move observation details</legend>
+            <div class="transaction-field">
+              <label for="destination-transaction-id" class="label font-medium">Destination transaction ID <span class="text-error" aria-hidden="true">*</span></label>
+              <input id="destination-transaction-id" name="transaction_id" type="number" min="1" max="2147483647" inputmode="numeric" list="move-transaction-options" value="{{ move_transaction_id }}" class="input w-full" required {{ field_attrs(move_errors, 'transaction_id', 'destination-transaction-hint') }}>
+              <p id="destination-transaction-hint" class="text-sm text-base-content/65 mt-1">Start typing an ID or choose a recent transaction below. The current transaction is excluded.</p>{{ field_error(move_errors, 'transaction_id') }}
+              <datalist id="move-transaction-options">{% for target in move_targets %}<option value="{{ target.id }}" label="{{ target.label }}"></option>{% endfor %}</datalist>
+              {% if move_targets_truncated %}<p class="text-sm text-warning mt-1">Only the 1,000 most recent transactions are suggested. You can still enter another transaction ID.</p>{% endif %}
+            </div>
+          </fieldset>
+          <div class="flex flex-wrap items-center gap-3 border-t border-base-300 pt-5 mt-5"><button type="submit" class="btn btn-primary">Move observation</button><button type="button" class="btn btn-ghost" data-move-observation-cancel>Cancel</button></div>
+          <p data-mutation-status class="text-sm mt-3" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </dialog>
     {% if source_total %}
     <nav class="flex flex-wrap items-center justify-between gap-3 pt-2" aria-label="Source pages">
       <p class="text-sm text-base-content/65" role="status">{{ source_start }}–{{ source_end }} of {{ source_total }}</p>

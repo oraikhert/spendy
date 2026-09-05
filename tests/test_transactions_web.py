@@ -337,7 +337,8 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(enhanced.headers.get("hx-redirect"), "/auth/login")
                     self.assertNotIn("Synthetic original source", enhanced.text)
             for path in ["/transactions/new", f"/transactions/{transaction}/edit", f"/transactions/{transaction}/delete",
-                         f"/transactions/{transaction}/sources/{source}/unlink"]:
+                         f"/transactions/{transaction}/sources/{source}/unlink",
+                         f"/transactions/{transaction}/sources/move"]:
                 response = await self.client.post(path, data={"confirmed": "yes"}, headers={"HX-Request": "true"})
                 self.assertEqual(response.headers.get("hx-redirect"), "/auth/login")
         self.assertEqual(await self.snapshot(), before)
@@ -356,7 +357,8 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             if token is not None:
                 fields["csrf_token"] = token
             for path in ["/transactions/new", f"/transactions/{transaction}/edit", f"/transactions/{transaction}/delete",
-                         f"/transactions/{transaction}/sources/{source}/unlink"]:
+                         f"/transactions/{transaction}/sources/{source}/unlink",
+                         f"/transactions/{transaction}/sources/move"]:
                 with self.subTest(token=token, path=path):
                     response = await self.client.post(path, data=fields)
                     self.assertEqual(response.status_code, 403, response.text[:300])
@@ -649,6 +651,101 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(await db.get(Card, self.data["foreign_card"]))
             self.assertIsNotNone(await db.get(Account, self.data["foreign_account"]))
         self.assertTrue(self.data["file"].is_file())
+
+    async def test_move_observation_uses_atomic_service_and_refreshes_the_source_transaction(self):
+        transaction, source = self.data["transaction"], self.data["source"]
+        target = (await self.add_transactions([{
+            "description": "Move destination", "amount": Decimal("-1.00"),
+        }]))[0]
+        details = await self.client.get(f"/transactions/{transaction}")
+        move_path = f"/transactions/{transaction}/sources/move"
+        self.assertIn("/static/js/transactions.js?v=move-observation-modal-1", details.text)
+        self.assertIn('data-move-observation-trigger', details.text)
+        self.assertIn("Move observation", details.text)
+        self.assertIn('id="move-observation-dialog"', details.text)
+        fields = Forms(details.text).for_action(move_path)
+        self.assertIn("Destination transaction ID", details.text)
+        self.assertIn(str(target), details.text)
+        async with self.sessions() as db:
+            self.assertEqual((await db.get(TransactionSourceLink, source)).transaction_id, transaction)
+
+        moved = await self.client.post(
+            move_path,
+            data={**fields, "observation_id": str(source), "transaction_id": str(target)},
+        )
+        self.assertEqual(moved.status_code, 303, moved.text[:800])
+        self.assertIn(f"moved_to={target}", moved.headers["location"])
+        refreshed = await self.client.get(moved.headers["location"])
+        self.assertEqual(refreshed.status_code, 200)
+        self.assertIn(f"Observation moved to transaction #{target}", refreshed.text)
+        self.assertNotIn(f"Observation #{source}", refreshed.text)
+        async with self.sessions() as db:
+            link = await db.get(TransactionSourceLink, source)
+            destination = await db.get(Transaction, target)
+            self.assertEqual(link.transaction_id, target)
+            self.assertEqual(link.match_method, "manual")
+            self.assertIsNone(link.match_confidence)
+            self.assertEqual(destination.amount, Decimal("-12.34"))
+            self.assertEqual(destination.description, "Source extraction")
+
+    async def test_move_observation_rejects_invalid_or_stale_destination_without_changing_link(self):
+        transaction, source = self.data["transaction"], self.data["source"]
+        move_path = f"/transactions/{transaction}/sources/move"
+        fields = Forms((await self.client.get(f"/transactions/{transaction}")).text).for_action(move_path)
+        invalid = await self.client.post(move_path, data={**fields, "observation_id": str(source), "transaction_id": str(transaction)})
+        self.assertEqual(invalid.status_code, 422)
+        self.assertIn("Choose a different destination transaction", invalid.text)
+        missing = await self.client.post(move_path, data={**fields, "observation_id": str(source), "transaction_id": "999999"})
+        self.assertEqual(missing.status_code, 422)
+        self.assertIn("Destination transaction not found", missing.text)
+        async with self.sessions() as db:
+            self.assertEqual((await db.get(TransactionSourceLink, source)).transaction_id, transaction)
+            link = await db.get(TransactionSourceLink, source)
+            link.transaction_id = self.data["other_transaction"]
+            await db.commit()
+        stale = await self.client.post(
+            move_path,
+            data={**fields, "observation_id": str(source), "transaction_id": str(self.data["other_transaction"])},
+        )
+        self.assertEqual(stale.status_code, 404)
+        self.assertIn("no longer linked", stale.text)
+        async with self.sessions() as db:
+            self.assertEqual(
+                (await db.get(TransactionSourceLink, source)).transaction_id,
+                self.data["other_transaction"],
+            )
+
+    async def test_move_observation_keeps_the_link_when_destination_dates_conflict(self):
+        transaction, source = self.data["transaction"], self.data["source"]
+        target = (await self.add_transactions([{"description": "Conflicting move destination"}]))[0]
+        async with self.sessions() as db:
+            payload = SourcePayload(
+                source_kind="sms", media_type="text/plain", ingestion_method="migration",
+                raw_text="Synthetic conflicting source", content_hash="e" * 64,
+                processing_status="processed", ingestion_metadata={},
+            )
+            db.add(payload)
+            await db.flush()
+            observation = TransactionObservation(
+                source_payload_id=payload.id, source_item_key="conflicting-date",
+                transaction_datetime=datetime(2026, 2, 17), extraction_metadata={},
+            )
+            db.add(observation)
+            await db.flush()
+            db.add(TransactionSourceLink(
+                transaction_id=target, observation_id=observation.id, match_method="manual",
+            ))
+            await db.commit()
+        move_path = f"/transactions/{transaction}/sources/move"
+        fields = Forms((await self.client.get(f"/transactions/{transaction}")).text).for_action(move_path)
+        rejected = await self.client.post(
+            move_path,
+            data={**fields, "observation_id": str(source), "transaction_id": str(target)},
+        )
+        self.assertEqual(rejected.status_code, 422)
+        self.assertIn("date conflicts", rejected.text)
+        async with self.sessions() as db:
+            self.assertEqual((await db.get(TransactionSourceLink, source)).transaction_id, transaction)
 
     async def test_htmx_unlink_refreshes_canonical_transaction_and_checks_parent(self):
         async with self.sessions() as db:

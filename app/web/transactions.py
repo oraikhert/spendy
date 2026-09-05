@@ -17,6 +17,11 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.transaction import TransactionCreate, TransactionUpdate
 from app.services import source_processing_service, transaction_service
+from app.services.source_processing_service import (
+    SourceConflictError,
+    SourceNotFoundError,
+    SourceValidationError,
+)
 from app.web.transaction_helpers import (
     KINDS, ListFilters, account_label, card_label, csrf_token, detail_url,
     display_date, money, parse_filters, safe_return_url, valid_csrf, validation_errors,
@@ -82,6 +87,14 @@ class TransactionObservationView:
     extracted: tuple[tuple[str, str | datetime], ...]
     match: tuple[tuple[str, str | datetime], ...]
     raw_fragment: str | None
+
+
+@dataclass(frozen=True)
+class TransactionMoveTargetView:
+    """A bounded, safe transaction selector entry for moving an observation."""
+
+    id: int
+    label: str
 
 
 async def web_user(request: Request, user: Annotated[User, Depends(get_current_user_from_cookie_required)]) -> WebUser:
@@ -392,7 +405,7 @@ def source_view(link, accounts, cards):
     )
 
 
-async def sources_context(request, db, transaction, return_url, page=None, message=None):
+async def sources_context(request, db, transaction, return_url, page=None, message=None, move_state=None):
     page = page or page_number(request.query_params.get("source_page"))
     links, total = await transaction_service.get_transaction_observations_page(
         db, transaction.id, limit=20, offset=(page - 1) * 20
@@ -404,20 +417,37 @@ async def sources_context(request, db, transaction, return_url, page=None, messa
             db, transaction.id, limit=20, offset=(page - 1) * 20
         )
     refs = await transaction_service.get_transaction_references(db)
+    candidates, candidate_total = await transaction_service.get_transactions(db, limit=1000)
     accounts = {value["id"]: value["label"] for value in refs["accounts"]}
     cards = {value["id"]: value["label"] for value in refs["cards"]}
     sources = [source_view(link, accounts, cards) for link in links]
+    move_state = move_state or {}
+    move_targets = tuple(
+        TransactionMoveTargetView(
+            id=candidate.id,
+            label=(
+                f"#{candidate.id} · {candidate.description or 'No description'} "
+                f"· {money(candidate.amount, candidate.currency)}"
+            ),
+        )
+        for candidate in candidates
+        if candidate.id != transaction.id
+    )
     def source_url(target):
         return f"/transactions/{transaction.id}/sources?" + urlencode({"source_page": target, "return_url": return_url}) + "#sources"
     return {"sources": sources, "source_page": page, "source_pages": pages, "source_total": total,
             "source_start": (page - 1) * 20 + 1 if total else 0, "source_end": min(page * 20, total),
             "source_previous_url": source_url(page - 1) if page > 1 else None,
-            "source_next_url": source_url(page + 1) if page < pages else None, "source_message": message}
+            "source_next_url": source_url(page + 1) if page < pages else None, "source_message": message,
+            "move_targets": move_targets, "move_targets_truncated": candidate_total > 1000,
+            "move_observation_id": move_state.get("observation_id"),
+            "move_transaction_id": move_state.get("transaction_id", ""),
+            "move_error": move_state.get("error")}
 
 
 async def detail_response(
     request, db, user, transaction, return_url=None, page=None, message=None,
-    sources_only=False,
+    sources_only=False, move_state=None,
 ):
     return_url = safe_return_url(return_url or request.query_params.get("return_url"))
     if not message and request.query_params.get("unlinked"):
@@ -426,7 +456,12 @@ async def detail_response(
             if request.query_params.get("unlinked") == "1"
             else "This link no longer exists. Sources have been refreshed."
         )
-    context = await sources_context(request, db, transaction, return_url, page, message)
+    if not message and (moved_to := record_id(request.query_params.get("moved_to", ""))):
+        message = (
+            f"Observation moved to transaction #{moved_to}. "
+            "Both transactions were recanonicalized."
+        )
+    context = await sources_context(request, db, transaction, return_url, page, message, move_state)
     context.update(transaction=transaction, return_url=return_url, back_url=return_url,
                    edit_url=f"/transactions/{transaction.id}/edit?" + urlencode({"return_url": return_url}),
                    message="Transaction saved." if request.query_params.get("saved") == "1" else None)
@@ -485,6 +520,120 @@ async def confirm_mutation(request, user, posted, transaction, observation_id=No
         "submit_label": "Unlink source" if unlink else "Delete transaction",
         "fields": {"csrf_token": csrf_token(request), "confirmed": "yes", "return_url": return_url, "source_page": str(page_number(posted.get("source_page")))},
     })
+
+
+async def move_context(db, transaction, observation_id):
+    """Confirm that the observation still belongs to this page's transaction."""
+    observation = await source_processing_service.get_transaction_observation(db, observation_id)
+    if (
+        observation is None
+        or observation.transaction_link is None
+        or observation.transaction_link.transaction_id != transaction.id
+    ):
+        return None
+    return observation
+
+
+async def move_error_response(
+    request, db, user, transaction, return_url, page, observation_id, transaction_id, message, status
+):
+    response = await detail_response(
+        request,
+        db,
+        user,
+        transaction,
+        return_url,
+        page,
+        message,
+        move_state={
+            "observation_id": observation_id,
+            "transaction_id": transaction_id,
+            "error": message,
+        },
+    )
+    response.status_code = status
+    return response
+
+
+@router.post("/{transaction_id}/sources/move", response_class=HTMLResponse)
+async def move_observation_page(
+    request: Request, transaction_id: str, db: DB, user: ActiveUser
+):
+    posted = await request.form()
+    values = {
+        "return_url": str(posted.get("return_url", "")),
+        "source_page": str(posted.get("source_page", "")),
+        "observation_id": str(posted.get("observation_id", "")),
+        "transaction_id": str(posted.get("transaction_id", "")),
+    }
+    return_url = safe_return_url(values["return_url"])
+    page = page_number(values["source_page"])
+    transaction = await lookup(db, transaction_id)
+    if transaction is None:
+        return error_page(request, user, "This transaction or observation no longer exists.", back_url=return_url)
+    if not valid_csrf(request, posted.get("csrf_token")):
+        return error_page(
+            request,
+            user,
+            "Security token is invalid. Refresh the page before moving the observation.",
+            403,
+            detail_url(transaction.id, return_url, "sources"),
+        )
+    identifier = record_id(values["observation_id"])
+    if identifier is None:
+        return error_page(request, user, "This transaction or observation no longer exists.", back_url=return_url)
+    if await move_context(db, transaction, identifier) is None:
+        return error_page(
+            request,
+            user,
+            "This observation is no longer linked to this transaction.",
+            back_url=detail_url(transaction.id, return_url, "sources"),
+        )
+    target_id = record_id(values["transaction_id"])
+    if target_id is None:
+        return await move_error_response(
+            request, db, user, transaction, return_url, page, identifier,
+            values["transaction_id"], "Choose a destination transaction.", 422,
+        )
+    if target_id == transaction.id:
+        return await move_error_response(
+            request, db, user, transaction, return_url, page, identifier,
+            values["transaction_id"], "Choose a different destination transaction.", 422,
+        )
+    if await transaction_service.get_transaction(db, target_id) is None:
+        return await move_error_response(
+            request, db, user, transaction, return_url, page, identifier,
+            values["transaction_id"], "Destination transaction not found.", 422,
+        )
+    try:
+        await source_processing_service.move_observation_to_transaction(
+            db,
+            identifier,
+            target_id,
+            expected_transaction_id=transaction.id,
+        )
+    except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
+        return await move_error_response(
+            request, db, user, transaction, return_url, page, identifier,
+            values["transaction_id"], str(exc), 422,
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        return await move_error_response(
+            request, db, user, transaction, return_url, page, identifier,
+            values["transaction_id"],
+            "The move could not be confirmed. Refresh and check both transactions.", 503,
+        )
+    message = f"Observation moved to transaction #{target_id}. Both transactions were recanonicalized."
+    if is_htmx(request):
+        return await detail_response(request, db, user, transaction, return_url, page, message)
+    return navigate(
+        request,
+        detail_url(transaction.id, return_url)
+        + "&"
+        + urlencode({"source_page": page, "moved_to": target_id})
+        + "#sources",
+    )
 
 
 @router.post("/{transaction_id}/delete", response_class=HTMLResponse)

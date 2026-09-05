@@ -1059,7 +1059,11 @@ async def link_observation_to_transaction(
 
 
 async def move_observation_to_transaction(
-    db: AsyncSession, observation_id: int, transaction_id: int
+    db: AsyncSession,
+    observation_id: int,
+    transaction_id: int,
+    *,
+    expected_transaction_id: int | None = None,
 ) -> TransactionSourceLink:
     observation = await get_transaction_observation(db, observation_id)
     if observation is None:
@@ -1067,6 +1071,8 @@ async def move_observation_to_transaction(
     link = observation.transaction_link
     if link is None:
         raise SourceConflictError("Transaction observation is not linked")
+    if expected_transaction_id is not None and link.transaction_id != expected_transaction_id:
+        raise SourceConflictError("Transaction observation is no longer linked to this transaction")
     if link.transaction_id == transaction_id:
         raise SourceConflictError("Transaction observation is already linked to this transaction")
     target = await db.get(Transaction, transaction_id)

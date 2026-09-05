@@ -10,6 +10,11 @@ from app.models.card import Card
 from app.models.transaction import Transaction
 from app.models.transaction_source_link import TransactionSourceLink
 from app.models.transaction_observation import TransactionObservation
+from app.utils.business_time import (
+    DEFAULT_TIMEZONE,
+    effective_card_timezone,
+    normalize_timezone_name,
+)
 from app.utils.matching import generate_fingerprint, normalize_merchant
 
 
@@ -54,6 +59,33 @@ def _money_winner(observations):
     if not candidates:
         return None
     return min(candidates, key=lambda value: _priority_key(value, FINANCIAL_PRIORITY))
+
+
+def transaction_business_timezone(
+    card: Card | None,
+    observations: list[TransactionObservation],
+) -> str:
+    fallback = effective_card_timezone(card) if card is not None else DEFAULT_TIMEZONE
+    date_source = _winner(observations, "posting_datetime", FINANCIAL_PRIORITY)
+    if date_source is None:
+        date_source = _winner(observations, "transaction_datetime", IMMEDIATE_PRIORITY)
+    if date_source is None:
+        return fallback
+    value = date_source.payload.ingestion_metadata.get("source_timezone")
+    return normalize_timezone_name(str(value)) if value is not None else fallback
+
+
+async def _canonical_business_timezone(
+    db: AsyncSession,
+    transaction: Transaction,
+    observations: list[TransactionObservation],
+) -> str:
+    card = await db.scalar(
+        select(Card)
+        .where(Card.id == transaction.card_id)
+        .options(selectinload(Card.account))
+    )
+    return transaction_business_timezone(card, observations)
 
 
 async def _canonical_money(db: AsyncSession, transaction: Transaction, observation):
@@ -101,6 +133,9 @@ async def canonicalize_transaction(
         return transaction
 
     observations = [link.observation for link in links]
+    business_timezone = await _canonical_business_timezone(
+        db, transaction, observations
+    )
     money_source = _money_winner(observations)
     if money_source is not None:
         money = await _canonical_money(db, transaction, money_source)
@@ -132,5 +167,6 @@ async def canonicalize_transaction(
         merchant_norm=transaction.merchant_norm,
         orig_amount=transaction.original_amount,
         orig_currency=transaction.original_currency,
+        business_timezone=business_timezone,
     )
     return transaction

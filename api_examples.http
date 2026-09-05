@@ -144,6 +144,29 @@ Content-Type: application/json
 
 ###
 
+### Upload a statement whose printed dates are in Dubai local time
+POST {{apiV1}}/source-payloads/upload
+Authorization: Bearer {{accessToken}}
+Idempotency-Key: replace-with-a-unique-upload-id
+Content-Type: multipart/form-data; boundary=SpendyBoundary
+
+--SpendyBoundary
+Content-Disposition: form-data; name="source_kind"
+
+bank_statement
+--SpendyBoundary
+Content-Disposition: form-data; name="source_timezone"
+
+Asia/Dubai
+--SpendyBoundary
+Content-Disposition: form-data; name="file"; filename="synthetic-statement.pdf"
+Content-Type: application/pdf
+
+< ./synthetic-statement.pdf
+--SpendyBoundary--
+
+###
+
 ### List payloads without observations
 GET {{apiV1}}/source-payloads?has_observations=false
 Authorization: Bearer {{accessToken}}

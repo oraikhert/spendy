@@ -45,6 +45,7 @@ from app.services.source_parsers import (
     RegisteredParser,
 )
 from app.utils.canonicalization import canonicalize_transaction
+from app.utils.business_time import local_midnight_utc
 from app.utils.matching import merchant_names_match, normalize_merchant
 from app.utils.source_parsing import (
     InvalidSourceInputError,
@@ -72,7 +73,10 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         async with self.sessions() as db:
             account = Account(
-                institution="Synthetic bank", name="Main", account_currency="AED"
+                institution="Synthetic bank",
+                name="Main",
+                account_currency="AED",
+                timezone="Asia/Dubai",
             )
             db.add(account)
             await db.flush()
@@ -465,6 +469,9 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         files_after_create = set(Path(_upload_dir).iterdir())
         self.assertEqual(len(files_after_create - files_before), 1)
         self.assertEqual(uploaded["processing_status"], "pending")
+        self.assertEqual(
+            uploaded["ingestion_metadata"]["source_timezone"], "Asia/Dubai"
+        )
         self.assertTrue(uploaded["has_file"])
         self.assertIsNone(uploaded["bank_statement_details"])
         self.assertNotIn("file_path", uploaded)
@@ -481,6 +488,28 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(replay.status_code, 200, replay.text)
         self.assertEqual(replay.json()["id"], uploaded["id"])
+        self.assertEqual(set(Path(_upload_dir).iterdir()), files_after_create)
+
+        timezone_conflict = await self.client.post(
+            "/api/v1/source-payloads/upload",
+            data={
+                "source_kind": "other",
+                "account_id": str(self.account_id),
+                "card_id": str(self.card_id),
+                "source_timezone": "UTC",
+            },
+            files={"file": ("source.bin", b"synthetic-file", "application/octet-stream")},
+            headers={"Idempotency-Key": "statement-upload-1"},
+        )
+        self.assertEqual(timezone_conflict.status_code, 409, timezone_conflict.text)
+        self.assertEqual(set(Path(_upload_dir).iterdir()), files_after_create)
+
+        invalid_timezone = await self.client.post(
+            "/api/v1/source-payloads/upload",
+            data={"source_kind": "other", "source_timezone": "Not/A-Timezone"},
+            files={"file": ("invalid-zone.bin", b"synthetic", "application/octet-stream")},
+        )
+        self.assertEqual(invalid_timezone.status_code, 422, invalid_timezone.text)
         self.assertEqual(set(Path(_upload_dir).iterdir()), files_after_create)
 
         conflict = await self.client.post(
@@ -561,9 +590,11 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             existing_id = existing.id
 
         passwords = []
+        source_timezones = []
 
         def parse_statement(source):
             passwords.append(source.password)
+            source_timezones.append(source.ingestion_metadata["source_timezone"])
             return ParserResult(
                 status=ParseStatus.PROCESSED,
                 observations=(
@@ -615,6 +646,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload["observations"]), 1)
         self.assertNotIn("synthetic-secret", response.text)
         self.assertEqual(passwords, ["synthetic-secret"])
+        self.assertEqual(source_timezones, ["UTC"])
         observation_id = payload["observations"][0]["id"]
 
         async with self.sessions() as db:
@@ -625,7 +657,8 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             link = await db.get(TransactionSourceLink, observation_id)
             self.assertEqual(link.transaction_id, existing_id)
 
-        def reject_password(_source):
+        def reject_password(source):
+            source_timezones.append(source.ingestion_metadata["source_timezone"])
             raise InvalidSourceInputError("The PDF password is missing or incorrect")
 
         invalid_parser = RegisteredParser(
@@ -639,6 +672,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 data={"password": "wrong-secret"},
             )
         self.assertEqual(failed.status_code, 422, failed.text)
+        self.assertEqual(source_timezones, ["UTC", "UTC"])
 
         async with self.sessions() as db:
             stored_payload = await db.get(SourcePayload, payload["id"])
@@ -648,6 +682,103 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("wrong-secret", str(stored_payload.ingestion_metadata))
             self.assertIsNotNone(await db.get(TransactionObservation, observation_id))
             self.assertIsNotNone(await db.get(TransactionSourceLink, observation_id))
+
+    async def test_statement_timezone_matches_sms_across_utc_date_boundary(self):
+        sms = await self.client.post(
+            "/api/v1/source-payloads/text",
+            json={
+                "source_kind": "sms",
+                "text": SMS,
+                "transaction_datetime": "2026-08-05T02:03:25+04:00",
+                "card_id": self.card_id,
+            },
+        )
+        self.assertEqual(sms.status_code, 201, sms.text)
+        sms_observation_id = sms.json()["observations"][0]["id"]
+        async with self.sessions() as db:
+            sms_transaction_id = await db.scalar(
+                select(TransactionSourceLink.transaction_id).where(
+                    TransactionSourceLink.observation_id == sms_observation_id
+                )
+            )
+
+        def parse_statement(source):
+            self.assertEqual(
+                source.ingestion_metadata["source_timezone"], "Asia/Dubai"
+            )
+            return ParserResult(
+                status=ParseStatus.PROCESSED,
+                observations=(
+                    ObservationInput(
+                        source_item_key="1",
+                        amount=Decimal("-12.34"),
+                        currency="AED",
+                        transaction_datetime=local_midnight_utc(
+                            date(2026, 8, 5), "Asia/Dubai"
+                        ),
+                        posting_datetime=local_midnight_utc(
+                            date(2026, 8, 6), "Asia/Dubai"
+                        ),
+                        description="SYNTHETIC SHOP DUBAI ARE",
+                        transaction_kind="purchase",
+                        card_last_four="1111",
+                        extraction_metadata={
+                            "local_transaction_date": "2026-08-05",
+                            "local_posting_date": "2026-08-06",
+                        },
+                    ),
+                ),
+                bank_statement=ParsedBankStatement(
+                    bank="Emirates NBD",
+                    statement_period_start=date(2026, 8, 1),
+                    statement_period_end=date(2026, 8, 31),
+                    statement_currency="AED",
+                    card_type="Synthetic Rewards",
+                    card_last_four="1111",
+                    page_count=1,
+                ),
+            )
+
+        parser = RegisteredParser(
+            name="timezone_statement_parser",
+            version="2-test",
+            parse=parse_statement,
+        )
+        key = (SourceKind.BANK_STATEMENT.value, "application/pdf")
+        with patch.dict(PARSER_REGISTRY, {key: (parser,)}):
+            statement = await self.client.post(
+                "/api/v1/source-payloads/upload",
+                data={
+                    "source_kind": "bank_statement",
+                    "card_id": str(self.card_id),
+                    "source_timezone": "Asia/Dubai",
+                },
+                files={
+                    "file": (
+                        "statement.pdf",
+                        b"%PDF-synthetic-timezone",
+                        "application/pdf",
+                    )
+                },
+            )
+
+        self.assertEqual(statement.status_code, 201, statement.text)
+        statement_observation_id = statement.json()["observations"][0]["id"]
+        async with self.sessions() as db:
+            statement_link = await db.get(
+                TransactionSourceLink, statement_observation_id
+            )
+            self.assertEqual(statement_link.transaction_id, sms_transaction_id)
+            self.assertEqual(
+                await db.scalar(select(func.count()).select_from(Transaction)), 1
+            )
+            transaction = await db.get(Transaction, sms_transaction_id)
+            self.assertEqual(
+                transaction.posting_datetime,
+                local_midnight_utc(date(2026, 8, 6), "Asia/Dubai").replace(
+                    tzinfo=None
+                ),
+            )
 
     async def test_reprocess_replaces_observations_and_preserves_orphan(self):
         created = await self.client.post(

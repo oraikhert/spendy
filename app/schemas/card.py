@@ -1,6 +1,8 @@
 """Card schemas"""
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.utils.business_time import normalize_timezone_name
 
 
 class CardBase(BaseModel):
@@ -8,6 +10,12 @@ class CardBase(BaseModel):
     card_masked_number: str = Field(..., max_length=255)
     card_type: str = Field(..., pattern="^(debit|credit)$")
     name: str = Field(..., max_length=255)
+    timezone: str | None = Field(None, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str | None) -> str | None:
+        return normalize_timezone_name(value) if value is not None else None
 
 
 class CardCreate(CardBase):
@@ -20,6 +28,12 @@ class CardUpdate(BaseModel):
     card_masked_number: str | None = Field(None, max_length=255)
     card_type: str | None = Field(None, pattern="^(debit|credit)$")
     name: str | None = Field(None, max_length=255)
+    timezone: str | None = Field(None, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str | None) -> str | None:
+        return normalize_timezone_name(value) if value is not None else None
 
 
 class CardResponse(CardBase):

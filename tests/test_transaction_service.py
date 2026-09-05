@@ -29,8 +29,10 @@ from app.models import (
     Account, Card, SourcePayload, Transaction, TransactionObservation,
     TransactionSourceLink, User,
 )
+from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.card import CardCreate, CardUpdate
 from app.schemas.transaction import TransactionCreate, TransactionResponse, TransactionUpdate
-from app.services import transaction_service as service
+from app.services import account_service, card_service, transaction_service as service
 
 
 BASE_INPUT = {
@@ -40,6 +42,31 @@ BASE_INPUT = {
 
 
 class TransactionInputTests(unittest.TestCase):
+    def test_account_and_card_timezone_validation(self):
+        account = AccountCreate(
+            institution="Synthetic bank",
+            name="Family",
+            account_currency="AED",
+        )
+        self.assertEqual(account.timezone, "UTC")
+        self.assertEqual(
+            CardCreate(
+                card_masked_number="**** 1111",
+                card_type="debit",
+                name="Everyday",
+                timezone="Asia/Dubai",
+            ).timezone,
+            "Asia/Dubai",
+        )
+        self.assertIsNone(CardUpdate(timezone=None).timezone)
+        for schema, value in (
+            (AccountCreate, {**account.model_dump(), "timezone": "Not/A-Timezone"}),
+            (AccountUpdate, {"timezone": None}),
+            (CardUpdate, {"timezone": "Not/A-Timezone"}),
+        ):
+            with self.subTest(schema=schema.__name__), self.assertRaises(ValidationError):
+                schema(**value)
+
     def test_normalization_and_numeric_boundaries(self):
         data = TransactionCreate(**{
             **BASE_INPUT, "amount": "0", "currency": " aEd ",
@@ -226,6 +253,77 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.card.account.name, "Family")
         self.assertEqual(await self.db.scalar(select(func.count()).select_from(SourcePayload)), 0)
         self.assertEqual(await self.db.scalar(select(func.count()).select_from(TransactionSourceLink)), 0)
+
+    async def test_timezone_changes_refresh_existing_fingerprints(self):
+        transaction = await service.create_transaction(
+            self.db,
+            TransactionCreate(
+                **BASE_INPUT,
+                transaction_datetime=datetime(
+                    2026, 8, 4, 22, 0, tzinfo=timezone.utc
+                ),
+            ),
+        )
+        self.assertIn("|2026-08-04|", transaction.fingerprint)
+        source_transaction = await service.create_transaction(
+            self.db,
+            TransactionCreate(
+                **{**BASE_INPUT, "description": "Statement-backed purchase"},
+                transaction_datetime=datetime(
+                    2026, 8, 4, 22, 0, tzinfo=timezone.utc
+                ),
+            ),
+        )
+        payload = SourcePayload(
+            source_kind="bank_statement",
+            media_type="application/pdf",
+            ingestion_method="manual_upload",
+            content_hash="a" * 64,
+            ingestion_metadata={"source_timezone": "UTC"},
+        )
+        self.db.add(payload)
+        await self.db.flush()
+        observation = TransactionObservation(
+            source_payload_id=payload.id,
+            source_item_key="0",
+            transaction_datetime=datetime(
+                2026, 8, 4, 22, 0, tzinfo=timezone.utc
+            ),
+        )
+        self.db.add(observation)
+        await self.db.flush()
+        self.db.add(
+            TransactionSourceLink(
+                observation_id=observation.id,
+                transaction_id=source_transaction.id,
+                match_method="manual",
+            )
+        )
+        await self.db.commit()
+
+        await account_service.update_account(
+            self.db,
+            self.accounts[0].id,
+            AccountUpdate(timezone="Asia/Dubai"),
+        )
+        self.assertIn("|2026-08-05|", transaction.fingerprint)
+        self.assertIn("|2026-08-04|", source_transaction.fingerprint)
+
+        await card_service.update_card(
+            self.db,
+            self.cards[0].id,
+            CardUpdate(timezone="UTC"),
+        )
+        self.assertIn("|2026-08-04|", transaction.fingerprint)
+        self.assertIn("|2026-08-04|", source_transaction.fingerprint)
+
+        await card_service.update_card(
+            self.db,
+            self.cards[0].id,
+            CardUpdate(timezone=None),
+        )
+        self.assertIn("|2026-08-05|", transaction.fingerprint)
+        self.assertIn("|2026-08-04|", source_transaction.fingerprint)
 
     async def test_update_preserves_omitted_legacy_fx_dates_and_fee(self):
         precise = datetime(2026, 2, 16, 12, 34, 56, 123456)

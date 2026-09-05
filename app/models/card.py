@@ -21,6 +21,7 @@ class Card(Base):
     card_masked_number: Mapped[str] = mapped_column(String(255), nullable=False)
     card_type: Mapped[str] = mapped_column(String(50), nullable=False)  # debit | credit
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 

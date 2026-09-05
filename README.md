@@ -96,12 +96,15 @@ For exact validation limits and payloads, use Swagger and
 
 Emirates NBD credit-card statements can be submitted as multipart data to
 `POST /api/v1/source-payloads/upload` with `source_kind=bank_statement`, the PDF in
-`file`, and the optional PDF `password`. An optional `account_id` narrows automatic
-card selection, while `card_id` selects and validates a specific card. The password is
-used only for that request and is never persisted or returned. Reprocessing an encrypted
-statement uses the same transient field at `POST /api/v1/source-payloads/{id}/reprocess`.
-Uploads are limited by `MAX_UPLOAD_SIZE_BYTES` (20 MiB by default), and statements are
-limited to 100 pages.
+`file`, and the optional PDF `password`. Use the optional IANA `source_timezone`
+(for example, `Asia/Dubai`) for calendar dates printed without an offset. If it is
+omitted, the upload inherits the selected card override, then the account timezone,
+then `UTC`. An optional `account_id` narrows automatic card selection, while `card_id`
+selects and validates a specific card. The resolved timezone is persisted with the
+payload and reused during reprocessing. The password is used only for that request and
+is never persisted or returned. Reprocessing an encrypted statement uses the same
+transient field at `POST /api/v1/source-payloads/{id}/reprocess`. Uploads are limited
+by `MAX_UPLOAD_SIZE_BYTES` (20 MiB by default), and statements are limited to 100 pages.
 
 ## Development checks
 

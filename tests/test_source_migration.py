@@ -83,8 +83,19 @@ class SourceMigrationTests(unittest.TestCase):
                     "source_events",
                     {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")},
                 )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT timezone FROM accounts WHERE id=1"
+                    ).fetchone()[0],
+                    "UTC",
+                )
+                self.assertIsNone(
+                    connection.execute(
+                        "SELECT timezone FROM cards WHERE id=1"
+                    ).fetchone()[0]
+                )
 
-            self.run_alembic(database, "downgrade", "-1")
+            self.run_alembic(database, "downgrade", "recipients_sender_001")
             with sqlite3.connect(database) as connection:
                 self.assertEqual(connection.execute("SELECT count(*) FROM source_events").fetchone()[0], 3)
                 self.assertEqual(connection.execute("SELECT count(*) FROM transaction_source_links").fetchone()[0], 2)

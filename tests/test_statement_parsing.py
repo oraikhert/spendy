@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 import sys
 import unittest
+from datetime import UTC, datetime
 
 _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
@@ -91,6 +92,30 @@ class StatementParserTests(unittest.TestCase):
         self.assertEqual(result.bank_statement.card_last_four, "1111")
         self.assertEqual(result.bank_statement.card_type, "Synthetic Rewards")
         self.assertEqual(len(result.observations), 4)
+
+    def test_statement_dates_use_source_timezone_and_preserve_local_dates(self):
+        result = parse_emirates_nbd_statement_text(
+            [SYNTHETIC_STATEMENT],
+            source_timezone="Asia/Dubai",
+        )
+
+        foreign = result.observations[0]
+        self.assertEqual(
+            foreign.transaction_datetime,
+            datetime(2025, 12, 31, 20, tzinfo=UTC),
+        )
+        self.assertEqual(
+            foreign.posting_datetime,
+            datetime(2026, 1, 1, 20, tzinfo=UTC),
+        )
+        self.assertEqual(
+            foreign.extraction_metadata["local_transaction_date"],
+            "2026-01-01",
+        )
+        self.assertEqual(
+            foreign.extraction_metadata["local_posting_date"],
+            "2026-01-02",
+        )
 
     def test_wrong_pdf_password_is_rejected(self):
         stream = BytesIO()

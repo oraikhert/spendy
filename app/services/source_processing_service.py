@@ -45,6 +45,12 @@ from app.utils.source_parsing.contracts import (
     SourceParseResult,
     UnsupportedSourceError,
 )
+from app.utils.business_time import (
+    DEFAULT_TIMEZONE,
+    business_date,
+    effective_card_timezone,
+    normalize_timezone_name,
+)
 from app.utils.canonicalization import canonicalize_transaction
 from app.utils.matching import (
     find_card_by_last_four,
@@ -57,9 +63,9 @@ from app.utils.matching import (
 
 
 MATCHER_NAME = "same_day_amount_merchant"
-MATCHER_VERSION = "3"
+MATCHER_VERSION = "4"
 STATEMENT_MATCHER_NAME = "statement_same_day_amount_score"
-STATEMENT_MATCHER_VERSION = "2"
+STATEMENT_MATCHER_VERSION = "3"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
@@ -103,6 +109,57 @@ async def _validate_context(
         raise SourceValidationError("card_id: Card not found")
     if card is not None and account_id is not None and card.account_id != account_id:
         raise SourceValidationError("card_id: Choose a card belonging to the selected account")
+
+
+async def _card_business_timezone(
+    db: AsyncSession, card_id: int | None
+) -> str:
+    if card_id is None:
+        return DEFAULT_TIMEZONE
+    card = await db.scalar(
+        select(Card).where(Card.id == card_id).options(selectinload(Card.account))
+    )
+    if card is None:
+        raise SourceValidationError("card_id: Card not found")
+    return effective_card_timezone(card)
+
+
+async def _resolve_upload_timezone(
+    db: AsyncSession,
+    *,
+    requested: str | None,
+    account_id: int | None,
+    card_id: int | None,
+) -> str:
+    if requested is not None:
+        try:
+            return normalize_timezone_name(requested)
+        except ValueError as exc:
+            raise SourceValidationError(f"source_timezone: {exc}") from exc
+    if card_id is not None:
+        return await _card_business_timezone(db, card_id)
+    if account_id is not None:
+        account = await db.get(Account, account_id)
+        if account is None:
+            raise SourceValidationError("account_id: Account not found")
+        return normalize_timezone_name(account.timezone)
+    return DEFAULT_TIMEZONE
+
+
+def _payload_timezone(payload: SourcePayload, fallback: str) -> str:
+    value = payload.ingestion_metadata.get("source_timezone")
+    return normalize_timezone_name(str(value)) if value is not None else fallback
+
+
+def _comparison_timezone(
+    incoming: TransactionObservation,
+    existing: TransactionObservation,
+    fallback: str,
+) -> str:
+    for value in (incoming, existing):
+        if value.payload.source_kind == SourceKind.BANK_STATEMENT.value:
+            return _payload_timezone(value.payload, fallback)
+    return _payload_timezone(incoming.payload, fallback)
 
 
 def _card_last_four(card: Card) -> str | None:
@@ -430,9 +487,10 @@ async def _resolved_money(
 
 def _observation_business_date(
     observation: TransactionObservation,
+    timezone_name: str = DEFAULT_TIMEZONE,
 ) -> date | None:
     value = observation.transaction_datetime or observation.posting_datetime
-    return value.date() if value is not None else None
+    return business_date(value, timezone_name) if value is not None else None
 
 
 async def _date_consistency_conflicts(
@@ -440,29 +498,33 @@ async def _date_consistency_conflicts(
     observation: TransactionObservation,
     transaction_ids: set[int],
 ) -> dict[int, list[int]]:
-    incoming_date = _observation_business_date(observation)
-    if incoming_date is None or not transaction_ids:
+    if not transaction_ids:
         return {}
+    fallback_timezone = await _card_business_timezone(db, observation.card_id)
     rows = await db.execute(
-        select(
-            TransactionSourceLink.transaction_id,
-            TransactionObservation.id,
-            TransactionObservation.transaction_datetime,
-            TransactionObservation.posting_datetime,
-        )
+        select(TransactionSourceLink.transaction_id, TransactionObservation)
         .join(
-            TransactionObservation,
-            TransactionObservation.id == TransactionSourceLink.observation_id,
+            TransactionSourceLink,
+            TransactionSourceLink.observation_id == TransactionObservation.id,
         )
         .where(TransactionSourceLink.transaction_id.in_(transaction_ids))
+        .options(selectinload(TransactionObservation.payload))
     )
     conflicts: dict[int, list[int]] = {}
-    for transaction_id, existing_id, transaction_datetime, posting_datetime in rows:
-        if existing_id == observation.id:
+    for transaction_id, existing in rows:
+        if existing.id == observation.id:
             continue
-        existing_value = transaction_datetime or posting_datetime
-        if existing_value is not None and existing_value.date() != incoming_date:
-            conflicts.setdefault(transaction_id, []).append(existing_id)
+        timezone_name = _comparison_timezone(
+            observation, existing, fallback_timezone
+        )
+        incoming_date = _observation_business_date(observation, timezone_name)
+        existing_date = _observation_business_date(existing, timezone_name)
+        if (
+            incoming_date is not None
+            and existing_date is not None
+            and existing_date != incoming_date
+        ):
+            conflicts.setdefault(transaction_id, []).append(existing.id)
     return conflicts
 
 
@@ -525,6 +587,8 @@ async def _link_automatically(
             )
 
     is_statement = observation.payload.source_kind == SourceKind.BANK_STATEMENT.value
+    card_timezone = await _card_business_timezone(db, observation.card_id)
+    business_timezone = _payload_timezone(observation.payload, card_timezone)
     merchant_norm = normalize_merchant(observation.description or "")
     matches = await find_matching_transactions(
         db=db,
@@ -539,6 +603,7 @@ async def _link_automatically(
         orig_currency=original_currency,
         match_both_source_dates=is_statement,
         exclude_transaction_ids=claimed_transaction_ids if is_statement else None,
+        business_timezone=business_timezone,
     )
     date_conflicts = await _date_consistency_conflicts(
         db, observation, {transaction.id for transaction in matches}
@@ -579,6 +644,7 @@ async def _link_automatically(
             description=observation.description or "",
             original_amount=original_amount,
             original_currency=original_currency,
+            business_timezone=business_timezone,
         )
         if matches and transaction is None:
             observation.extraction_metadata["matching_status"] = "ambiguous"
@@ -616,6 +682,7 @@ async def _link_automatically(
                 merchant_norm=merchant_norm,
                 orig_amount=original_amount,
                 orig_currency=original_currency,
+                business_timezone=business_timezone,
             ),
         )
         db.add(transaction)
@@ -885,13 +952,24 @@ async def create_upload_payload(
     source_kind: SourceKind,
     account_id: int | None,
     card_id: int | None,
+    source_timezone: str | None,
     idempotency_key: str | None,
     password: str | None = None,
 ) -> tuple[SourcePayload, bool]:
     await _validate_context(db, account_id, card_id)
+    source_timezone = await _resolve_upload_timezone(
+        db,
+        requested=source_timezone,
+        account_id=account_id,
+        card_id=card_id,
+    )
     original_filename = Path((file.filename or "unnamed").replace("\\", "/")).name[:255]
     media_type = (file.content_type or "application/octet-stream").split(";", 1)[0].lower()[:255]
-    metadata = _compact_metadata(account_id=account_id, card_id=card_id)
+    metadata = _compact_metadata(
+        account_id=account_id,
+        card_id=card_id,
+        source_timezone=source_timezone,
+    )
     upload_dir = Path(settings.UPLOAD_DIR).resolve()
     temporary_path, content_hash, size = await _write_upload(
         file,
@@ -1138,6 +1216,8 @@ async def create_transaction_from_observation(
         fx_rate = data.fx_rate
 
     description = observation.description or data.description or observation.raw_fragment or "No description"
+    card_timezone = await _card_business_timezone(db, card_id)
+    business_timezone = _payload_timezone(observation.payload, card_timezone)
     transaction = Transaction(
         card_id=card_id,
         amount=canonical_amount,
@@ -1162,6 +1242,7 @@ async def create_transaction_from_observation(
         merchant_norm=transaction.merchant_norm,
         orig_amount=transaction.original_amount,
         orig_currency=transaction.original_currency,
+        business_timezone=business_timezone,
     )
     db.add(transaction)
     try:

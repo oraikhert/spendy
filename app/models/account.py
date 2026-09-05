@@ -20,6 +20,7 @@ class Account(Base):
     institution: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     account_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 

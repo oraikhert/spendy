@@ -1,6 +1,6 @@
 """Matching and deduplication utilities"""
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from difflib import SequenceMatcher
 from sqlalchemy import select, and_, or_
@@ -8,6 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.card import Card
 from app.models.transaction import Transaction
+from app.utils.business_time import (
+    DEFAULT_TIMEZONE,
+    business_date,
+    business_day_utc_bounds,
+)
 
 
 MERCHANT_SIMILARITY_THRESHOLD = Decimal("0.8000")
@@ -100,6 +105,7 @@ def generate_fingerprint(
     merchant_norm: str | None,
     orig_amount: Decimal | None = None,
     orig_currency: str | None = None,
+    business_timezone: str = DEFAULT_TIMEZONE,
 ) -> str:
     """
     Generate fingerprint for transaction deduplication.
@@ -107,9 +113,9 @@ def generate_fingerprint(
     otherwise uses amount and currency.
     """
     if posting_datetime:
-        date_str = posting_datetime.date().isoformat()
+        date_str = business_date(posting_datetime, business_timezone).isoformat()
     elif transaction_datetime:
-        date_str = transaction_datetime.date().isoformat()
+        date_str = business_date(transaction_datetime, business_timezone).isoformat()
     else:
         date_str = "unknown"
 
@@ -137,6 +143,7 @@ async def find_matching_transactions(
     orig_currency: str | None = None,
     match_both_source_dates: bool = False,
     exclude_transaction_ids: set[int] | None = None,
+    business_timezone: str = DEFAULT_TIMEZONE,
 ) -> list[Transaction]:
     """
     Find matching transactions based on card_id, amount, currency, and date.
@@ -159,20 +166,20 @@ async def find_matching_transactions(
     """
     if match_both_source_dates:
         match_dates = {
-            value.date()
+            business_date(value, business_timezone)
             for value in (posting_datetime, transaction_datetime)
             if value is not None
         }
         has_explicit_date = bool(match_dates)
         if not match_dates:
-            match_dates = {created_at.date()}
+            match_dates = {business_date(created_at, business_timezone)}
     else:
         if posting_datetime:
-            match_dates = {posting_datetime.date()}
+            match_dates = {business_date(posting_datetime, business_timezone)}
         elif transaction_datetime:
-            match_dates = {transaction_datetime.date()}
+            match_dates = {business_date(transaction_datetime, business_timezone)}
         else:
-            match_dates = {created_at.date()}
+            match_dates = {business_date(created_at, business_timezone)}
         has_explicit_date = posting_datetime is not None or transaction_datetime is not None
 
     amount_currency_match = and_(
@@ -198,8 +205,9 @@ async def find_matching_transactions(
     
     date_conditions = []
     for match_date in sorted(match_dates):
-        match_start = datetime.combine(match_date, datetime.min.time())
-        match_end = match_start + timedelta(days=1)
+        match_start, match_end = business_day_utc_bounds(
+            match_date, business_timezone
+        )
         date_conditions.extend(
             [
                 and_(
@@ -291,6 +299,7 @@ def select_statement_match(
     description: str,
     original_amount: Decimal | None = None,
     original_currency: str | None = None,
+    business_timezone: str = DEFAULT_TIMEZONE,
 ) -> tuple[Transaction | None, Decimal | None]:
     """Select a decisive statement candidate, leaving ties unlinked."""
     if not candidates:
@@ -298,8 +307,14 @@ def select_statement_match(
     if len(candidates) == 1:
         return candidates[0], Decimal("0.9500")
 
-    source_transaction_date = transaction_datetime.date()
-    source_posting_date = posting_datetime.date() if posting_datetime else None
+    source_transaction_date = business_date(
+        transaction_datetime, business_timezone
+    )
+    source_posting_date = (
+        business_date(posting_datetime, business_timezone)
+        if posting_datetime
+        else None
+    )
     ranked: list[tuple[Decimal, Decimal, Decimal, Decimal, Transaction]] = []
     for candidate in candidates:
         money_score = Decimal("0")
@@ -314,12 +329,12 @@ def select_statement_match(
             money_score += Decimal("4")
 
         candidate_transaction_date = (
-            candidate.transaction_datetime.date()
+            business_date(candidate.transaction_datetime, business_timezone)
             if candidate.transaction_datetime is not None
             else None
         )
         candidate_posting_date = (
-            candidate.posting_datetime.date()
+            business_date(candidate.posting_datetime, business_timezone)
             if candidate.posting_datetime is not None
             else None
         )

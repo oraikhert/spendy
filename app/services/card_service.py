@@ -48,6 +48,10 @@ async def update_card(
     update_data = card_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(card, field, value)
+    if "timezone" in update_data:
+        from app.services.transaction_service import refresh_card_transaction_fingerprints
+
+        await refresh_card_transaction_fingerprints(db, card_id)
     
     await db.commit()
     await db.refresh(card)

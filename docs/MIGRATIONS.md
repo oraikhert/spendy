@@ -108,6 +108,13 @@ whose source has no amount/currency and resolves multiple links for one source b
 old-primary status, then transaction ID. Its downgrade cannot restore discarded links
 or more than one observation per payload. Back up retained data before either direction.
 
+`account_card_timezone_001` adds a non-null account timezone with a `UTC` backfill and
+a nullable card override. The migration cannot infer geography from existing records;
+set retained accounts/cards to their known IANA zones after upgrade. Existing uploaded
+statement payloads also need an explicit, reviewed metadata/date backfill before they
+can benefit from source-local calendar semantics. Do not guess a zone from filenames
+or current server settings.
+
 ## Recovery and rollback
 
 | Symptom or task | Procedure |

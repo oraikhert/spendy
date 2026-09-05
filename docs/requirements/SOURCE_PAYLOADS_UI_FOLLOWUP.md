@@ -77,6 +77,8 @@ storage path.
   type, location, card last four, extraction confidence and match metadata when present.
 - Show payload kind/media/ingestion labels, receipt time, processing status and parser
   name/version. Raw SMS text may be shown only in an explicitly expanded detail area.
+- If a future upload form is added, let the user supply an IANA `source_timezone` and
+  explain the card/account/UTC fallback. Never derive it from the browser silently.
 - Do not show raw file paths, hashes as filenames, file contents or download controls.
 - Unlink by observation ID. Confirmation must explain that payload, observation,
   private file and transaction remain, while canonical transaction values may change.

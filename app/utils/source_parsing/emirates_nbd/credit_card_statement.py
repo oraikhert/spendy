@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 
 from pypdf import PdfReader
 from pypdf.errors import DependencyError, PdfReadError
 
+from app.utils.business_time import (
+    DEFAULT_TIMEZONE,
+    local_midnight_utc,
+    normalize_timezone_name,
+)
 from app.utils.source_parsing.contracts import (
     InvalidSourceInputError,
     ParsedBankStatement,
@@ -174,7 +179,7 @@ def _statement_summary_totals(full_text: str) -> tuple[Decimal, Decimal]:
 
 
 def _parse_observations(
-    pages: list[str], statement: ParsedBankStatement
+    pages: list[str], statement: ParsedBankStatement, source_timezone: str
 ) -> tuple[ParsedObservation, ...]:
     rows: list[dict[str, object]] = []
     currency = statement.statement_currency
@@ -281,7 +286,10 @@ def _parse_observations(
         metadata: dict[str, object] = {
             "page_number": row["page_number"],
             "row_number": row["item_index"],
+            "local_transaction_date": transaction_date.isoformat(),
         }
+        if posting_date is not None:
+            metadata["local_posting_date"] = posting_date.isoformat()
         if fx_rate is not None:
             metadata["statement_fx_rate"] = str(fx_rate)
         observations.append(
@@ -299,9 +307,13 @@ def _parse_observations(
                     if row["original_currency"] is not None
                     else None
                 ),
-                transaction_datetime=datetime.combine(transaction_date, time.min),
+                transaction_datetime=local_midnight_utc(
+                    transaction_date, source_timezone
+                ),
                 posting_datetime=(
-                    datetime.combine(posting_date, time.min) if posting_date else None
+                    local_midnight_utc(posting_date, source_timezone)
+                    if posting_date
+                    else None
                 ),
                 description=str(row["description"]),
                 transaction_kind=str(row["transaction_kind"]),
@@ -318,8 +330,10 @@ def parse_emirates_nbd_statement_text(
     layout_pages: list[str],
     *,
     document_pages: list[str] | None = None,
+    source_timezone: str = DEFAULT_TIMEZONE,
 ) -> SourceParseResult:
     """Parse row layout plus normal document text from a statement."""
+    source_timezone = normalize_timezone_name(source_timezone)
     if document_pages is None:
         document_pages = layout_pages
     document_text = "\n".join(document_pages)
@@ -331,7 +345,9 @@ def parse_emirates_nbd_statement_text(
     statement = ParsedBankStatement(bank="Emirates NBD", page_count=len(layout_pages))
     try:
         statement = _statement_metadata(document_text, len(layout_pages))
-        observations = _parse_observations(layout_pages, statement)
+        observations = _parse_observations(
+            layout_pages, statement, source_timezone
+        )
         expected_debits, expected_credits = _statement_summary_totals(document_text)
         parsed_debits = -sum(
             (value.amount for value in observations if value.amount and value.amount < 0),
@@ -384,7 +400,15 @@ def parse_emirates_nbd_credit_card_statement(
     except (DependencyError, PdfReadError, OSError, TypeError, ValueError) as exc:
         raise InvalidSourceInputError("The PDF could not be read") from exc
 
+    try:
+        source_timezone = normalize_timezone_name(
+            str(source.ingestion_metadata.get("source_timezone", DEFAULT_TIMEZONE))
+        )
+    except ValueError as exc:
+        raise InvalidSourceInputError(str(exc)) from exc
+
     return parse_emirates_nbd_statement_text(
         layout_pages,
         document_pages=document_pages,
+        source_timezone=source_timezone,
     )

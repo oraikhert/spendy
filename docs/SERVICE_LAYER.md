@@ -54,7 +54,9 @@ for shared access and route authentication.
 
 Transaction creation/update derives `merchant_norm` and `fingerprint`. Direct CRUD
 does not perform source matching or automatic FX conversion. Fingerprints are indexed,
-not unique: generating one does not itself reject a duplicate transaction.
+not unique: generating one does not itself reject a duplicate transaction. Accounts
+store an IANA timezone (default `UTC`); a nullable card timezone overrides it. Changing
+either value recalculates affected transaction fingerprints.
 
 Direct CRUD uses strict input schemas separately from legacy response schemas.
 Required values cannot be cleared; descriptions and locations are trimmed, empty
@@ -115,9 +117,12 @@ candidates leave the observation unlinked.
 
 Bank-statement upload validates the PDF signature, normalizes its media type and runs
 PDF extraction outside the event loop. A request-only password may decrypt the input
-but is excluded from storage and idempotency. The Emirates NBD parser extracts card,
-period and statement metadata, multi-page rows, continuation text and FX originals;
-it validates parsed debit and credit totals against the statement summary. Invalid,
+but is excluded from storage and idempotency. `source_timezone` accepts an IANA name;
+when omitted it resolves from the card override, account, then `UTC`. The resolved value
+is creation metadata, participates in idempotency comparison and is persisted in
+`ingestion_metadata` for reprocessing. The Emirates NBD parser extracts card, period and
+statement metadata, multi-page rows, continuation text and FX originals; it validates
+parsed debit and credit totals against the statement summary. Invalid,
 encrypted-with-the-wrong-password and unsupported PDFs are rejected before persistence.
 A recognized statement whose rows cannot be extracted consistently is kept as a failed
 payload/detail without observations. The configured upload limit defaults to 20 MiB,
@@ -137,15 +142,18 @@ The source day comes from posting time, then transaction time, then creation tim
 Candidates match when **any** of their posting, transaction or creation timestamps
 falls within that same day (`[midnight, next midnight)`). Creation time is an OR
 condition even when other timestamps exist; this differs from list/summary filters.
-There is no adjacent-day tolerance. The code takes `.date()` and constructs day
-bounds without explicit timezone normalization; do not silently change this behavior.
+There is no adjacent-day tolerance. A shared business-date helper converts stored UTC
+instants to the applicable source/card/account timezone before taking the calendar date
+and builds UTC bounds from local midnights, including DST transitions.
 
 Statement matching is deliberately narrower: a candidate must match the resolved card,
 booked or original money, and a transaction or posting calendar day from the statement
 row. Creation time is used only if the candidate has neither business timestamp. One existing
 transaction cannot satisfy two rows in the same statement. Description similarity can
 resolve multiple candidates, while an unresolved tie remains unlinked; no candidates
-creates a transaction.
+creates a transaction. Dates printed in a statement are also retained as ISO local
+calendar dates in observation `extraction_metadata`. Their datetime fields represent
+midnight in the persisted payload `source_timezone`, converted to UTC for storage.
 
 Before an automatic or manual link is created, the incoming observation's business
 date is compared with every dated observation already linked to the candidate
@@ -160,10 +168,10 @@ override this rule. With no remaining candidate, a distinct SMS creates its own
 transaction. Reliable retries must reuse their original `Idempotency-Key`; content hash
 alone is only sufficient to mark an unkeyed delivery as a possible duplicate.
 
-Fingerprint inputs are card, day, amount/currency and normalized merchant. The day
+Fingerprint inputs are card, business day, amount/currency and normalized merchant. The day
 prefers posting time, then transaction time, otherwise `unknown`; original monetary
 values take precedence when both exist. Fingerprint generation and candidate matching
-are separate operations.
+are separate operations but use the same business-date helper.
 
 ## Money and exchange rates
 

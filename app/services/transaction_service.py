@@ -21,6 +21,7 @@ from app.schemas.transaction import (
     Amount, ExchangeRate, MAX_RECORD_ID, TransactionCreate, TransactionUpdate,
     normalize_currency, validate_original_values,
 )
+from app.utils.canonicalization import transaction_business_timezone
 from app.utils.matching import generate_fingerprint, normalize_merchant
 
 
@@ -59,7 +60,7 @@ async def _validate_references(
             raise ValueError("card_id: Choose a card belonging to the selected account")
 
 
-def _refresh_fingerprint(transaction: Transaction) -> None:
+def _set_fingerprint(transaction: Transaction, business_timezone: str) -> None:
     transaction.merchant_norm = normalize_merchant(transaction.description)
     transaction.fingerprint = generate_fingerprint(
         card_id=transaction.card_id,
@@ -70,7 +71,82 @@ def _refresh_fingerprint(transaction: Transaction) -> None:
         merchant_norm=transaction.merchant_norm,
         orig_amount=transaction.original_amount,
         orig_currency=transaction.original_currency,
+        business_timezone=business_timezone,
     )
+
+
+async def _refresh_fingerprint(db: AsyncSession, transaction: Transaction) -> None:
+    with db.no_autoflush:
+        card = await db.scalar(
+            select(Card)
+            .where(Card.id == transaction.card_id)
+            .options(selectinload(Card.account))
+        )
+        observations = []
+        if transaction.id is not None:
+            observations = list(
+                await db.scalars(
+                    select(TransactionObservation)
+                    .join(
+                        TransactionSourceLink,
+                        TransactionSourceLink.observation_id
+                        == TransactionObservation.id,
+                    )
+                    .where(
+                        TransactionSourceLink.transaction_id == transaction.id
+                    )
+                    .options(selectinload(TransactionObservation.payload))
+                )
+            )
+    if card is None:
+        raise ValueError("card_id: Card not found")
+    _set_fingerprint(
+        transaction,
+        transaction_business_timezone(card, observations),
+    )
+
+
+async def refresh_account_transaction_fingerprints(
+    db: AsyncSession, account_id: int
+) -> None:
+    result = await db.execute(
+        select(Transaction)
+        .join(Card)
+        .where(Card.account_id == account_id, Card.timezone.is_(None))
+        .options(
+            selectinload(Transaction.card).selectinload(Card.account),
+            selectinload(Transaction.source_links)
+            .selectinload(TransactionSourceLink.observation)
+            .selectinload(TransactionObservation.payload),
+        )
+    )
+    for transaction in result.scalars().all():
+        observations = [link.observation for link in transaction.source_links]
+        _set_fingerprint(
+            transaction,
+            transaction_business_timezone(transaction.card, observations),
+        )
+
+
+async def refresh_card_transaction_fingerprints(
+    db: AsyncSession, card_id: int
+) -> None:
+    result = await db.execute(
+        select(Transaction)
+        .where(Transaction.card_id == card_id)
+        .options(
+            selectinload(Transaction.card).selectinload(Card.account),
+            selectinload(Transaction.source_links)
+            .selectinload(TransactionSourceLink.observation)
+            .selectinload(TransactionObservation.payload),
+        )
+    )
+    for transaction in result.scalars().all():
+        observations = [link.observation for link in transaction.source_links]
+        _set_fingerprint(
+            transaction,
+            transaction_business_timezone(transaction.card, observations),
+        )
 
 
 async def create_transaction(
@@ -79,7 +155,7 @@ async def create_transaction(
     """Create and commit a record; the selected card must exist."""
     await _validate_references(db, None, transaction_data.card_id)
     transaction = Transaction(**transaction_data.model_dump())
-    _refresh_fingerprint(transaction)
+    await _refresh_fingerprint(db, transaction)
     db.add(transaction)
     try:
         await db.commit()
@@ -246,7 +322,7 @@ async def update_transaction(
     for field, value in update_data.items():
         setattr(transaction, field, value)
     if update_data:
-        _refresh_fingerprint(transaction)
+        await _refresh_fingerprint(db, transaction)
         await db.commit()
     return await get_transaction(db, transaction_id)
 

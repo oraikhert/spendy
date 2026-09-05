@@ -42,6 +42,12 @@ async def update_account(
     update_data = account_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(account, field, value)
+    if "timezone" in update_data:
+        from app.services.transaction_service import (
+            refresh_account_transaction_fingerprints,
+        )
+
+        await refresh_account_transaction_fingerprints(db, account_id)
     
     await db.commit()
     await db.refresh(account)

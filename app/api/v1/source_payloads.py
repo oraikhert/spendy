@@ -84,6 +84,7 @@ async def create_upload_payload(
     current_user: Annotated[User, Depends(get_current_active_user)],
     account_id: Annotated[int | None, Form(gt=0, le=MAX_RECORD_ID)] = None,
     card_id: Annotated[int | None, Form(gt=0, le=MAX_RECORD_ID)] = None,
+    source_timezone: Annotated[str | None, Form(min_length=1, max_length=64)] = None,
     password: Annotated[str | None, Form(max_length=255)] = None,
     idempotency_key: Annotated[
         str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
@@ -96,6 +97,7 @@ async def create_upload_payload(
             source_kind=source_kind,
             account_id=account_id,
             card_id=card_id,
+            source_timezone=source_timezone,
             idempotency_key=_normalize_idempotency_key(idempotency_key),
             password=password,
         )

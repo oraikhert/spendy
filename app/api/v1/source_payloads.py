@@ -152,6 +152,10 @@ async def reprocess_source_payload(
     payload_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
+    force_manual_links: bool = Query(
+        False,
+        description="Explicitly allow replacement of manually linked observations",
+    ),
     password: Annotated[str | None, Form(max_length=255)] = None,
 ):
     try:
@@ -159,6 +163,7 @@ async def reprocess_source_payload(
             db,
             payload_id,
             password=password,
+            force_manual_links=force_manual_links,
         )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
         _raise_source_error(exc)

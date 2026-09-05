@@ -104,6 +104,24 @@ async def link_observation(
 
 
 @router.post(
+    "/{observation_id}/move",
+    response_model=TransactionSourceLinkResponse,
+)
+async def move_observation(
+    observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
+    link_data: TransactionLinkCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    try:
+        return await source_processing_service.move_observation_to_transaction(
+            db, observation_id, link_data.transaction_id
+        )
+    except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
+        _raise_source_error(exc)
+
+
+@router.post(
     "/{observation_id}/transaction",
     response_model=TransactionResponse,
     status_code=status.HTTP_201_CREATED,

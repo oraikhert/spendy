@@ -10,6 +10,10 @@ from app.models.card import Card
 from app.models.transaction import Transaction
 
 
+MERCHANT_SIMILARITY_THRESHOLD = Decimal("0.8000")
+MERCHANT_PREFIX_SIMILARITY_THRESHOLD = Decimal("0.5000")
+
+
 async def find_card_by_last_four(
     db: AsyncSession,
     last_four: str,
@@ -222,14 +226,18 @@ async def find_matching_transactions(
     if exclude_transaction_ids:
         query = query.where(Transaction.id.not_in(exclude_transaction_ids))
     
-    # Optional: filter by merchant_norm if provided
-    if merchant_norm:
-        query = query.where(Transaction.merchant_norm == merchant_norm)
-    
     result = await db.execute(query.order_by(Transaction.id))
-    transactions = result.scalars().all()
-    
-    return list(transactions)
+    transactions = list(result.scalars().all())
+    if merchant_norm:
+        transactions = [
+            transaction
+            for transaction in transactions
+            if merchant_names_match(
+                merchant_norm,
+                transaction.merchant_norm or transaction.description,
+            )
+        ]
+    return transactions
 
 
 def merchant_similarity(left: str | None, right: str | None) -> Decimal:
@@ -245,6 +253,32 @@ def merchant_similarity(left: str | None, right: str | None) -> Decimal:
     token_score = len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
     sequence_score = SequenceMatcher(None, left_norm, right_norm).ratio()
     return Decimal(str(max(token_score, sequence_score)))
+
+
+def merchant_names_match(left: str | None, right: str | None) -> bool:
+    """Conservatively match merchant variants after money/card/date filtering."""
+    left_norm = normalize_merchant(left or "")
+    right_norm = normalize_merchant(right or "")
+    if not left_norm or not right_norm:
+        return False
+    if left_norm == right_norm:
+        return True
+
+    score = merchant_similarity(left_norm, right_norm)
+    left_tokens = set(left_norm.split())
+    right_tokens = set(right_norm.split())
+    shared_tokens = left_tokens & right_tokens
+    is_prefix_variant = (
+        left_norm.startswith(right_norm + " ")
+        or right_norm.startswith(left_norm + " ")
+    )
+    if (
+        is_prefix_variant
+        and min(len(left_tokens), len(right_tokens)) >= 2
+        and score >= MERCHANT_PREFIX_SIMILARITY_THRESHOLD
+    ):
+        return True
+    return len(shared_tokens) >= 2 and score >= MERCHANT_SIMILARITY_THRESHOLD
 
 
 def select_statement_match(

@@ -122,9 +122,13 @@ and the statement parser rejects more than 100 pages.
 
 ## Matching and dates
 
-[find_matching_transactions](../app/utils/matching.py) uses card ID, amount/currency
-and optionally normalized merchant. With FX originals, either the canonical pair
-or the original amount/currency pair can match.
+[find_matching_transactions](../app/utils/matching.py) first restricts candidates by
+card ID, amount/currency and calendar day. With FX originals, either the canonical
+pair or the original amount/currency pair can match. SMS candidates then use a
+conservative merchant comparison: exact normalized names match, multi-token prefix
+variants match at a lower similarity threshold, and other variants require two shared
+tokens and a higher similarity score. Merchant similarity never widens the card,
+money or date candidate set.
 
 The source day comes from posting time, then transaction time, then creation time.
 Candidates match when **any** of their posting, transaction or creation timestamps
@@ -139,6 +143,13 @@ row. Creation time is used only if the candidate has neither business timestamp.
 transaction cannot satisfy two rows in the same statement. Description similarity can
 resolve multiple candidates, while an unresolved tie remains unlinked; no candidates
 creates a transaction.
+
+Before an automatic or manual link is created, the incoming observation's business
+date is compared with every dated observation already linked to the candidate
+transaction. `transaction_datetime` is preferred and `posting_datetime` is the
+fallback. A conflicting candidate is excluded from automatic matching; a manual link
+or move returns a business-validation error. Missing observation dates cannot prove a
+conflict and therefore do not block a link.
 
 Fingerprint inputs are card, day, amount/currency and normalized merchant. The day
 prefers posting time, then transaction time, otherwise `unknown`; original monetary
@@ -170,13 +181,20 @@ All operations below live in [source_processing_service.py](../app/services/sour
 | Operation | Behavior |
 |-----------|----------|
 | Manual link | Rejects an already linked observation, links it to one existing transaction and recanonicalizes. |
+| Move | Atomically moves one existing link to another transaction, records it as manual and recanonicalizes both transactions. |
 | Create-and-link | Requires effective card, amount and currency; observation values precede request fallbacks. Creates a transaction and manual link atomically. |
 | Unlink | Removes only the link, preserves payload/observation/transaction and recanonicalizes from remaining observations. HTML callers also supply the expected transaction ID so a stale/mismatched parent URL cannot unlink another transaction's observation. |
-| Reprocess | Requires a registered parser, deletes every old observation/link, recreates output, reruns matching and preserves orphaned transactions. |
+| Reprocess | Requires a registered parser, deletes every old observation/link, recreates output, reruns matching and preserves orphaned transactions. It returns `409` when the payload has a manual link unless `force_manual_links=true` explicitly authorizes replacement. |
 
 Observation IDs may change during reprocessing. A deliberate parser failure commits
 the failed status with no old observations; an unexpected system/database failure
 rolls back the replacement. Reprocess is not a read-only preview.
+
+Use `POST /api/v1/transaction-observations/{observation_id}/move` with a
+`transaction_id` JSON body instead of composing unlink and link requests. The latter
+leaves an externally visible intermediate state and cannot roll both canonicalizations
+back together. Operational checks for adjacent-day SMS assignments and conflicting
+observation dates are documented in [Source-link audit](SOURCE_LINK_AUDIT.md).
 
 ## Files and canonicalization
 

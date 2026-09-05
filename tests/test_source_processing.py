@@ -45,7 +45,7 @@ from app.services.source_parsers import (
     RegisteredParser,
 )
 from app.utils.canonicalization import canonicalize_transaction
-from app.utils.matching import normalize_merchant
+from app.utils.matching import merchant_names_match, normalize_merchant
 from app.utils.source_parsing import (
     InvalidSourceInputError,
     ParsedBankStatement,
@@ -170,6 +170,16 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.json()["transaction_link"]["match_method"], "automatic")
 
+    async def test_conservative_merchant_similarity_boundaries(self):
+        self.assertTrue(merchant_names_match("ARABIA TAXI", "ARABIA TAXI DUBAI ARE"))
+        self.assertTrue(
+            merchant_names_match(
+                "OPENAI CHATGPT SUBSCR", "OPENAI CHATGPT SUBSCRIPTION US"
+            )
+        )
+        self.assertFalse(merchant_names_match("ARABIA TAXI", "ARABIA CAFE"))
+        self.assertFalse(merchant_names_match("TAXI", "TAXI DUBAI"))
+
     async def test_auth_validation_and_missing_objects(self):
         authorization = self.client.headers.pop("Authorization")
         try:
@@ -274,6 +284,109 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 await db.scalar(select(func.count()).select_from(Transaction)),
                 2,
+            )
+
+    async def test_same_day_conservative_merchant_variant_matches(self):
+        observed_at = datetime(2026, 8, 1, 10, 30, tzinfo=UTC)
+        async with self.sessions() as db:
+            existing = Transaction(
+                card_id=self.card_id,
+                amount=Decimal("-12.34"),
+                currency="AED",
+                transaction_datetime=observed_at,
+                description="ARABIA TAXI DUBAI ARE",
+                transaction_kind="purchase",
+                merchant_norm=normalize_merchant("ARABIA TAXI DUBAI ARE"),
+            )
+            db.add(existing)
+            await db.commit()
+            existing_id = existing.id
+
+        created = await self.client.post(
+            "/api/v1/source-payloads/text",
+            json={
+                "source_kind": "sms",
+                "text": SMS.replace("SYNTHETIC SHOP", "ARABIA TAXI"),
+                "transaction_datetime": observed_at.isoformat(),
+                "card_id": self.card_id,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        observation_id = created.json()["observations"][0]["id"]
+        async with self.sessions() as db:
+            link = await db.get(TransactionSourceLink, observation_id)
+            self.assertEqual(link.transaction_id, existing_id)
+            self.assertEqual(
+                await db.scalar(select(func.count()).select_from(Transaction)), 1
+            )
+
+    async def test_automatic_match_rejects_conflicting_observation_date(self):
+        first_day = datetime(2026, 8, 1, 10, 30, tzinfo=UTC)
+        second_day = first_day + timedelta(days=1)
+        async with self.sessions() as db:
+            payload = SourcePayload(
+                source_kind="bank_statement",
+                media_type="application/pdf",
+                ingestion_method="manual_upload",
+                file_path="/private/synthetic-date-check",
+                original_filename="statement.pdf",
+                content_hash="f" * 64,
+                processing_status="processed",
+            )
+            transaction = Transaction(
+                card_id=self.card_id,
+                amount=Decimal("-12.34"),
+                currency="AED",
+                transaction_datetime=first_day,
+                posting_datetime=second_day,
+                description="SYNTHETIC SHOP",
+                transaction_kind="purchase",
+                merchant_norm=normalize_merchant("SYNTHETIC SHOP"),
+            )
+            db.add_all([payload, transaction])
+            await db.flush()
+            statement = TransactionObservation(
+                source_payload_id=payload.id,
+                source_item_key="row-1",
+                amount=Decimal("-12.34"),
+                currency="AED",
+                transaction_datetime=first_day,
+                posting_datetime=second_day,
+                description="SYNTHETIC SHOP",
+                transaction_kind="purchase",
+                card_id=self.card_id,
+            )
+            db.add(statement)
+            await db.flush()
+            db.add(
+                TransactionSourceLink(
+                    observation_id=statement.id,
+                    transaction_id=transaction.id,
+                    match_method="automatic",
+                )
+            )
+            await db.commit()
+            existing_id = transaction.id
+
+        created = await self.client.post(
+            "/api/v1/source-payloads/text",
+            json={
+                "source_kind": "sms",
+                "text": SMS,
+                "transaction_datetime": second_day.isoformat(),
+                "card_id": self.card_id,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        observation = created.json()["observations"][0]
+        self.assertEqual(
+            observation["extraction_metadata"]["date_conflict_candidate_count"], 1
+        )
+        async with self.sessions() as db:
+            link = await db.get(TransactionSourceLink, observation["id"])
+            self.assertNotEqual(link.transaction_id, existing_id)
+            self.assertEqual(
+                await db.scalar(select(func.count()).select_from(Transaction)), 2
             )
 
     async def test_ignored_failed_and_upload_pending(self):
@@ -648,6 +761,46 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(linked_ids)
             self.assertTrue(linked_ids <= observation_ids)
 
+    async def test_reprocess_requires_force_for_manual_links(self):
+        created = await self.client.post(
+            "/api/v1/source-payloads/text",
+            json={"source_kind": "sms", "text": SMS, "card_id": self.card_id},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        payload_id = created.json()["id"]
+        old_observation_id = created.json()["observations"][0]["id"]
+        async with self.sessions() as db:
+            link = await db.get(TransactionSourceLink, old_observation_id)
+            link.match_method = "manual"
+            await db.commit()
+
+        blocked = await self.client.post(
+            f"/api/v1/source-payloads/{payload_id}/reprocess"
+        )
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+        async with self.sessions() as db:
+            self.assertIsNotNone(
+                await db.get(TransactionObservation, old_observation_id)
+            )
+            self.assertIsNotNone(
+                await db.get(TransactionSourceLink, old_observation_id)
+            )
+
+        forced = await self.client.post(
+            f"/api/v1/source-payloads/{payload_id}/reprocess"
+            "?force_manual_links=true"
+        )
+        self.assertEqual(forced.status_code, 200, forced.text)
+        new_observation_id = forced.json()["observations"][0]["id"]
+        self.assertNotEqual(new_observation_id, old_observation_id)
+        async with self.sessions() as db:
+            self.assertIsNone(
+                await db.get(TransactionObservation, old_observation_id)
+            )
+            self.assertIsNotNone(
+                await db.get(TransactionSourceLink, new_observation_id)
+            )
+
     async def test_manual_link_list_and_unlink_api(self):
         async with self.sessions() as db:
             transaction = Transaction(
@@ -749,6 +902,153 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             f"/api/v1/transaction-observations/{observation_id}/link"
         )
         self.assertEqual(missing.status_code, 404, missing.text)
+
+    async def test_move_observation_is_atomic_and_checks_dates(self):
+        observed_at = datetime(2026, 8, 1, 10, tzinfo=UTC)
+        conflicting_at = observed_at + timedelta(days=1)
+        async with self.sessions() as db:
+            sms_payload = SourcePayload(
+                source_kind="sms",
+                media_type="text/plain",
+                ingestion_method="phone_api",
+                raw_text="Synthetic move source",
+                content_hash="1" * 64,
+                processing_status="processed",
+            )
+            statement_payload = SourcePayload(
+                source_kind="bank_statement",
+                media_type="application/pdf",
+                ingestion_method="manual_upload",
+                file_path="/private/synthetic-move",
+                original_filename="statement.pdf",
+                content_hash="2" * 64,
+                processing_status="processed",
+            )
+            old_transaction = Transaction(
+                card_id=self.card_id,
+                amount=Decimal("-1"),
+                currency="AED",
+                description="Old",
+                transaction_kind="other",
+            )
+            target_transaction = Transaction(
+                card_id=self.card_id,
+                amount=Decimal("-2"),
+                currency="AED",
+                description="Target",
+                transaction_kind="other",
+            )
+            conflicting_transaction = Transaction(
+                card_id=self.card_id,
+                amount=Decimal("-3"),
+                currency="AED",
+                description="Conflicting",
+                transaction_kind="other",
+            )
+            db.add_all(
+                [
+                    sms_payload,
+                    statement_payload,
+                    old_transaction,
+                    target_transaction,
+                    conflicting_transaction,
+                ]
+            )
+            await db.flush()
+            remaining = TransactionObservation(
+                source_payload_id=sms_payload.id,
+                source_item_key="remaining",
+                amount=Decimal("-10"),
+                currency="AED",
+                transaction_datetime=observed_at,
+                description="Remaining SMS",
+                card_id=self.card_id,
+            )
+            moving = TransactionObservation(
+                source_payload_id=statement_payload.id,
+                source_item_key="moving",
+                amount=Decimal("-99"),
+                currency="AED",
+                transaction_datetime=observed_at,
+                description="Moving statement",
+                card_id=self.card_id,
+            )
+            target_source = TransactionObservation(
+                source_payload_id=sms_payload.id,
+                source_item_key="target",
+                amount=Decimal("-20"),
+                currency="AED",
+                transaction_datetime=observed_at,
+                description="Target SMS",
+                card_id=self.card_id,
+            )
+            conflicting_source = TransactionObservation(
+                source_payload_id=sms_payload.id,
+                source_item_key="conflict",
+                amount=Decimal("-30"),
+                currency="AED",
+                transaction_datetime=conflicting_at,
+                description="Conflicting SMS",
+                card_id=self.card_id,
+            )
+            db.add_all([remaining, moving, target_source, conflicting_source])
+            await db.flush()
+            db.add_all(
+                [
+                    TransactionSourceLink(
+                        observation_id=remaining.id,
+                        transaction_id=old_transaction.id,
+                        match_method="manual",
+                    ),
+                    TransactionSourceLink(
+                        observation_id=moving.id,
+                        transaction_id=old_transaction.id,
+                        match_method="manual",
+                    ),
+                    TransactionSourceLink(
+                        observation_id=target_source.id,
+                        transaction_id=target_transaction.id,
+                        match_method="manual",
+                    ),
+                    TransactionSourceLink(
+                        observation_id=conflicting_source.id,
+                        transaction_id=conflicting_transaction.id,
+                        match_method="manual",
+                    ),
+                ]
+            )
+            await db.flush()
+            await canonicalize_transaction(db, old_transaction)
+            await canonicalize_transaction(db, target_transaction)
+            await db.commit()
+            moving_id = moving.id
+            old_id = old_transaction.id
+            target_id = target_transaction.id
+            conflicting_id = conflicting_transaction.id
+
+        rejected = await self.client.post(
+            f"/api/v1/transaction-observations/{moving_id}/move",
+            json={"transaction_id": conflicting_id},
+        )
+        self.assertEqual(rejected.status_code, 422, rejected.text)
+        async with self.sessions() as db:
+            self.assertEqual(
+                (await db.get(TransactionSourceLink, moving_id)).transaction_id,
+                old_id,
+            )
+
+        moved = await self.client.post(
+            f"/api/v1/transaction-observations/{moving_id}/move",
+            json={"transaction_id": target_id},
+        )
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertEqual(moved.json()["transaction_id"], target_id)
+        self.assertEqual(moved.json()["match_method"], "manual")
+        async with self.sessions() as db:
+            refreshed_old = await db.get(Transaction, old_id)
+            refreshed_target = await db.get(Transaction, target_id)
+            self.assertEqual(refreshed_old.amount, Decimal("-10.00"))
+            self.assertEqual(refreshed_target.amount, Decimal("-99.00"))
 
     async def test_create_transaction_from_observation_api(self):
         async with self.sessions() as db:

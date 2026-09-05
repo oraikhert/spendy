@@ -39,6 +39,7 @@ SourcePayload 1 ── N TransactionObservation 1 ── 0..1 TransactionSourceL
 - `POST /api/v1/source-payloads/{payload_id}/reprocess`
 - `GET /api/v1/transaction-observations` and `GET /api/v1/transaction-observations/{observation_id}`
 - `POST /api/v1/transaction-observations/{observation_id}/link`
+- `POST /api/v1/transaction-observations/{observation_id}/move`
 - `POST /api/v1/transaction-observations/{observation_id}/transaction`
 - `DELETE /api/v1/transaction-observations/{observation_id}/link`
 - `GET /api/v1/transactions/{transaction_id}/observations`
@@ -93,6 +94,10 @@ storage path.
 - `failed`: processing failed. Show the safe general error in expanded details.
 - Unlinked observations, candidate review, manual link/create-transaction and reprocess
   are not exposed by the transaction HTML pages.
+- A future reprocess control must surface the `409` protection for manual links and
+  require an explicit confirmation before sending `force_manual_links=true`.
+- A reassignment flow must use the atomic `move` endpoint rather than separate unlink
+  and link calls, and refresh both affected transaction views.
 - A stale or missing link refreshes the current transaction Sources list.
 
 ## HTML implementation areas

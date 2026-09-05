@@ -165,4 +165,21 @@ Content-Type: application/json
   "transaction_id": 1
 }
 
+###
+
+### Atomically move one linked observation to another transaction
+POST {{apiV1}}/transaction-observations/1/move
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "transaction_id": 2
+}
+
+###
+
+### Reprocess while explicitly allowing replacement of manual links
+POST {{apiV1}}/source-payloads/1/reprocess?force_manual_links=true
+Authorization: Bearer {{accessToken}}
+
 ### Uploaded files are private parser inputs; there is no download endpoint.

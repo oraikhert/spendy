@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -57,9 +57,9 @@ from app.utils.matching import (
 
 
 MATCHER_NAME = "same_day_amount_merchant"
-MATCHER_VERSION = "1"
+MATCHER_VERSION = "2"
 STATEMENT_MATCHER_NAME = "statement_same_day_amount_score"
-STATEMENT_MATCHER_VERSION = "1"
+STATEMENT_MATCHER_VERSION = "2"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
@@ -396,6 +396,58 @@ async def _resolved_money(
     )
 
 
+def _observation_business_date(
+    observation: TransactionObservation,
+) -> date | None:
+    value = observation.transaction_datetime or observation.posting_datetime
+    return value.date() if value is not None else None
+
+
+async def _date_consistency_conflicts(
+    db: AsyncSession,
+    observation: TransactionObservation,
+    transaction_ids: set[int],
+) -> dict[int, list[int]]:
+    incoming_date = _observation_business_date(observation)
+    if incoming_date is None or not transaction_ids:
+        return {}
+    rows = await db.execute(
+        select(
+            TransactionSourceLink.transaction_id,
+            TransactionObservation.id,
+            TransactionObservation.transaction_datetime,
+            TransactionObservation.posting_datetime,
+        )
+        .join(
+            TransactionObservation,
+            TransactionObservation.id == TransactionSourceLink.observation_id,
+        )
+        .where(TransactionSourceLink.transaction_id.in_(transaction_ids))
+    )
+    conflicts: dict[int, list[int]] = {}
+    for transaction_id, existing_id, transaction_datetime, posting_datetime in rows:
+        if existing_id == observation.id:
+            continue
+        existing_value = transaction_datetime or posting_datetime
+        if existing_value is not None and existing_value.date() != incoming_date:
+            conflicts.setdefault(transaction_id, []).append(existing_id)
+    return conflicts
+
+
+async def _require_date_consistency(
+    db: AsyncSession,
+    observation: TransactionObservation,
+    transaction_id: int,
+) -> None:
+    conflicts = await _date_consistency_conflicts(db, observation, {transaction_id})
+    if transaction_id in conflicts:
+        conflicting_ids = ", ".join(str(value) for value in conflicts[transaction_id])
+        raise SourceValidationError(
+            "Observation transaction date conflicts with linked observations "
+            f"{conflicting_ids} in transaction {transaction_id}"
+        )
+
+
 async def _link_automatically(
     db: AsyncSession,
     observation: TransactionObservation,
@@ -432,6 +484,18 @@ async def _link_automatically(
         match_both_source_dates=is_statement,
         exclude_transaction_ids=claimed_transaction_ids if is_statement else None,
     )
+    date_conflicts = await _date_consistency_conflicts(
+        db, observation, {transaction.id for transaction in matches}
+    )
+    if date_conflicts:
+        observation.extraction_metadata["date_conflict_candidate_count"] = len(
+            date_conflicts
+        )
+        matches = [
+            transaction
+            for transaction in matches
+            if transaction.id not in date_conflicts
+        ]
 
     confidence = Decimal("1.0000")
     if is_statement:
@@ -850,10 +914,28 @@ async def reprocess_source_payload(
     db: AsyncSession,
     payload_id: int,
     password: str | None = None,
+    force_manual_links: bool = False,
 ) -> SourcePayload:
     payload = await get_source_payload(db, payload_id)
     if payload is None:
         raise SourceNotFoundError("Source payload not found")
+    manual_link_count = await db.scalar(
+        select(func.count())
+        .select_from(TransactionSourceLink)
+        .join(
+            TransactionObservation,
+            TransactionObservation.id == TransactionSourceLink.observation_id,
+        )
+        .where(
+            TransactionObservation.source_payload_id == payload_id,
+            TransactionSourceLink.match_method == MatchMethod.MANUAL.value,
+        )
+    )
+    if manual_link_count and not force_manual_links:
+        raise SourceConflictError(
+            "Source payload has manually linked observations; set "
+            "force_manual_links=true to replace them"
+        )
     try:
         await _process_payload(
             db,
@@ -879,6 +961,7 @@ async def link_observation_to_transaction(
     transaction = await db.get(Transaction, transaction_id)
     if transaction is None:
         raise SourceNotFoundError("Transaction not found")
+    await _require_date_consistency(db, observation, transaction_id)
     link = TransactionSourceLink(
         observation_id=observation_id,
         transaction_id=transaction_id,
@@ -892,6 +975,44 @@ async def link_observation_to_transaction(
     except IntegrityError as exc:
         await db.rollback()
         raise SourceConflictError("Transaction observation is already linked") from exc
+    except Exception:
+        await db.rollback()
+        raise
+    return await get_transaction_link(db, observation_id)
+
+
+async def move_observation_to_transaction(
+    db: AsyncSession, observation_id: int, transaction_id: int
+) -> TransactionSourceLink:
+    observation = await get_transaction_observation(db, observation_id)
+    if observation is None:
+        raise SourceNotFoundError("Transaction observation not found")
+    link = observation.transaction_link
+    if link is None:
+        raise SourceConflictError("Transaction observation is not linked")
+    if link.transaction_id == transaction_id:
+        raise SourceConflictError("Transaction observation is already linked to this transaction")
+    target = await db.get(Transaction, transaction_id)
+    if target is None:
+        raise SourceNotFoundError("Transaction not found")
+    await _require_date_consistency(db, observation, transaction_id)
+
+    old_transaction = await db.get(Transaction, link.transaction_id)
+    link.transaction_id = transaction_id
+    link.match_method = MatchMethod.MANUAL.value
+    link.match_confidence = None
+    link.matched_at = datetime.now(UTC)
+    link.matcher_name = None
+    link.matcher_version = None
+    try:
+        await db.flush()
+        if old_transaction is not None:
+            await canonicalize_transaction(db, old_transaction)
+        await canonicalize_transaction(db, target)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise SourceConflictError("Transaction observation could not be moved") from exc
     except Exception:
         await db.rollback()
         raise

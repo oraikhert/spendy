@@ -23,6 +23,7 @@ Read the document for your task; there is no need to load the entire documentati
 | Implement transaction screens, iteration 1 | [Transactions UI task v1](docs/requirements/TRANSACTIONS_UI_v1.md) |
 | Adapt the Sources UI to payloads and observations | [Source payload UI follow-up](docs/requirements/SOURCE_PAYLOADS_UI_FOLLOWUP.md) |
 | Change ingestion, matching, money handling or service behavior | [Service contracts](docs/SERVICE_LAYER.md) |
+| Audit observation-to-transaction links | [Source-link audit](docs/SOURCE_LINK_AUDIT.md) |
 | Initialize, upgrade or change a database schema | [Migrations](docs/MIGRATIONS.md) |
 | Deploy or update the Docker/PostgreSQL installation | [Deployment](docs/DEPLOYMENT.md) |
 | Diagnose installation or runtime errors | [Troubleshooting](docs/TROUBLESHOOTING.md) |

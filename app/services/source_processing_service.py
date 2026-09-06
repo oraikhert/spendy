@@ -65,7 +65,7 @@ from app.utils.matching import (
 MATCHER_NAME = "same_day_amount_merchant"
 MATCHER_VERSION = "4"
 STATEMENT_MATCHER_NAME = "statement_same_day_amount_score"
-STATEMENT_MATCHER_VERSION = "3"
+STATEMENT_MATCHER_VERSION = "4"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
@@ -652,10 +652,6 @@ async def _link_automatically(
             original_currency=original_currency,
             business_timezone=business_timezone,
         )
-        if matches and transaction is None:
-            observation.extraction_metadata["matching_status"] = "ambiguous"
-            observation.extraction_metadata["candidate_count"] = len(matches)
-            return None
     elif len(matches) > 1:
         observation.extraction_metadata["matching_status"] = "ambiguous"
         observation.extraction_metadata["candidate_count"] = len(matches)

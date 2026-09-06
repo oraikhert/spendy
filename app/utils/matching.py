@@ -301,7 +301,7 @@ def select_statement_match(
     original_currency: str | None = None,
     business_timezone: str = DEFAULT_TIMEZONE,
 ) -> tuple[Transaction | None, Decimal | None]:
-    """Select a decisive statement candidate, leaving ties unlinked."""
+    """Select a statement candidate, resolving score ties deterministically."""
     if not candidates:
         return None, None
     if len(candidates) == 1:
@@ -370,4 +370,7 @@ def select_statement_match(
             Decimal("0.75") + min(best[0], Decimal("12")) / Decimal("50"),
         ).quantize(Decimal("0.0001"))
         return best[4], confidence
-    return None, None
+    # Statement rows are authoritative transaction records. Equal candidates are
+    # interchangeable here; the caller claims the chosen transaction so the next
+    # identical row is matched to the next candidate instead of becoming ambiguous.
+    return best[4], Decimal("0.9500")

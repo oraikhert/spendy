@@ -682,6 +682,84 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(await db.get(TransactionObservation, observation_id))
             self.assertIsNotNone(await db.get(TransactionSourceLink, observation_id))
 
+    async def test_identical_statement_rows_claim_distinct_matching_transactions(self):
+        observed_at = datetime(2026, 1, 5, 12, tzinfo=UTC)
+        async with self.sessions() as db:
+            transactions = [
+                Transaction(
+                    card_id=self.card_id,
+                    amount=Decimal("-12.34"),
+                    currency="AED",
+                    transaction_datetime=observed_at,
+                    description="IDENTICAL MERCHANT",
+                    transaction_kind="purchase",
+                    merchant_norm=normalize_merchant("IDENTICAL MERCHANT"),
+                )
+                for _ in range(2)
+            ]
+            db.add_all(transactions)
+            await db.commit()
+            transaction_ids = [transaction.id for transaction in transactions]
+
+        def parse_statement(_source):
+            return ParserResult(
+                status=ParseStatus.PROCESSED,
+                observations=tuple(
+                    ObservationInput(
+                        source_item_key=str(index),
+                        amount=Decimal("-12.34"),
+                        currency="AED",
+                        transaction_datetime=observed_at,
+                        description="IDENTICAL MERCHANT",
+                        transaction_kind="purchase",
+                        card_last_four="1111",
+                    )
+                    for index in range(2)
+                ),
+                bank_statement=ParsedBankStatement(
+                    bank="Emirates NBD",
+                    statement_period_start=date(2026, 1, 1),
+                    statement_period_end=date(2026, 1, 31),
+                    statement_currency="AED",
+                    card_type="Synthetic Rewards",
+                    card_last_four="1111",
+                    page_count=1,
+                ),
+            )
+
+        parser = RegisteredParser(
+            name="emirates_nbd_credit_card_statement_pdf",
+            version="1-test",
+            parse=parse_statement,
+        )
+        key = (SourceKind.BANK_STATEMENT.value, "application/pdf")
+        with patch.dict(PARSER_REGISTRY, {key: (parser,)}):
+            response = await self.client.post(
+                "/api/v1/source-payloads/upload",
+                data={"source_kind": "bank_statement"},
+                files={"file": ("statement.pdf", b"%PDF-synthetic", "application/pdf")},
+            )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        observations = response.json()["observations"]
+        self.assertEqual(len(observations), 2)
+        self.assertTrue(
+            all("matching_status" not in item["extraction_metadata"] for item in observations)
+        )
+        async with self.sessions() as db:
+            links = [
+                await db.get(TransactionSourceLink, observation["id"])
+                for observation in observations
+            ]
+            self.assertEqual(
+                [link.transaction_id for link in links],
+                transaction_ids,
+            )
+            self.assertEqual(
+                await db.scalar(select(func.count()).select_from(Transaction)),
+                2,
+            )
+
     async def test_statement_timezone_matches_sms_across_utc_date_boundary(self):
         sms = await self.client.post(
             "/api/v1/source-payloads/text",

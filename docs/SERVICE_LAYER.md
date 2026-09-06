@@ -152,8 +152,9 @@ Statement matching is deliberately narrower: a candidate must match the resolved
 booked or original money, and a transaction or posting calendar day from the statement
 row. Creation time is used only if the candidate has neither business timestamp. One existing
 transaction cannot satisfy two rows in the same statement. Description similarity can
-resolve multiple candidates, while an unresolved tie remains unlinked; no candidates
-creates a transaction. Dates printed in a statement are also retained as ISO local
+resolve multiple candidates. Tied candidates are assigned deterministically in ID order;
+the one-row-per-transaction rule then assigns repeated identical statement rows to
+different transactions. No candidates creates a transaction. Dates printed in a statement are also retained as ISO local
 calendar dates in observation `extraction_metadata`. Their datetime fields represent
 midnight in the persisted payload `source_timezone`, converted to UTC for storage.
 

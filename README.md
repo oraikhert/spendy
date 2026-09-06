@@ -2,7 +2,7 @@
 
 Spendy tracks accounts, cards, transactions and their source messages/files.
 The JSON API supports transaction management, SMS parsing, matching and summaries.
-The web UI provides login, optional registration, a four-month spending dashboard
+The web UI provides login, optional registration, a thirteen-month spending dashboard
 with separate currency totals and date-range drill-down links, and transaction
 list/detail/create/edit pages with filters, deletion and linked source-observation
 details. Uploaded files are private backend inputs and cannot be downloaded. The API parses Emirates NBD credit-card
@@ -97,7 +97,7 @@ Account, card, transaction, source-payload, observation and dashboard APIs requi
 Health, login, registration, exchange-rate lookup and transaction-kind metadata
 do not require a token; disabled registration returns 403. Authentication does not
 provide per-user budget isolation: see [the current access model](docs/ARCHITECTURE.md#access-model).
-`GET /api/v1/dashboard` returns the same current-month and three-previous-month
+`GET /api/v1/dashboard` returns the same current-month and twelve-previous-month
 per-currency overview used by the HTML Dashboard; its calendar is determined by
 the application server and the effective timezone of each card.
 For exact validation limits and payloads, use Swagger and

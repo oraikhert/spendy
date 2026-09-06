@@ -247,9 +247,9 @@ operation used by `GET /api/v1/dashboard` and the cookie-authenticated HTML page
 returns immutable period/currency values without ORM records and implements the
 [Dashboard calendar and spending contract](ui/DASHBOARD.md#summary-data), with an
 injectable server-calendar `today`. Two read-only SQL queries discover effective
-card timezones and aggregate the four displayed periods plus the comparison range;
+card timezones and aggregate the thirteen displayed periods plus the comparison range;
 query count does not grow with transaction count. It never commits or converts
-currencies. The API exposes the current period, three previous periods and comparison
+currencies. The API exposes the current period, twelve previous periods and comparison
 date range through typed response schemas. It accepts no date, account, card or
 currency filters. The web route renders a complete 503 error state on a failed read,
 with no partial totals.

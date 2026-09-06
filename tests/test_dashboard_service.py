@@ -58,7 +58,8 @@ async def seed_dashboard(db):
     add("-10", when="2026-02-20T12:00:00")
     add("-30", when="2026-01-15T12:00:00")
     add("-20", when="2025-12-15T12:00:00")
-    add("-500", when="2025-11-30T19:59:59")
+    add("-15", when="2025-03-15T12:00:00")
+    add("-500", when="2025-02-28T19:59:59")
     await db.commit()
 
 
@@ -79,7 +80,7 @@ class DashboardDatabase(unittest.IsolatedAsyncioTestCase):
 
 
 class DashboardServiceTests(DashboardDatabase):
-    async def test_four_periods_membership_currencies_and_timezone_bounds(self):
+    async def test_thirteen_periods_membership_currencies_and_timezone_bounds(self):
         statements = []
         @event.listens_for(self.engine.sync_engine, "before_cursor_execute")
         def count_queries(connection, cursor, statement, parameters, context, many):
@@ -101,9 +102,22 @@ class DashboardServiceTests(DashboardDatabase):
             (date(2026, 2, 1), date(2026, 2, 28)),
             (date(2026, 1, 1), date(2026, 1, 31)),
             (date(2025, 12, 1), date(2025, 12, 31)),
+            (date(2025, 11, 1), date(2025, 11, 30)),
+            (date(2025, 10, 1), date(2025, 10, 31)),
+            (date(2025, 9, 1), date(2025, 9, 30)),
+            (date(2025, 8, 1), date(2025, 8, 31)),
+            (date(2025, 7, 1), date(2025, 7, 31)),
+            (date(2025, 6, 1), date(2025, 6, 30)),
+            (date(2025, 5, 1), date(2025, 5, 31)),
+            (date(2025, 4, 1), date(2025, 4, 30)),
+            (date(2025, 3, 1), date(2025, 3, 31)),
         ])
-        self.assertEqual([p.currencies[0].net_spending for p in overview.previous], [Decimal(66), Decimal(30), Decimal(20)])
-        self.assertEqual([p.currencies[0].count for p in overview.previous], [4, 1, 1])
+        self.assertEqual(
+            [p.currencies[0].net_spending for p in overview.previous[:3]],
+            [Decimal(66), Decimal(30), Decimal(20)],
+        )
+        self.assertTrue(all(not period.currencies for period in overview.previous[3:11]))
+        self.assertEqual(overview.previous[11].currencies[0].net_spending, Decimal(15))
         self.assertEqual(overview.comparison.date_to, date(2026, 2, 6))
 
     async def test_short_month_comparison_and_negative_baseline(self):
@@ -125,7 +139,7 @@ class DashboardServiceTests(DashboardDatabase):
         async with self.sessions() as db:
             overview = await get_dashboard_overview(db, today=date(2028, 1, 1))
         self.assertFalse(overview.current.currencies)
-        self.assertEqual(len(overview.previous), 3)
+        self.assertEqual(len(overview.previous), 12)
         self.assertTrue(all(not p.currencies for p in overview.previous))
 
 

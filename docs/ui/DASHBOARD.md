@@ -1,7 +1,7 @@
 # Dashboard
 
 The Dashboard is the authenticated landing page for a compact view of spending in
-the current month and the three preceding months. Interface labels are English.
+the current month and the twelve preceding months. Interface labels are English.
 
 ## Summary data
 
@@ -23,7 +23,7 @@ the current month and the three preceding months. Interface labels are English.
 The application server calendar determines today. For every card, calendar-day
 boundaries use the card timezone, then its account timezone, then UTC. The current
 period runs from the first day of the current month through today, inclusive. The
-three earlier periods are complete calendar months and appear newest first.
+twelve earlier periods are complete calendar months and appear newest first.
 
 Current-month change compares each currency with the same numbered date range in
 the preceding month. If the preceding month is shorter, its range ends on its final
@@ -33,7 +33,7 @@ percentage.
 
 ## Page layout
 
-`/dashboard` starts with `Dashboard` and a short explanation of the four-month view.
+`/dashboard` starts with `Dashboard` and a short explanation of the thirteen-month view.
 The page body contains no `Add transaction`, `View transactions`, logout, profile,
 account-status, administrator-status, or other quick-action control. The persistent
 `Transactions` link beside the user control in the global navigation remains the
@@ -55,7 +55,7 @@ Count and average describe the same `Purchase` and `Refund` records as the total
 
 ### Previous months
 
-Three secondary cards follow the current-month section. Each card identifies one
+Twelve secondary cards follow the current-month section. Each card identifies one
 complete month and lists net spending and contributing transaction count for every
 currency present in that month. Historical cards do not repeat averages or
 month-over-month percentages.
@@ -94,4 +94,3 @@ text identifies the period and currency even when the visible amount is brief.
   responses use private, no-store caching and the application's shared-data access model.
 - Headings preserve a logical hierarchy, status text is announced, links have clear
   names and visible keyboard focus, and the content remains usable at 360 px.
-

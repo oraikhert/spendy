@@ -12,6 +12,9 @@ from app.models.transaction import Transaction
 from app.utils.business_time import business_day_utc_bounds
 
 
+PREVIOUS_MONTH_COUNT = 12
+
+
 @dataclass(frozen=True)
 class CurrencySpending:
     currency: str
@@ -52,7 +55,7 @@ async def get_dashboard_overview(
     """
     today = today if today is not None else date.today()
     periods = [SpendingPeriod(today.replace(day=1), today)]
-    for _ in range(3):
+    for _ in range(PREVIOUS_MONTH_COUNT):
         end = periods[-1].date_from - timedelta(days=1)
         periods.append(SpendingPeriod(end.replace(day=1), end))
     previous = periods[1]
@@ -93,7 +96,7 @@ async def get_dashboard_overview(
         net = -signed_sum
         groups[index].append(CurrencySpending(currency, net, count, net / count))
 
-    baseline = {entry.currency: entry.net_spending for entry in groups[4]}
+    baseline = {entry.currency: entry.net_spending for entry in groups[-1]}
     groups[0] = [replace(
         entry,
         comparison_percent=(
@@ -105,5 +108,5 @@ async def get_dashboard_overview(
     ) for entry in groups[0]]
     populated = [replace(period, currencies=tuple(sorted(
         entries, key=lambda entry: entry.currency,
-    ))) for period, entries in zip(periods, groups[:4])]
+    ))) for period, entries in zip(periods, groups[:-1])]
     return DashboardOverview(populated[0], tuple(populated[1:]), comparison)

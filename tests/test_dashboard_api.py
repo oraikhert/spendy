@@ -63,7 +63,9 @@ class DashboardApiTests(DashboardDatabase):
             (payload["current"]["date_from"], payload["current"]["date_to"]),
             ("2026-03-01", "2026-03-06"),
         )
-        self.assertEqual(len(payload["previous"]), 3)
+        self.assertEqual(len(payload["previous"]), 12)
+        self.assertEqual(payload["previous"][-1]["date_from"], "2025-03-01")
+        self.assertEqual(payload["previous"][-1]["date_to"], "2025-03-31")
         self.assertEqual(
             [(entry["currency"], entry["net_spending"], entry["count"],
               entry["comparison_percent"])

@@ -20,7 +20,7 @@ async def get_dashboard(
     db: Annotated[AsyncSession, Depends(get_db)],
     _current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> DashboardOverviewResponse:
-    """Return the current month and three previous months of net spending."""
+    """Return the current month and twelve previous months of net spending."""
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Pragma"] = "no-cache"
     response.headers["Vary"] = "Authorization"

@@ -69,13 +69,15 @@ class DashboardWebTests(DashboardDatabase):
         self.assertIn('href="/transactions"', response.text.split("<main", 1)[0])
         links = re.findall(r'<a href="([^"]+)"', body)
         expected_ranges = [("2026-03-01", "2026-03-06")] * 3 + [
-            ("2026-02-01", "2026-02-28"), ("2026-01-01", "2026-01-31"), ("2025-12-01", "2025-12-31")]
+            ("2026-02-01", "2026-02-28"), ("2026-01-01", "2026-01-31"),
+            ("2025-12-01", "2025-12-31"), ("2025-03-01", "2025-03-31")]
+        self.assertEqual(body.count('aria-labelledby="month-'), 12)
         self.assertEqual(len(links), len(expected_ranges))
         for url, (start, end) in zip(links, expected_ranges):
             parts = urlsplit(unescape(url))
             self.assertEqual(parts.path, "/transactions")
             self.assertEqual(parse_qs(parts.query), {"period": ["custom"], "date_from": [start], "date_to": [end]})
-        self.assertEqual(body.count('aria-label="'), 6)
+        self.assertEqual(body.count('aria-label="'), 7)
         self.login(3)
         other = await self.client.get("/dashboard")
         self.assertEqual(body, other.text.split("<main", 1)[1].split("</main>", 1)[0])
@@ -87,7 +89,7 @@ class DashboardWebTests(DashboardDatabase):
             await db.commit()
         response = await self.client.get("/dashboard")
         self.assertIn("No purchase or refund transactions this month", response.text)
-        self.assertEqual(response.text.count('role="status"'), 4)
+        self.assertEqual(response.text.count('role="status"'), 13)
         with patch("app.web.dashboard.get_dashboard_overview", new=AsyncMock(side_effect=SQLAlchemyError("private database detail"))):
             response = await self.client.get("/dashboard")
         self.assertEqual(response.status_code, 503)

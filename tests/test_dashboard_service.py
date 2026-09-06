@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 with patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}):
     from app.database import Base
     from app.models import Account, Card, Transaction, User
-    from app.services.dashboard_overview_service import get_dashboard_overview
+    from app.services.dashboard_service import get_dashboard_overview
 
 TODAY = date(2026, 3, 6)
 

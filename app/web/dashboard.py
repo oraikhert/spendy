@@ -1,19 +1,21 @@
-"""Web pages routes (dashboard, etc.)"""
+"""Server-rendered Dashboard route."""
 from typing import Annotated
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.deps import get_current_user_from_cookie_required
 from app.database import get_db
 from app.models.user import User
-from app.core.deps import get_current_user_from_cookie_required
-from app.services.dashboard_overview_service import get_dashboard_overview
+from app.services.dashboard_service import get_dashboard_overview
 from app.web.presentation import money
 from app.web.transaction_helpers import ListFilters
 
-router = APIRouter(tags=["pages"])
+
+router = APIRouter(tags=["dashboard"])
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals.update(
     money=money,

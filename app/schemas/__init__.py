@@ -31,7 +31,12 @@ from app.schemas.transaction_observation import (
     TransactionCreateFromObservation,
     TransactionSourceLinkResponse,
 )
-from app.schemas.dashboard import DashboardSummaryResponse, TransactionKindSummary
+from app.schemas.dashboard import (
+    ComparisonPeriodResponse,
+    CurrencySpendingResponse,
+    DashboardOverviewResponse,
+    SpendingPeriodResponse,
+)
 
 
 __all__ = [
@@ -63,6 +68,8 @@ __all__ = [
     "TransactionLinkCreate",
     "TransactionCreateFromObservation",
     "TransactionSourceLinkResponse",
-    "DashboardSummaryResponse",
-    "TransactionKindSummary",
+    "ComparisonPeriodResponse",
+    "CurrencySpendingResponse",
+    "DashboardOverviewResponse",
+    "SpendingPeriodResponse",
 ]

@@ -1,37 +1,28 @@
-"""Dashboard API endpoints"""
+"""Dashboard API endpoint."""
 from typing import Annotated
-from datetime import datetime
-from fastapi import APIRouter, Depends, Query
+
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from app.core.deps import get_current_active_user
+from app.database import get_db
 from app.models.user import User
-from app.schemas.dashboard import DashboardSummaryResponse
-from app.services import dashboard_service
+from app.schemas.dashboard import DashboardOverviewResponse
+from app.services.dashboard_service import get_dashboard_overview
 
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
-@router.get("/summary", response_model=DashboardSummaryResponse)
-async def get_dashboard_summary(
-    date_from: Annotated[datetime, Query()],
-    date_to: Annotated[datetime, Query()],
+@router.get("", response_model=DashboardOverviewResponse)
+async def get_dashboard(
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    account_id: int | None = Query(None),
-    card_id: int | None = Query(None),
-    base_currency: str | None = Query(None)
-):
-    """Get dashboard summary with transaction statistics"""
-    summary = await dashboard_service.get_dashboard_summary(
-        db=db,
-        date_from=date_from,
-        date_to=date_to,
-        account_id=account_id,
-        card_id=card_id,
-        base_currency=base_currency
-    )
-    
-    return DashboardSummaryResponse(**summary)
+    _current_user: Annotated[User, Depends(get_current_active_user)],
+) -> DashboardOverviewResponse:
+    """Return the current month and three previous months of net spending."""
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Vary"] = "Authorization"
+    overview = await get_dashboard_overview(db)
+    return DashboardOverviewResponse.model_validate(overview)

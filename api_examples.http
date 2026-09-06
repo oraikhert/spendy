@@ -70,6 +70,16 @@ Authorization: Bearer {{accessToken}}
 ###
 
 ###############################################
+# Dashboard
+###############################################
+
+### Current month and three previous months, grouped by currency
+GET {{apiV1}}/dashboard
+Authorization: Bearer {{accessToken}}
+
+###
+
+###############################################
 # Error Cases (for testing)
 ###############################################
 

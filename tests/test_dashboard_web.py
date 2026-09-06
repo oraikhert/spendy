@@ -35,7 +35,7 @@ class DashboardWebTests(DashboardDatabase):
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
         async def fixed_overview(db):
             return await get_dashboard_overview(db, today=TODAY)
-        self.summary_patch = patch("app.web.pages.get_dashboard_overview", side_effect=fixed_overview)
+        self.summary_patch = patch("app.web.dashboard.get_dashboard_overview", side_effect=fixed_overview)
         self.summary_patch.start()
 
     async def asyncTearDown(self):
@@ -88,7 +88,7 @@ class DashboardWebTests(DashboardDatabase):
         response = await self.client.get("/dashboard")
         self.assertIn("No purchase or refund transactions this month", response.text)
         self.assertEqual(response.text.count('role="status"'), 4)
-        with patch("app.web.pages.get_dashboard_overview", new=AsyncMock(side_effect=SQLAlchemyError("private database detail"))):
+        with patch("app.web.dashboard.get_dashboard_overview", new=AsyncMock(side_effect=SQLAlchemyError("private database detail"))):
             response = await self.client.get("/dashboard")
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.headers["cache-control"], "private, no-store")

@@ -15,7 +15,7 @@ from app.web.presentation import money
 from app.web.transaction_helpers import ListFilters
 
 
-router = APIRouter(tags=["dashboard"])
+router = APIRouter(tags=["web-dashboard"])
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals.update(
     money=money,

@@ -6,7 +6,7 @@
   </div>
   {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
   <header class="card bg-base-100 shadow-sm"><div class="card-body gap-3">
-    <p class="text-sm text-base-content/65">Transaction</p>
+    <p class="text-sm text-base-content/65">Transaction #{{ transaction.id }}</p>
     <div>{{ amount(transaction, true) }}</div>
     <h1 class="text-xl sm:text-2xl font-semibold transaction-text">{{ transaction.description or 'No description' }}</h1>
     <span class="badge badge-ghost">{{ kind_label(transaction.transaction_kind) }}</span>

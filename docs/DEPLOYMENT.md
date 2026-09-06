@@ -203,6 +203,20 @@ docker compose logs --tail=100 app
 curl --fail http://127.0.0.1:8000/health
 ```
 
+The same update can be run as one command on the production server from the
+deployed checkout:
+
+```bash
+./scripts/deploy.sh                 # update without a backup
+./scripts/deploy_with_backup.sh     # update with database and upload backups
+```
+
+Both scripts expect the project at `/opt/spendy` and an existing `.env` file.
+They stop on the first failed command and wait for the health endpoint after the
+app restarts. If a migration fails, the app remains stopped for recovery. The
+backup script stores a PostgreSQL dump and an archive of `data/uploads` in
+`/var/backups/spendy` before starting the update.
+
 Run each step only after the previous one succeeds. If migration fails, leave the
 app stopped and use [migration recovery](MIGRATIONS.md#recovery-and-rollback).
 An older image may not support the new schema; code rollback alone is insufficient.

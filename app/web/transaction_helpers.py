@@ -1,5 +1,5 @@
 """HTTP-only parsing and presentation for transaction pages."""
-from datetime import date, datetime, time, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 import hashlib
 import hmac
@@ -71,9 +71,11 @@ class ListFilters(BaseModel):
         return self
 
     def service_args(self):
-        result = self.model_dump(exclude={"period", "page"})
-        result["date_from"] = datetime.combine(self.date_from, time.min) if self.date_from else None
-        result["date_to"] = datetime.combine(self.date_to, time.max) if self.date_to else None
+        result = self.model_dump(exclude={"period", "page", "date_from", "date_to"})
+        # A date input represents a calendar day, not a UTC timestamp. The
+        # service resolves its UTC bounds for each selected card's timezone.
+        result["calendar_date_from"] = self.date_from
+        result["calendar_date_to"] = self.date_to
         for field in ("q", "kind", "direction", "currency"):
             result[field] = result[field] or None
         return result

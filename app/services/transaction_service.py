@@ -2,11 +2,11 @@
 
 Writes commit here. They never ingest sources, match records, or retrieve FX rates.
 """
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import delete, func, select, union
+from sqlalchemy import and_, delete, func, or_, select, union
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,6 +22,7 @@ from app.schemas.transaction import (
     normalize_currency, validate_original_values,
 )
 from app.utils.canonicalization import transaction_business_timezone
+from app.utils.business_time import business_day_utc_bounds, normalize_timezone_name
 from app.utils.matching import generate_fingerprint, normalize_merchant
 
 
@@ -194,11 +195,14 @@ async def get_transactions(
     direction: str | None = None,
     min_abs_amount: Decimal | None = None,
     max_abs_amount: Decimal | None = None,
+    calendar_date_from: date | None = None,
+    calendar_date_to: date | None = None,
 ) -> tuple[list[Transaction], int]:
     """Filter before counting/paging; existing amount bounds remain signed.
 
-    Date bounds are inclusive. Callers supplying calendar dates must expand them
-    to full days. Records without either saved date never acquire a date fallback.
+    Timestamp bounds are inclusive. Calendar-date bounds use every matching
+    card's effective business timezone. Records without either saved date never
+    acquire a date fallback.
     """
     _validate_page(limit, offset)
     await _validate_references(db, account_id, card_id)
@@ -218,6 +222,12 @@ async def get_transactions(
             raise ValueError("date_to: Use consistent timezone information for both date bounds") from exc
         if reversed_dates:
             raise ValueError("date_to: The end date must be on or after the start date")
+    if (
+        calendar_date_from is not None
+        and calendar_date_to is not None
+        and calendar_date_from > calendar_date_to
+    ):
+        raise ValueError("calendar_date_to: The end date must be on or after the start date")
     min_amount = _validated_amount(min_amount, "min_amount")
     max_amount = _validated_amount(max_amount, "max_amount")
     min_abs_amount = _validated_amount(min_abs_amount, "min_abs_amount")
@@ -244,6 +254,29 @@ async def get_transactions(
         filters.append(effective_date >= date_from)
     if date_to is not None:
         filters.append(effective_date <= date_to)
+    if calendar_date_from is not None or calendar_date_to is not None:
+        timezone_query = select(Card.id, Card.timezone, Account.timezone).join(Account)
+        if card_id is not None:
+            timezone_query = timezone_query.where(Card.id == card_id)
+        elif account_id is not None:
+            timezone_query = timezone_query.where(Card.account_id == account_id)
+        timezone_groups: dict[str, list[int]] = {}
+        timezone_rows = (await db.execute(timezone_query)).all()
+        for card_id_value, card_timezone, account_timezone in timezone_rows:
+            timezone_name = normalize_timezone_name(card_timezone or account_timezone)
+            timezone_groups.setdefault(timezone_name, []).append(card_id_value)
+
+        calendar_filters = []
+        for timezone_name, timezone_card_ids in timezone_groups.items():
+            conditions = [Transaction.card_id.in_(timezone_card_ids)]
+            if calendar_date_from is not None:
+                start, _ = business_day_utc_bounds(calendar_date_from, timezone_name)
+                conditions.append(effective_date >= start)
+            if calendar_date_to is not None:
+                _, end = business_day_utc_bounds(calendar_date_to, timezone_name)
+                conditions.append(effective_date < end)
+            calendar_filters.append(and_(*conditions))
+        filters.append(or_(*calendar_filters))
     if q is not None and q.strip():
         # Escape the escape character first: % and _ are literal description text.
         term = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

@@ -82,8 +82,10 @@ a trimmed, case-insensitive literal substring, including `%`, `_`, and backslash
 Currency and direction filters are independent; zero is excluded from both signed
 directions. Existing `min_amount`/`max_amount` remain signed bounds. Separate
 nonnegative absolute bounds require a currency. Reversed ranges are rejected.
-Dates use `coalesce(posting_datetime, transaction_datetime)` with inclusive bounds;
-the UI expands calendar dates to full days. Results order by that effective date
+Timestamp dates use `coalesce(transaction_datetime, posting_datetime)` with inclusive
+bounds. The UI interprets calendar dates in each card's effective timezone (card
+override, then account timezone), converts their full-day bounds to UTC, and uses an
+exclusive next-day bound. Results order by that effective date
 descending, nulls last, then ID descending, with no creation-date fallback.
 
 Transaction, payload and observation lists return `(items, total)` with limit/offset pagination.

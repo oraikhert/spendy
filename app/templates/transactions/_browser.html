@@ -36,7 +36,7 @@
             <input id="{{ name }}" name="{{ name }}" type="date" class="input w-full" value="{{ filters.get(name, '') }}" {{ field_attrs(errors, name, 'date-range-hint') }}>
             {{ field_error(errors, name) }}
           </div>{% endfor %}
-        </div><p id="date-range-hint" class="text-sm text-base-content/65 mt-2">Required for Custom range. Both dates are included.</p>
+        </div><p id="date-range-hint" class="text-sm text-base-content/65 mt-2">Required for Custom range. Both dates are included and use each card's configured timezone.</p>
       </div>
       <details class="transaction-expander" {% if advanced_count or errors.get('card_id') or errors.get('kind') or errors.get('direction') or errors.get('currency') or errors.get('min_abs_amount') or errors.get('max_abs_amount') %}open{% endif %}>
         <summary class="font-medium cursor-pointer">More filters{% if advanced_count %} <span class="badge badge-neutral badge-sm ml-1">{{ advanced_count }}<span class="sr-only"> active</span></span>{% endif %}</summary>

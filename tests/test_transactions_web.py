@@ -8,7 +8,7 @@ import re
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from html import unescape
 from html.parser import HTMLParser
@@ -516,6 +516,45 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         all_time = await self.client.get("/transactions", params={"q": "Boundary fixture"})
         self.assertEqual(self.listed_ids(all_time.text), [ids[3], ids[1], ids[5], ids[0], ids[2], ids[4]])
         self.assertIn("No date", all_time.text)
+
+    async def test_dates_use_the_card_business_timezone_at_midnight(self):
+        async with self.sessions() as db:
+            account = await db.get(Account, self.data["account"])
+            account.timezone = "Asia/Dubai"
+            await db.commit()
+        ids = await self.add_transactions([
+            {
+                "description": "Dubai date boundary before",
+                "transaction_datetime": datetime(2026, 7, 28, 19, 59, 59, tzinfo=timezone.utc),
+            },
+            {
+                "description": "Dubai date boundary midnight",
+                "transaction_datetime": datetime(2026, 7, 28, 20, tzinfo=timezone.utc),
+            },
+            {
+                "description": "Dubai date boundary last",
+                "transaction_datetime": datetime(2026, 7, 30, 19, 59, 59, 999999, tzinfo=timezone.utc),
+            },
+            {
+                "description": "Dubai date boundary after",
+                "transaction_datetime": datetime(2026, 7, 30, 20, tzinfo=timezone.utc),
+            },
+            {
+                "card_id": self.data["foreign_card"],
+                "currency": "USD",
+                "description": "Dubai date boundary UTC card",
+                "transaction_datetime": datetime(2026, 7, 28, 20, tzinfo=timezone.utc),
+            },
+        ])
+        response = await self.client.get(
+            "/transactions",
+            params={
+                "q": "Dubai date boundary", "period": "custom",
+                "date_from": "2026-07-29", "date_to": "2026-07-30",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.listed_ids(response.text), [ids[2], ids[1]])
 
     async def test_list_displays_transaction_date_before_posting_date(self):
         await self.add_transactions([

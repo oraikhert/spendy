@@ -48,7 +48,9 @@ Defaults: `All time`, all accounts, cards, types, directions, and currencies; em
 
 Conditions combine with AND. Changing currency clears amount bounds. Invalid combinations
 show errors without applying a broader search. Date ranges include both complete calendar
-days using the transaction date, or the posting date when the transaction date is absent;
+days using the transaction date, or the posting date when the transaction date is absent.
+Each card's configured timezone defines its calendar-day boundaries (card override,
+then account timezone), so a range can include cards from different timezones correctly;
 undated records appear only in All time.
 
 `Apply filters` or Enter applies the form; changing fields alone does not. `Reset`

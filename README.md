@@ -69,7 +69,10 @@ python run.py
 Open [the web UI](http://localhost:8000), register and log in. To close registration
 afterward, set `REGISTRATION_ENABLED=false` and restart. For installations where
 self-registration stays disabled, use [manual user creation](docs/DEPLOYMENT.md#users).
-Set a unique `SECRET_KEY` before using the app with real data.
+Set a unique `SECRET_KEY` before using the app with real data. Web login sessions use
+`ACCESS_TOKEN_EXPIRE_MINUTES` as an inactivity timeout: authenticated requests and
+recent keyboard, pointer, touch, or scroll activity advance the deadline, while an
+idle browser does not send session-refresh requests.
 
 For later starts, activate `venv` and run the same command; `./start.sh` is a
 shortcut. `./install.sh` installs dependencies but does not initialize migrations

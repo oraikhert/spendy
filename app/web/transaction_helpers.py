@@ -116,7 +116,8 @@ def detail_url(transaction_id, return_url="/transactions", anchor=""):
 
 
 def csrf_token(request):
-    return hmac.new(settings.SECRET_KEY.encode(), ("transactions:" + request.cookies.get("access_token", "")).encode(), hashlib.sha256).hexdigest()
+    session_id = getattr(request.state, "web_session_id", request.cookies.get("access_token", ""))
+    return hmac.new(settings.SECRET_KEY.encode(), ("transactions:" + session_id).encode(), hashlib.sha256).hexdigest()
 
 
 def valid_csrf(request, value):

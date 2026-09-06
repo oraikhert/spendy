@@ -79,7 +79,10 @@ fields, not a JSON body; the `username` field accepts username or email.
 
 **Fix:** enable registration only where intended and restart, or use
 [manual creation](DEPLOYMENT.md#users). For an expired/invalid token, log in again.
-Inactive accounts and incorrect credentials have distinct errors; inspect the response.
+Web sessions renew while the protected UI is actively used and expire after
+`ACCESS_TOKEN_EXPIRE_MINUTES` without activity; API bearer tokens retain a fixed
+lifetime. Inactive accounts and incorrect credentials have distinct errors; inspect
+the response.
 
 **Verify:** log in and request `/api/v1/auth/me` with the bearer token. For web-only
 HTTPS problems, check [proxy and cookie behavior](DEPLOYMENT.md#https-proxy).

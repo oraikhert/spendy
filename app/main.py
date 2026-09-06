@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, Response
 
 from app.config import settings
+from app.core.web_session import browser_origin, renew_auth_cookie
 from app.database import init_db
 from app.api.v1 import api_router
 from app.web import web_router
@@ -35,18 +36,11 @@ app = FastAPI(
 )
 
 
-def external_origin(request) -> str:
-    """Return the browser-facing origin when the app is behind a TLS proxy."""
-    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
-    scheme = forwarded_proto if forwarded_proto in {"http", "https"} else request.url.scheme
-    return f"{scheme}://{request.url.netloc}"
-
-
 @app.middleware("http")
 async def private_transaction_responses(request, call_next):
     private = request.url.path == "/transactions" or request.url.path.startswith("/transactions/")
     origin = request.headers.get("origin")
-    if private and origin and origin != external_origin(request):
+    if private and origin and origin != browser_origin(request):
         # The legacy API CORS policy must not expose cookie-authenticated HTML/CSRF.
         response = Response("Cross-origin transaction requests are not allowed.", status_code=403)
     else:
@@ -56,6 +50,9 @@ async def private_transaction_responses(request, call_next):
         response.headers["Pragma"] = "no-cache"
         response.headers["Vary"] = "Cookie, HX-Request, HX-History-Restore-Request"
         response.headers["X-Content-Type-Options"] = "nosniff"
+    web_session = getattr(request.state, "web_session", None)
+    if web_session is not None and not getattr(request.state, "suppress_session_refresh", False):
+        renew_auth_cookie(response, request, web_session)
     return response
 
 # Configure CORS

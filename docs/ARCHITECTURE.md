@@ -103,8 +103,13 @@ creation script calls the user service directly and does not use that switch.
 
 Cookie login uses HttpOnly and SameSite=Lax; Secure depends on the request scheme.
 Transaction pages, fragments and mutations require an active cookie user.
+The cookie JWT has a sliding inactivity deadline configured by
+`ACCESS_TOKEN_EXPIRE_MINUTES`. Authenticated web requests renew it, and protected
+pages report recent visible-tab keyboard, pointer, touch and scroll activity through
+a throttled same-origin endpoint. An idle or hidden page sends no heartbeat. Tokens
+renewed during one login retain a signed session ID so existing forms remain valid.
 Every transaction create/edit/delete/unlink POST validates a server-generated CSRF
-token bound to that login token; an HTMX header alone grants no access. Other cookie
+token bound to that login session; an HTMX header alone grants no access. Other cookie
 flows do not inherit this CSRF check automatically. Expired HTMX sessions use a full
 login redirect. These controls preserve the shared dataset; they do not add ownership.
 Transaction routes reject an explicit cross-origin `Origin` header, including on

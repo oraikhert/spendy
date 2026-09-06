@@ -32,7 +32,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 # Suppress dotenv reads rather than merely overriding its sensitive values.
 with patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}):
-    from app.core.security import create_access_token
+    from app.config import settings
+    from app.core.security import create_access_token, decode_access_token
     from app.database import Base, get_db
     from app.main import app
     from app.models import (
@@ -317,6 +318,78 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         history = await self.client.get("/transactions", headers={"HX-Request": "true", "HX-History-Restore-Request": "true"})
         self.assertEqual(history.status_code, 200)
         self.assertIn("<html", history.text.lower())
+
+    async def test_active_web_session_uses_a_sliding_idle_deadline(self):
+        self.client.cookies.clear()
+        initial_token = create_access_token(
+            {"sub": str(self.data["active"])},
+            expires_delta=timedelta(minutes=1),
+        )
+        self.client.cookies.set("access_token", initial_token)
+
+        page = await self.client.get("/dashboard")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('src="/static/js/session_activity.js"', page.text)
+        self.assertIn(f"Max-Age={settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60}", page.headers["set-cookie"])
+        renewed_token = page.cookies["access_token"]
+        initial_payload = decode_access_token(initial_token)
+        renewed_payload = decode_access_token(renewed_token)
+        self.assertEqual(renewed_payload["sub"], str(self.data["active"]))
+        self.assertGreater(renewed_payload["exp"], initial_payload["exp"])
+        self.assertIsInstance(renewed_payload.get("sid"), str)
+
+        heartbeat = await self.client.post(
+            "/auth/session/refresh",
+            headers={
+                "Origin": "http://testserver",
+                "HX-Request": "true",
+                "X-Spendy-Session-Activity": "true",
+            },
+        )
+        self.assertEqual(heartbeat.status_code, 204)
+        self.assertIn("no-store", heartbeat.headers.get("cache-control", ""))
+        heartbeat_payload = decode_access_token(heartbeat.cookies["access_token"])
+        self.assertEqual(heartbeat_payload["sid"], renewed_payload["sid"])
+
+        csrf = await self.csrf()
+        await self.client.get("/dashboard")
+        created = await self.client.post("/transactions/new", data=self.valid_fields(csrf))
+        self.assertEqual(created.status_code, 303)
+
+        bearer = create_access_token({"sub": str(self.data["active"])})
+        api_response = await self.client.get(
+            "/api/v1/accounts",
+            headers={"Authorization": f"Bearer {bearer}"},
+        )
+        self.assertEqual(api_response.status_code, 200)
+        self.assertNotIn("set-cookie", api_response.headers)
+
+    async def test_session_heartbeat_rejects_non_activity_and_expired_sessions(self):
+        for headers in [
+            {"Origin": "https://evil.example", "HX-Request": "true", "X-Spendy-Session-Activity": "true"},
+            {"Origin": "http://testserver", "HX-Request": "true"},
+        ]:
+            with self.subTest(headers=headers):
+                response = await self.client.post("/auth/session/refresh", headers=headers)
+                self.assertEqual(response.status_code, 403)
+                self.assertNotIn("set-cookie", response.headers)
+
+        self.login(self.data["active"], expired=True)
+        expired = await self.client.post(
+            "/auth/session/refresh",
+            headers={
+                "Origin": "http://testserver",
+                "HX-Request": "true",
+                "X-Spendy-Session-Activity": "true",
+            },
+        )
+        self.assertEqual(expired.status_code, 401)
+        self.assertEqual(expired.headers.get("hx-redirect"), "/auth/login")
+        self.assertNotIn("set-cookie", expired.headers)
+
+        login_page = await self.client.get("/auth/login")
+        self.assertEqual(login_page.status_code, 200)
+        self.assertNotIn("session_activity.js", login_page.text)
 
     async def test_all_surfaces_require_an_active_cookie_session(self):
         transaction, source = self.data["transaction"], self.data["source"]

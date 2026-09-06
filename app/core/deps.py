@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User
 from app.core.security import decode_access_token
+from app.core.web_session import WebSession, session_id_from_token
 from app.config import settings
 from app.services import user_service
 
@@ -124,6 +125,14 @@ async def get_current_user_from_cookie(
     
     if user is None or not user.is_active:
         return None
+
+    session_id = session_id_from_token(access_token, payload)
+    request.state.web_session_id = session_id
+    request.state.web_session = WebSession(
+        user_id=user.id,
+        username=user.username,
+        session_id=session_id,
+    )
     
     return user
 

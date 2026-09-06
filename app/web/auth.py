@@ -1,7 +1,7 @@
 """Web authentication routes for Jinja2 + HTMX."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from markupsafe import escape
@@ -11,14 +11,12 @@ from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate
-from app.core.deps import get_current_user_from_cookie
+from app.core.deps import get_current_user_from_cookie, get_current_user_from_cookie_required
+from app.core.web_session import ACCESS_TOKEN_COOKIE, browser_origin, set_auth_cookie
 from app.services import auth_service, user_service
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
-
-ACCESS_TOKEN_COOKIE = "access_token"
-ACCESS_TOKEN_MAX_AGE_SECONDS = 1800  # TODO: take from auth settings / token TTL
 
 def _render_alert(request: Request, message: str, kind: str = "error") -> HTMLResponse:
     return templates.TemplateResponse(
@@ -29,24 +27,10 @@ def _render_alert(request: Request, message: str, kind: str = "error") -> HTMLRe
     )
 
 
-def _set_auth_cookie(response: Response, token_value: str, request: Request) -> None:
-    # Secure cookies only over HTTPS; in local dev (http) it must be False.
-    secure = request.url.scheme == "https"
-    response.set_cookie(
-        key=ACCESS_TOKEN_COOKIE,
-        value=token_value,
-        httponly=True,
-        samesite="lax",
-        secure=secure,
-        max_age=ACCESS_TOKEN_MAX_AGE_SECONDS,
-        path="/",
-    )
-
-
 def _htmx_redirect(url: str, token_value: str, request: Request) -> Response:
     response = Response(status_code=200)
     response.headers["HX-Redirect"] = url
-    _set_auth_cookie(response, token_value, request)
+    set_auth_cookie(response, token_value, request)
     return response
 
 
@@ -134,3 +118,17 @@ async def logout() -> RedirectResponse:
     response = RedirectResponse(url="/auth/login", status_code=303)
     response.delete_cookie(key=ACCESS_TOKEN_COOKIE, path="/")
     return response
+
+
+@router.post("/session/refresh", status_code=status.HTTP_204_NO_CONTENT)
+async def refresh_session(
+    request: Request,
+    user: Annotated[User, Depends(get_current_user_from_cookie_required)],
+) -> Response:
+    """Record same-origin browser activity; middleware advances the idle deadline."""
+    origin = request.headers.get("origin")
+    activity_header = request.headers.get("x-spendy-session-activity")
+    if origin != browser_origin(request) or activity_header != "true":
+        request.state.suppress_session_refresh = True
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid session activity request")
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "private, no-store"})

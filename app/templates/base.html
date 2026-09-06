@@ -33,6 +33,7 @@
 
   {% include "partials/_footer.html" %}
 
+  {% if user %}<script src="/static/js/session_activity.js" defer></script>{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

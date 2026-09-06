@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.schemas.user import Token
 from app.core.security import verify_password, create_access_token
+from app.core.web_session import new_session_id
 from app.services.user_service import get_user_by_username_or_email
 
 
@@ -48,7 +49,7 @@ async def create_user_access_token(user: User) -> Token:
     """
     # Create access token (sub must be string for JWT)
     access_token = create_access_token(
-        data={"sub": str(user.id), "username": user.username}
+        data={"sub": str(user.id), "username": user.username, "sid": new_session_id()}
     )
     
     return Token(access_token=access_token, token_type="bearer")

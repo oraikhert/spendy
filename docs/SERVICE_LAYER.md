@@ -242,11 +242,20 @@ hash passwords and commit writes. [Auth services](../app/services/auth_service.p
 accept username or email, check password and active status, and create JWTs without
 DB writes. Registration policy belongs to routes; CLI creation bypasses it.
 
-[Dashboard summaries](../app/services/dashboard_service.py) use posting time with
+[Dashboard JSON summaries](../app/services/dashboard_service.py) use posting time with
 transaction-time fallback and inclusive date bounds. Spending sums absolute negative
 amounts, income sums nonnegative amounts, and per-kind totals retain their sign.
 `base_currency` does not perform conversion: totals can mix currencies unless the
 selected data is already in one currency.
+
+The separate [HTML dashboard overview](../app/services/dashboard_overview_service.py)
+returns immutable period/currency values without ORM records. It implements the
+[Dashboard calendar and spending contract](ui/DASHBOARD.md#summary-data), with an
+injectable server-calendar `today`. Two read-only SQL queries discover effective
+card timezones and aggregate the four displayed periods plus the comparison range;
+query count does not grow with transaction count. It never commits or converts
+currencies. The web route calls it directly and renders a complete 503 error state
+on a failed read, with no partial totals. The legacy JSON contract is unchanged.
 
 When changing these contracts, use synthetic fixtures and isolate DB/network work.
 Cover duplicate content, ambiguous matches, reprocessing links, FX failure, zero

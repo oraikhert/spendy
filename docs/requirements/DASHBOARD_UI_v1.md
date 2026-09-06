@@ -1,6 +1,16 @@
 # Dashboard UI — development task v1
 
-Iteration: **v1** · Status: **Planned** · Baseline: **2026-09-06**
+Iteration: **v1** · Status: **Completed** · Baseline: **2026-09-06**
+
+Completed: **2026-09-06**. UI contract revision:
+`8a17bad906e6fea617ba1ab399a7ae076320df6a` (`docs/ui/DASHBOARD.md`).
+
+Acceptance: `python tests/test_dashboard_service.py` (3 checks),
+`python tests/test_dashboard_web.py` (4 checks), and `git diff --check` passed.
+A synthetic-data browser pass at 360 px and 1280 px verified layout, amount-link
+keyboard focus, long amounts without horizontal scrolling, and empty/error states.
+PostgreSQL and the unrelated full API suite were not run. No new dependency,
+dashboard-specific CSS or JavaScript, or database migration was needed.
 
 Implement the [Dashboard UI](../ui/DASHBOARD.md): a compact current-month spending
 summary with three earlier months for context. That document defines the target
@@ -114,4 +124,3 @@ FX conversion and account/card management. Do not add placeholder controls.
   only if implementation changes their current behavior. Keep the UI document free
   of delivery notes. Mark this task Completed only after acceptance and record the
   UI document's Git revision.
-

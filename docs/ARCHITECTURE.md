@@ -115,6 +115,10 @@ login redirect. These controls preserve the shared dataset; they do not add owne
 Transaction routes reject an explicit cross-origin `Origin` header, including on
 reads, so the existing JSON API CORS policy cannot expose cookie HTML or CSRF tokens.
 
+The read-only Dashboard requires the same active cookie user and summarizes the
+shared dataset. Its financial HTML and summary errors use `private, no-store`, vary
+by cookie, and disable HTMX history storage. It adds no ownership rule or mutation.
+
 Transaction responses and errors use `private, no-store` and
 vary by cookie/HTMX request headers. Transaction pages disable HTMX history caching
 and do not persist bank data in localStorage; Back/Forward re-fetches the URL.

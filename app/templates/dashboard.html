@@ -1,72 +1,104 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import info_row, badge_bool, alert %}
 
 {% block title %}Dashboard - Spendy{% endblock %}
+{% block extra_head %}<meta name="htmx-config" content='{"historyCacheSize": 0}'>{% endblock %}
+
+{% macro amount_link(period, entry, prominent=false) %}
+  <a href="{{ period_url(period) }}"
+     class="inline-block max-w-full rounded-sm font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary {{ 'text-4xl sm:text-5xl' if prominent else 'text-2xl' }}"
+     aria-label="{{ money(entry.net_spending, entry.currency, show_plus=false) }} net spending, {{ period.date_from.strftime('%B %Y') }}, {{ period.date_from.isoformat() }} through {{ period.date_to.isoformat() }}. Show transactions for this period.">{{ money(entry.net_spending, entry.currency, show_plus=false) }}</a>
+  {% if entry.net_spending < 0 %}
+    <p class="mt-2 text-sm text-base-content/70">Net refund · refunds exceed purchases.</p>
+  {% endif %}
+{% endmacro %}
+
+{% macro date_range(period) %}
+  <time datetime="{{ period.date_from.isoformat() }}">{{ period.date_from.strftime('%d %b %Y') }}</time>
+  <span aria-hidden="true">–</span><span class="sr-only">through</span>
+  <time datetime="{{ period.date_to.isoformat() }}">{{ period.date_to.strftime('%d %b %Y') }}</time>
+{% endmacro %}
 
 {% block content %}
-<div class="mt-8 space-y-6">
+<div class="mx-auto my-6 max-w-6xl space-y-8 sm:my-10" hx-history="false">
+  <header class="space-y-2">
+    <h1 class="text-3xl font-bold tracking-tight">Dashboard</h1>
+    <p class="text-base-content/70">Your spending this month, with the previous three months for context.</p>
+  </header>
 
-  <section class="card bg-base-100 shadow">
-    <div class="card-body">
-      <h2 class="card-title text-3xl">Welcome, {{ user.full_name or user.username }}! 👋</h2>
-      <p class="text-base-content/70">This is your personal family budget dashboard.</p>
-    </div>
-  </section>
-
-  {{ alert("info", "Your transaction history is ready. View transactions or add a new entry below.") }}
-
-  <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-
-    <div class="card bg-base-100 shadow">
-      <div class="card-body">
-        <h3 class="card-title">Account info</h3>
-        <div class="space-y-2">
-          {{ info_row("Email:", user.email, user.email) }}
-          {{ info_row("Username:", user.username) }}
-          {{ info_row("ID:", user.id) }}
-          {% if user.full_name %}
-            {{ info_row("Name:", user.full_name) }}
-          {% endif %}
-        </div>
+  {% if overview is none %}
+    <section class="alert alert-error items-start" role="alert" aria-labelledby="dashboard-error">
+      <div class="space-y-3">
+        <h2 id="dashboard-error" class="font-semibold">Unable to load spending</h2>
+        <p>Your summary could not be loaded. Please try again.</p>
+        <a href="/dashboard" class="btn btn-sm focus-visible:outline-2 focus-visible:outline-offset-4">Retry</a>
       </div>
-    </div>
-
-    <div class="card bg-base-100 shadow">
-      <div class="card-body">
-        <h3 class="card-title">Status</h3>
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <span class="text-base-content/70">Active:</span>
-            {{ badge_bool(user.is_active, "success", "error") }}
+    </section>
+  {% else %}
+    {% set current = overview.current %}
+    <section class="card min-w-0 border border-base-300 border-t-4 border-t-primary bg-base-100 shadow-sm" aria-labelledby="current-month">
+      <div class="card-body gap-6 p-5 sm:p-8">
+        <header class="space-y-2">
+          <p class="text-xs font-semibold uppercase tracking-widest text-primary">This month</p>
+          <h2 id="current-month" class="text-2xl font-semibold">{{ current.date_from.strftime('%B %Y') }}</h2>
+          <p class="text-sm text-base-content/70">{{ date_range(current) }}</p>
+        </header>
+        {% if current.currencies %}
+          <div class="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-3">
+            {% for entry in current.currencies %}
+              <section class="min-w-0 space-y-4 border-t border-base-200 pt-5" aria-labelledby="currency-{{ loop.index }}">
+                <h3 id="currency-{{ loop.index }}" class="text-sm font-medium text-base-content/70">Net spending · {{ entry.currency }}</h3>
+                <div class="min-w-0">{{ amount_link(current, entry, true) }}</div>
+                <dl class="grid min-w-0 grid-cols-2 gap-4 text-sm">
+                  <div class="min-w-0">
+                    <dt class="text-base-content/70">Transactions</dt>
+                    <dd class="mt-1 text-base font-semibold tabular-nums">{{ entry.count }}</dd>
+                  </div>
+                  <div class="min-w-0">
+                    <dt class="text-base-content/70">Average per transaction</dt>
+                    <dd class="mt-1 text-base font-semibold tabular-nums [overflow-wrap:anywhere]">{{ money(entry.average, entry.currency, show_plus=false) }}</dd>
+                  </div>
+                </dl>
+                <p class="text-sm text-base-content/70">
+                  {% if entry.comparison_percent is none %}
+                    No comparable spending
+                  {% else %}
+                    <span class="font-semibold text-base-content">{{ '+' if entry.comparison_percent > 0 else '−' if entry.comparison_percent < 0 else '' }}{{ entry.comparison_percent|abs }}%</span>
+                    vs {{ overview.comparison.date_from.strftime('%d %b') }}–{{ overview.comparison.date_to.strftime('%d %b %Y') }}
+                  {% endif %}
+                </p>
+              </section>
+            {% endfor %}
           </div>
-
-          <div class="flex justify-between items-center">
-            <span class="text-base-content/70">Administrator:</span>
-            {{ badge_bool(user.is_superuser, "primary", "ghost") }}
-          </div>
-
-          <div class="flex justify-between items-center">
-            <span class="text-base-content/70">Created:</span>
-            <span class="font-semibold text-sm">
-              {{ user.created_at.strftime('%d.%m.%Y') if user.created_at else "—" }}
-            </span>
-          </div>
-        </div>
+        {% else %}
+          <p class="rounded-box bg-base-200 p-5 text-base-content/70" role="status">No purchase or refund transactions this month</p>
+        {% endif %}
       </div>
-    </div>
+    </section>
 
-    <div class="card bg-base-100 shadow">
-      <div class="card-body">
-        <h3 class="card-title">Quick actions</h3>
-        <div class="space-y-2">
-          <a href="/transactions/new" class="btn btn-primary btn-block btn-sm">Add transaction</a>
-          <a href="/transactions" class="btn btn-outline btn-block btn-sm">View transactions</a>
-          <a href="/auth/logout" class="btn btn-outline btn-block btn-sm">Log out</a>
-        </div>
+    <section aria-labelledby="previous-months" class="space-y-4">
+      <h2 id="previous-months" class="text-lg font-semibold">Previous months</h2>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {% for period in overview.previous %}
+          <section class="card min-w-0 border border-base-300 bg-base-100" aria-labelledby="month-{{ loop.index }}">
+            <div class="card-body gap-5 p-5 sm:p-6">
+              <header class="space-y-1">
+                <h3 id="month-{{ loop.index }}" class="text-lg font-semibold">{{ period.date_from.strftime('%B %Y') }}</h3>
+                <p class="text-xs text-base-content/70">{{ date_range(period) }}</p>
+              </header>
+              {% for entry in period.currencies %}
+                <div class="min-w-0 border-t border-base-200 pt-4">
+                  <p class="mb-2 text-xs font-medium text-base-content/70">Net spending · {{ entry.currency }}</p>
+                  {{ amount_link(period, entry) }}
+                  <p class="mt-2 text-sm text-base-content/70">{{ entry.count }} {{ 'transaction' if entry.count == 1 else 'transactions' }}</p>
+                </div>
+              {% else %}
+                <p class="text-sm text-base-content/70" role="status">No purchase or refund transactions</p>
+              {% endfor %}
+            </div>
+          </section>
+        {% endfor %}
       </div>
-    </div>
-
-  </section>
-
+    </section>
+  {% endif %}
 </div>
 {% endblock %}

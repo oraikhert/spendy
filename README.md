@@ -2,7 +2,8 @@
 
 Spendy tracks accounts, cards, transactions and their source messages/files.
 The JSON API supports transaction management, SMS parsing, matching and summaries.
-The web UI provides login, optional registration, a dashboard and transaction
+The web UI provides login, optional registration, a four-month spending dashboard
+with separate currency totals and date-range drill-down links, and transaction
 list/detail/create/edit pages with filters, deletion and linked source-observation
 details. Uploaded files are private backend inputs and cannot be downloaded. The API parses Emirates NBD credit-card
 statement PDFs; other PDF/image formats are not implemented. Family groups, budgets,
@@ -125,11 +126,13 @@ python tests/test_source_processing.py
 python tests/test_source_migration.py
 ```
 
-Run the transaction and source-processing schema/service/API regressions without a running server:
+Run the transaction, source-processing and dashboard regressions without a running server:
 
 ```bash
 python tests/test_transaction_service.py
 python tests/test_transactions_web.py
+python tests/test_dashboard_service.py
+python tests/test_dashboard_web.py
 git diff --check
 ```
 

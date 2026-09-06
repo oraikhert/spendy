@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from app.config import settings
+from app.web.presentation import money
 
 
 KINDS = {"purchase": "Purchase", "topup": "Top-up", "refund": "Refund", "other": "Other"}
@@ -122,14 +123,6 @@ def csrf_token(request):
 
 def valid_csrf(request, value):
     return isinstance(value, str) and value.isascii() and hmac.compare_digest(csrf_token(request), value)
-
-
-def money(value, currency=""):
-    if value is None:
-        return "Not specified"
-    amount = Decimal(value)
-    sign = "−" if amount < 0 else "+" if amount > 0 else ""
-    return f"{sign}{abs(amount):,.2f} {currency or ''}".strip()
 
 
 def display_date(value, missing="Not specified"):

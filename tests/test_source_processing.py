@@ -682,6 +682,65 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(await db.get(TransactionObservation, observation_id))
             self.assertIsNotNone(await db.get(TransactionSourceLink, observation_id))
 
+    async def test_statement_rows_resolve_cards_from_separate_sections(self):
+        async with self.sessions() as db:
+            previous_card = Card(
+                account_id=self.account_id,
+                card_masked_number="**** 2222",
+                card_type="credit",
+                name="Previous card",
+            )
+            db.add(previous_card)
+            await db.commit()
+            previous_card_id = previous_card.id
+
+        def parse_statement(_source):
+            return ParserResult(
+                status=ParseStatus.PROCESSED,
+                observations=tuple(
+                    ObservationInput(
+                        source_item_key=str(index),
+                        amount=Decimal("-10.00"),
+                        currency="AED",
+                        transaction_datetime=datetime(2026, 1, index, tzinfo=UTC),
+                        description=f"CARD {last_four} PURCHASE",
+                        transaction_kind="purchase",
+                        card_last_four=last_four,
+                    )
+                    for index, last_four in enumerate(("1111", "2222"), start=1)
+                ),
+                bank_statement=ParsedBankStatement(
+                    bank="Emirates NBD",
+                    statement_period_start=date(2026, 1, 1),
+                    statement_period_end=date(2026, 1, 31),
+                    statement_currency="AED",
+                    card_type="Synthetic Rewards",
+                    card_last_four="1111",
+                    page_count=1,
+                ),
+            )
+
+        parser = RegisteredParser(
+            name="emirates_nbd_credit_card_statement_pdf",
+            version="4-test",
+            parse=parse_statement,
+        )
+        key = (SourceKind.BANK_STATEMENT.value, "application/pdf")
+        with patch.dict(PARSER_REGISTRY, {key: (parser,)}):
+            response = await self.client.post(
+                "/api/v1/source-payloads/upload",
+                data={"source_kind": "bank_statement"},
+                files={"file": ("statement.pdf", b"%PDF-synthetic", "application/pdf")},
+            )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        payload = response.json()
+        self.assertEqual(payload["bank_statement_details"]["card_id"], self.card_id)
+        self.assertEqual(
+            [value["card_id"] for value in payload["observations"]],
+            [self.card_id, previous_card_id],
+        )
+
     async def test_identical_statement_rows_claim_distinct_matching_transactions(self):
         observed_at = datetime(2026, 1, 5, 12, tzinfo=UTC)
         async with self.sessions() as db:

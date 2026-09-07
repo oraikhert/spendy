@@ -99,6 +99,31 @@ Previous Statement Purchase / Cash Advance Interest/Other Charges Payments/Credi
 236.50 100.00 0.00 0.00 336.50 436.50
 """
 
+MULTI_CARD_PAGE_ONE = """
+Emirates NBD
+Credit Card Statement
+Card Number: 9999 XXXX XXXX 1111
+Card Type: Synthetic Rewards
+Statement Period: 01-Jan-26 to 31-Jan-26
+Available Credit Limit (AED)
+Transaction Date Posting Date Description Amount
+Primary Card Number
+SYNTHETIC HOLDER: 9999 XXXX XXXX 1111
+01/01/2026 02/01/2026 PRIMARY CARD PURCHASE 10.00
+Primary Card Number
+SYNTHETIC HOLDER: 8888 XXXX XXXX 2222
+03/01/2026 04/01/2026 REPLACED CARD PURCHASE 20.00
+"""
+
+MULTI_CARD_PAGE_TWO = """
+Card Number: 9999 XXXX XXXX 1111
+Transaction Date Posting Date Description Amount
+05/01/2026 06/01/2026 REPLACED CARD CONTINUATION 30.00
+STATEMENT SUMMARY
+Previous Statement Purchase / Cash Advance Interest/Other Charges Payments/Credits Total Payment Due Current Balance
+0.00 60.00 0.00 0.00 60.00 60.00
+"""
+
 
 class StatementParserTests(unittest.TestCase):
     def test_metadata_rows_fx_signs_and_summary(self):
@@ -127,6 +152,18 @@ class StatementParserTests(unittest.TestCase):
         self.assertEqual(result.bank_statement.card_last_four, "1111")
         self.assertEqual(result.bank_statement.card_type, "Synthetic Rewards")
         self.assertEqual(len(result.observations), 4)
+
+    def test_card_section_applies_to_following_rows_across_pages(self):
+        result = parse_emirates_nbd_statement_text(
+            [MULTI_CARD_PAGE_ONE, MULTI_CARD_PAGE_TWO]
+        )
+
+        self.assertEqual(result.status.value, "processed")
+        self.assertEqual(result.bank_statement.card_last_four, "1111")
+        self.assertEqual(
+            [value.card_last_four for value in result.observations],
+            ["1111", "2222", "2222"],
+        )
 
     def test_statement_dates_use_source_timezone_and_preserve_local_dates(self):
         result = parse_emirates_nbd_statement_text(

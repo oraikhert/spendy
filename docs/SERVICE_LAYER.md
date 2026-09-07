@@ -123,8 +123,10 @@ but is excluded from storage and idempotency. `source_timezone` accepts an IANA 
 when omitted it resolves from the card override, account, then `UTC`. The resolved value
 is creation metadata, participates in idempotency comparison and is persisted in
 `ingestion_metadata` for reprocessing. The Emirates NBD parser extracts card, period and
-statement metadata, multi-page rows, continuation text and FX originals; it validates
-parsed debit and credit totals against the statement summary. Invalid,
+statement metadata, multi-page rows, continuation text and FX originals. When a
+statement contains consecutive primary or supplementary card sections, each row is
+assigned to that section's card while the payload retains the statement's main card.
+The parser validates parsed debit and credit totals against the statement summary. Invalid,
 encrypted-with-the-wrong-password and unsupported PDFs are rejected before persistence.
 A recognized statement whose rows cannot be extracted consistently is kept as a failed
 payload/detail without observations. The configured upload limit defaults to 20 MiB,

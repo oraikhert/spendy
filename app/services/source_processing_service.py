@@ -798,10 +798,15 @@ def _observation_from_input(
     *,
     default_account_id: int | None = None,
     default_card_id: int | None = None,
+    default_card_last_four: str | None = None,
 ) -> TransactionObservation:
     fields = asdict(value)
     fields["account_id"] = fields["account_id"] or default_account_id
-    fields["card_id"] = fields["card_id"] or default_card_id
+    if fields["card_id"] is None and fields["card_last_four"] in (
+        None,
+        default_card_last_four,
+    ):
+        fields["card_id"] = default_card_id
     return TransactionObservation(source_payload_id=payload_id, **fields)
 
 
@@ -895,6 +900,11 @@ async def _process_payload(
             value,
             default_account_id=default_account_id,
             default_card_id=default_card_id,
+            default_card_last_four=(
+                result.bank_statement.card_last_four
+                if result.bank_statement is not None
+                else None
+            ),
         )
         for value in result.observations
     ]

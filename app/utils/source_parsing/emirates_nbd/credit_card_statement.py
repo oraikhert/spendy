@@ -72,6 +72,9 @@ _MASKED_CARD_RE = re.compile(
     r"\b\d{4}\s+(?:[X*]{4}\s+){2}(?P<last_four>\d{4})\b",
     re.IGNORECASE,
 )
+_CARD_SECTION_RE = re.compile(
+    r"\b(?:Primary|Supplementary)\s+Card\s+Number\b", re.IGNORECASE
+)
 _MONEY_RE = re.compile(r"\d[\d,]*\.\d{2}")
 _MONTHS = {
     "jan": 1,
@@ -207,13 +210,15 @@ def _parse_observations(
 ) -> tuple[ParsedObservation, ...]:
     rows: list[dict[str, object]] = []
     currency = statement.statement_currency
+    active_card_last_four = statement.card_last_four
     if currency is None:
         raise _StatementExtractionError("Statement currency was not found")
 
     for page_number, page_text in enumerate(pages, start=1):
         table_active = False
         current_row: dict[str, object] | None = None
-        for line in page_text.splitlines():
+        page_lines = page_text.splitlines()
+        for line_index, line in enumerate(page_lines):
             stripped = line.strip()
             normalized = " ".join(stripped.split())
             if "STATEMENT SUMMARY" in normalized or "Emirates NBD Bank" in normalized:
@@ -227,6 +232,15 @@ def _parse_observations(
                 and "Amount" in normalized
             ):
                 table_active = True
+                current_row = None
+                continue
+
+            if _CARD_SECTION_RE.search(normalized):
+                for candidate in page_lines[line_index : line_index + 3]:
+                    masked_card = _MASKED_CARD_RE.search(candidate)
+                    if masked_card is not None:
+                        active_card_last_four = masked_card.group("last_four")
+                        break
                 current_row = None
                 continue
 
@@ -253,6 +267,7 @@ def _parse_observations(
                     ),
                     "description": description,
                     "amount": signed_amount,
+                    "card_last_four": active_card_last_four,
                     "transaction_kind": _transaction_kind(description, is_credit),
                     "printed_transaction_date": None,
                     "installment_number": None,
@@ -436,7 +451,11 @@ def _parse_observations(
                 ),
                 description=str(row["description"]),
                 transaction_kind=str(row["transaction_kind"]),
-                card_last_four=statement.card_last_four,
+                card_last_four=(
+                    str(row["card_last_four"])
+                    if row["card_last_four"] is not None
+                    else None
+                ),
                 raw_fragment="\n".join(row["raw_lines"]),
                 extraction_confidence=Decimal("1.0000"),
                 extraction_metadata=metadata,

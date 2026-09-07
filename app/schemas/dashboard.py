@@ -17,8 +17,9 @@ class LargestSpendingResponse(DashboardModel):
 class CurrencySpendingResponse(DashboardModel):
     currency: str
     net_spending: Decimal
+    turnover: Decimal
     count: int
-    average: Decimal
+    average: Decimal | None
     comparison_percent: Decimal | None = None
     largest_expenses: list[LargestSpendingResponse]
 

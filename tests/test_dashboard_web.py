@@ -76,14 +76,17 @@ class DashboardWebTests(DashboardDatabase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "private, no-store")
         body = response.text.split("<main", 1)[1].split("</main>", 1)[0]
-        for text in ("90.00 AED", "−25.00 EUR", "0.00 USD", "12.86 AED", "+125%", "Net refund", "No comparable spending", "100.00 AED", "6.00 AED", "4.00 AED", "10.00 USD", "66.00 AED", "30.00 AED"):
+        for text in ("90.00 AED", "290.00 AED", "50.00 CAD", "−25.00 EUR", "0.00 USD", "12.86 AED", "Not available", "+125%", "Net refund", "No comparable spending", "100.00 AED", "6.00 AED", "4.00 AED", "10.00 USD", "66.00 AED", "30.00 AED"):
             self.assertIn(text, body)
+        self.assertIn("Turnover", body)
+        self.assertNotIn("Net spending ·", body)
+        self.assertIn("Transactions", body)
         self.assertEqual(body.count("Largest expenses"), 2)
         for text in ("Welcome,", "Account info", "Administrator", "Quick actions", "Add transaction", "View transactions", "Log out", "<form"):
             self.assertNotIn(text, body)
         self.assertIn('href="/transactions"', response.text.split("<main", 1)[0])
         links = re.findall(r'<a href="([^"]+)"', body)
-        expected_ranges = [("2026-03-01", "2026-03-06")] * 3 + [
+        expected_ranges = [("2026-03-01", "2026-03-06")] * 4 + [
             ("2026-02-01", "2026-02-28"), ("2026-01-01", "2026-01-31")]
         self.assertIn('<h2 id="dashboard-year-heading-2026"', body)
         self.assertIn('hx-get="/dashboard/years/2025"', body)
@@ -93,7 +96,7 @@ class DashboardWebTests(DashboardDatabase):
             parts = urlsplit(unescape(url))
             self.assertEqual(parts.path, "/transactions")
             self.assertEqual(parse_qs(parts.query), {"period": ["custom"], "date_from": [start], "date_to": [end]})
-        self.assertEqual(body.count('aria-label="'), 5)
+        self.assertEqual(body.count('aria-label="'), 6)
         historical = await self.client.get("/dashboard/years/2025", headers={"HX-Request": "true"})
         self.assertEqual(historical.status_code, 200)
         self.assertEqual(historical.headers["cache-control"], "private, no-store")

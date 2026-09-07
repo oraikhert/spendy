@@ -1,7 +1,7 @@
 """Transaction model"""
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, DateTime, ForeignKey, Integer, Numeric, Index
+from sqlalchemy import Boolean, String, DateTime, ForeignKey, Integer, Numeric, Index, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
 
@@ -30,6 +30,9 @@ class Transaction(Base):
     
     # Kind
     transaction_kind: Mapped[str] = mapped_column(String(50), nullable=False)  # purchase | topup | refund | other
+    excluded_from_summary: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     
     # Multi-currency optional
     original_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)

@@ -195,6 +195,7 @@ async def get_transactions(
     direction: str | None = None,
     min_abs_amount: Decimal | None = None,
     max_abs_amount: Decimal | None = None,
+    excluded_from_summary: bool | None = None,
     calendar_date_from: date | None = None,
     calendar_date_to: date | None = None,
 ) -> tuple[list[Transaction], int]:
@@ -297,6 +298,8 @@ async def get_transactions(
         filters.append(func.abs(Transaction.amount) >= min_abs_amount)
     if max_abs_amount is not None:
         filters.append(func.abs(Transaction.amount) <= max_abs_amount)
+    if excluded_from_summary is not None:
+        filters.append(Transaction.excluded_from_summary == excluded_from_summary)
 
     total = await db.scalar(select(func.count(Transaction.id)).where(*filters))
     result = await db.execute(
@@ -356,6 +359,19 @@ async def update_transaction(
         setattr(transaction, field, value)
     if update_data:
         await _refresh_fingerprint(db, transaction)
+        await db.commit()
+    return await get_transaction(db, transaction_id)
+
+
+async def set_transaction_summary_exclusion(
+    db: AsyncSession, transaction_id: int, excluded: bool
+) -> Transaction | None:
+    """Set the summary-exclusion flag and commit without recanonicalizing data."""
+    transaction = await get_transaction(db, transaction_id)
+    if transaction is None:
+        return None
+    if transaction.excluded_from_summary != excluded:
+        transaction.excluded_from_summary = excluded
         await db.commit()
     return await get_transaction(db, transaction_id)
 

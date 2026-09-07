@@ -4,12 +4,15 @@
     <a class="link link-hover" href="{{ back_url }}">← Back to transactions</a>
     <a class="btn btn-outline" href="{{ edit_url }}">Edit</a>
   </div>
-  {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+  <div id="transaction-summary-message">{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}</div>
   <header class="card bg-base-100 shadow-sm"><div class="card-body gap-3">
     <p class="text-sm text-base-content/65">Transaction #{{ transaction.id }}</p>
     <div>{{ amount(transaction, true) }}</div>
     <h1 class="text-xl sm:text-2xl font-semibold transaction-text">{{ transaction.description or 'No description' }}</h1>
-    <span class="badge badge-ghost">{{ kind_label(transaction.transaction_kind) }}</span>
+    <div class="flex flex-wrap gap-2">
+      <span class="badge badge-ghost">{{ kind_label(transaction.transaction_kind) }}</span>
+      {% if transaction.excluded_from_summary %}<span class="badge badge-warning">Excluded</span>{% endif %}
+    </div>
   </div></header>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
     <section class="card bg-base-100 shadow-sm" aria-labelledby="transaction-details-heading"><div class="card-body">
@@ -42,11 +45,18 @@
           {% if transaction.fx_fee is not none %}{{ detail_row('Recorded FX fee', transaction.fx_fee) }}<p class="text-sm text-base-content/65">Fee currency is not recorded. This fee is read-only and excluded from calculations.</p>{% endif %}
         </dl>
       </details>
-      <form method="post" action="/transactions/{{ transaction.id }}/delete" hx-post="/transactions/{{ transaction.id }}/delete" class="mt-6" data-transaction-mutation data-confirm-title="Delete transaction?" data-confirm-message="Delete {{ transaction.description or 'No description' }} ({{ money(transaction.amount, transaction.currency) }})? This cannot be undone. Sources, files, accounts, cards, and other source links will remain." data-confirm-label="Delete transaction">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}">
-        <button class="btn btn-outline btn-error" type="submit">Delete transaction</button>
-        <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
-      </form>
+      <div class="mt-6 flex flex-wrap items-start gap-3">
+        <form method="post" action="/transactions/{{ transaction.id }}/summary-exclusion" hx-post="/transactions/{{ transaction.id }}/summary-exclusion" hx-target="#transaction-detail" hx-swap="outerHTML show:#transaction-summary-message:top">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}">
+          <input type="hidden" name="excluded_from_summary" value="{{ 'false' if transaction.excluded_from_summary else 'true' }}">
+          <button class="btn btn-outline" type="submit">{{ 'Include in summary' if transaction.excluded_from_summary else 'Exclude from summary' }}</button>
+        </form>
+        <form method="post" action="/transactions/{{ transaction.id }}/delete" hx-post="/transactions/{{ transaction.id }}/delete" data-transaction-mutation data-confirm-title="Delete transaction?" data-confirm-message="Delete {{ transaction.description or 'No description' }} ({{ money(transaction.amount, transaction.currency) }})? This cannot be undone. Sources, files, accounts, cards, and other source links will remain." data-confirm-label="Delete transaction">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}">
+          <button class="btn btn-outline btn-error" type="submit">Delete transaction</button>
+          <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
+        </form>
+      </div>
     </div></section>
     {% include "transactions/_sources.html" %}
   </div>

@@ -84,17 +84,19 @@ class DashboardApiTests(DashboardDatabase):
         self.assertEqual(payload["previous"][-1]["date_from"], "2026-01-01")
         self.assertEqual(payload["previous"][-1]["date_to"], "2026-01-31")
         self.assertEqual(
-            [(entry["currency"], entry["net_spending"], entry["count"],
+            [(entry["currency"], entry["net_spending"], entry["turnover"], entry["count"],
               entry["comparison_percent"])
              for entry in payload["current"]["currencies"]],
-            [("AED", "90.00", 7, "125"),
-             ("EUR", "-25.00", 1, None),
-             ("USD", "0.00", 2, None)],
+            [("AED", "90.00", "290.00", 7, "125"),
+             ("CAD", "0.00", "50.00", 0, None),
+             ("EUR", "-25.00", "-25.00", 1, None),
+             ("USD", "0.00", "0.00", 2, None)],
         )
         self.assertEqual(
             payload["current"]["currencies"][0]["average"],
             "12.85714285714285714285714286",
         )
+        self.assertIsNone(payload["current"]["currencies"][1]["average"])
         self.assertEqual(
             payload["current"]["currencies"][0]["largest_expenses"],
             [{"description": "Synthetic dashboard fixture", "amount": "100.00"},

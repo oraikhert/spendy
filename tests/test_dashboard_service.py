@@ -49,6 +49,8 @@ async def seed_dashboard(db):
     add("-10", "USD")
     add("10", "USD", "refund")
     add("25", "EUR", "refund")
+    add("-200", excluded_from_summary=True)
+    add("-50", "CAD", excluded_from_summary=True)
     add("-500", kind="other")
     add("-500", kind="topup")
     add("-500", when=None)
@@ -94,9 +96,14 @@ class DashboardServiceTests(DashboardDatabase):
         self.assertEqual(len(statements), 4)
         current = overview.current
         self.assertEqual((current.date_from, current.date_to), (date(2026, 3, 1), TODAY))
-        self.assertEqual([entry.currency for entry in current.currencies], ["AED", "EUR", "USD"])
-        aed, eur, usd = current.currencies
+        self.assertEqual([entry.currency for entry in current.currencies], ["AED", "CAD", "EUR", "USD"])
+        aed, cad, eur, usd = current.currencies
         self.assertEqual((aed.net_spending, aed.count, aed.average), (Decimal("90"), 7, Decimal(90) / 7))
+        self.assertEqual(aed.turnover, Decimal("290"))
+        self.assertEqual(
+            (cad.net_spending, cad.turnover, cad.count, cad.average),
+            (Decimal(0), Decimal("50"), 0, None),
+        )
         self.assertEqual(aed.comparison_percent, Decimal("125"))
         self.assertEqual((eur.net_spending, eur.count), (Decimal("-25"), 1))
         self.assertEqual((usd.net_spending, usd.count, usd.average), (Decimal(0), 2, Decimal(0)))
@@ -149,8 +156,9 @@ class DashboardServiceTests(DashboardDatabase):
                                    description="Synthetic zero baseline", transaction_datetime=datetime(2026, 2, 2)))
             await db.commit()
             overview = await get_dashboard_overview(db, today=TODAY)
-            self.assertEqual(overview.current.currencies[1].comparison_percent, Decimal(50))
-            self.assertIsNone(overview.current.currencies[2].comparison_percent)
+            currencies = {entry.currency: entry for entry in overview.current.currencies}
+            self.assertEqual(currencies["EUR"].comparison_percent, Decimal(50))
+            self.assertIsNone(currencies["USD"].comparison_percent)
 
     async def test_january_starts_with_the_complete_previous_year(self):
         async with self.sessions() as db:

@@ -19,6 +19,8 @@ Interface labels are English; user content retains its language.
   entered by the user.
 - Empty descriptions show `No description`. Location appears only when populated
   and different from the description. Source counts describe links, not verification.
+- The `Excluded` badge identifies a transaction that remains stored and visible
+  but does not contribute to Dashboard net spending.
 
 ## Transaction list
 
@@ -33,7 +35,8 @@ Narrower screens show cards, wrapping text and keeping amounts visible.
 
 ### Filters
 
-Defaults: `All time`, all accounts, cards, types, directions, and currencies; empty search and amount bounds.
+Defaults: `All time`, all accounts, cards, types, directions, currencies, and summary
+statuses; empty search and amount bounds.
 
 | Control | Behavior |
 |---|---|
@@ -45,6 +48,7 @@ Defaults: `All time`, all accounts, cards, types, directions, and currencies; em
 | More filters: Direction | All, Money out, or Money in. Zero appears only in All. |
 | More filters: Currency | All currencies or a three-letter code, with saved-code suggestions. |
 | More filters: Amount from/to | Inclusive, nonnegative bounds on absolute amount; either may be empty. Requires a specific currency. |
+| More filters: Summary status | All transactions, only transactions included in the Dashboard summary, or only excluded transactions. |
 
 Conditions combine with AND. Changing currency clears amount bounds. Invalid combinations
 show errors without applying a broader search. Date ranges include both complete calendar
@@ -79,6 +83,11 @@ and posting timestamps, location, and saved original amount/exchange rate when p
 Missing timestamps show `Not specified`. Collapsed `Record info` contains Added/Updated
 timestamps and any `Recorded FX fee`, labeled `Fee currency is not recorded`.
 That fee is read-only and excluded from calculations. `Delete transaction` appears below Details.
+
+The page displays an `Excluded` badge when applicable. `Exclude from
+summary` and `Include in summary` are immediate, CSRF-protected reversible actions;
+they preserve the originating transaction-list URL and do not alter source links or
+canonical transaction values.
 
 ### Sources
 
@@ -148,6 +157,8 @@ Clearing both original fields clears the rate. Clearing optional fields removes 
 untouched values, timestamp precision, and existing UTC offsets are preserved.
 
 `Create transaction` / `Save changes` saves and opens the record with confirmation.
+The HTML create/edit form does not edit `excluded_from_summary`; the dedicated detail
+action owns that interaction. The JSON create and patch endpoints accept the field.
 Creation does not create a source or deduplicate automatically; editing preserves source data/links.
 `Cancel` leaves without saving; abandoning changes requires `Discard unsaved changes?` confirmation.
 
@@ -157,7 +168,7 @@ Creation does not create a source or deduplicate automatically; editing preserve
 - Without cards, creation is disabled with `Add a card before creating a transaction`.
 - Loading retains previous results with an indicator. Saving shows `Saving…` and blocks repeat submission.
 - Errors preserve input and focus the first invalid field. Read failures offer Retry;
-  uncertain saves/deletes/unlinks request a refresh before retrying.
+  uncertain saves/deletes/unlinks/summary changes request a refresh before retrying.
 - Delete confirms the description/amount and irreversible removal. Sources, files, accounts,
   cards, and other source links remain; success returns to the originating list.
 - Missing records offer Back to transactions; missing links refresh Sources with an explanation.

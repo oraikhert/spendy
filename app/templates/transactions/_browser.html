@@ -38,7 +38,7 @@
           </div>{% endfor %}
         </div><p id="date-range-hint" class="text-sm text-base-content/65 mt-2">Required for Custom range. Both dates are included and use each card's configured timezone.</p>
       </div>
-      <details class="transaction-expander" {% if advanced_count or errors.get('card_id') or errors.get('kind') or errors.get('direction') or errors.get('currency') or errors.get('min_abs_amount') or errors.get('max_abs_amount') %}open{% endif %}>
+      <details class="transaction-expander" {% if advanced_count or errors.get('card_id') or errors.get('kind') or errors.get('direction') or errors.get('currency') or errors.get('min_abs_amount') or errors.get('max_abs_amount') or errors.get('excluded_from_summary') %}open{% endif %}>
         <summary class="font-medium cursor-pointer">More filters{% if advanced_count %} <span class="badge badge-neutral badge-sm ml-1">{{ advanced_count }}<span class="sr-only"> active</span></span>{% endif %}</summary>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
           <div class="transaction-field">
@@ -70,6 +70,12 @@
             <input id="{{ name }}" name="{{ name }}" class="input w-full" inputmode="decimal" value="{{ filters.get(name, '') }}" placeholder="Any amount" {{ field_attrs(errors, name, 'amount-range-hint') }}>
             {{ field_error(errors, name) }}
           </div>{% endfor %}
+          <div class="transaction-field">
+            <label for="excluded_from_summary" class="label font-medium">Summary status</label>
+            <select id="excluded_from_summary" name="excluded_from_summary" class="select w-full" {{ field_attrs(errors, 'excluded_from_summary') }}>
+              {% for value, label in [('', 'All transactions'), ('false', 'Included in summary'), ('true', 'Excluded from summary')] %}<option value="{{ value }}" {% if filters.get('excluded_from_summary', '') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>{{ field_error(errors, 'excluded_from_summary') }}
+          </div>
         </div><p id="amount-range-hint" class="text-sm text-base-content/65 mt-2">Amount bounds use absolute values. Choose a currency first; changing it clears both bounds.</p>
       </details>
       <div class="flex flex-wrap items-center gap-3">

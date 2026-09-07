@@ -410,6 +410,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(enhanced.headers.get("hx-redirect"), "/auth/login")
                     self.assertNotIn("Synthetic original source", enhanced.text)
             for path in ["/transactions/new", f"/transactions/{transaction}/edit", f"/transactions/{transaction}/delete",
+                         f"/transactions/{transaction}/summary-exclusion",
                          f"/transactions/{transaction}/sources/{source}/unlink",
                          f"/transactions/{transaction}/sources/move"]:
                 response = await self.client.post(path, data={"confirmed": "yes"}, headers={"HX-Request": "true"})
@@ -430,6 +431,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             if token is not None:
                 fields["csrf_token"] = token
             for path in ["/transactions/new", f"/transactions/{transaction}/edit", f"/transactions/{transaction}/delete",
+                         f"/transactions/{transaction}/summary-exclusion",
                          f"/transactions/{transaction}/sources/{source}/unlink",
                          f"/transactions/{transaction}/sources/move"]:
                 with self.subTest(token=token, path=path):
@@ -571,6 +573,69 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
                 response = await self.client.get("/transactions", params=params)
                 self.assertEqual(response.status_code, 422, response.text[:600])
                 self.assertNotIn("Filter fixture positive", response.text)
+
+    async def test_summary_exclusion_action_badge_and_filters(self):
+        transaction = self.data["transaction"]
+        path = f"/transactions/{transaction}/summary-exclusion"
+        detail = await self.client.get(f"/transactions/{transaction}")
+        self.assertIn("Exclude from summary", detail.text)
+        self.assertNotIn(">Excluded</span>", detail.text)
+        self.assertIn("flex flex-wrap items-start gap-3", detail.text)
+        self.assertIn(
+            'hx-swap="outerHTML show:#transaction-summary-message:top"',
+            detail.text,
+        )
+
+        denied = await self.client.post(
+            path, data={"excluded_from_summary": "true"}
+        )
+        self.assertEqual(denied.status_code, 403)
+        async with self.sessions() as db:
+            self.assertFalse((await db.get(Transaction, transaction)).excluded_from_summary)
+
+        token = await self.csrf()
+        excluded = await self.client.post(
+            path,
+            data={
+                "csrf_token": token,
+                "excluded_from_summary": "true",
+                "return_url": "/transactions?excluded_from_summary=true",
+            },
+            headers={"HX-Request": "true"},
+        )
+        self.assertEqual(excluded.status_code, 200)
+        self.assertIn("Transaction excluded from the summary.", excluded.text)
+        self.assertIn(">Excluded</span>", excluded.text)
+        self.assertIn("Include in summary", excluded.text)
+
+        excluded_list = await self.client.get(
+            "/transactions", params={"excluded_from_summary": "true"}
+        )
+        self.assertEqual(self.listed_ids(excluded_list.text), [transaction])
+        self.assertLess(
+            excluded_list.text.index('id="max_abs_amount"'),
+            excluded_list.text.index('id="excluded_from_summary"'),
+        )
+        self.assertIn('value="true" selected', excluded_list.text)
+        self.assertIn(">Excluded</span>", excluded_list.text)
+        included_list = await self.client.get(
+            "/transactions", params={"excluded_from_summary": "false"}
+        )
+        self.assertNotIn(transaction, self.listed_ids(included_list.text))
+        self.assertIn('value="false" selected', included_list.text)
+
+        included = await self.client.post(
+            path,
+            data={
+                "csrf_token": token,
+                "excluded_from_summary": "false",
+                "return_url": "/transactions?excluded_from_summary=true",
+            },
+        )
+        self.assertEqual(included.status_code, 303)
+        self.assertIn("excluded_from_summary%3Dtrue", included.headers["location"])
+        async with self.sessions() as db:
+            self.assertFalse((await db.get(Transaction, transaction)).excluded_from_summary)
 
     async def test_dates_include_complete_days_and_use_transaction_date_then_posting_fallback(self):
         ids = await self.add_transactions([
@@ -1133,6 +1198,8 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
              {"csrf_token": token, "description": "This write fails"}),
             (f"/transactions/{transaction}/delete", "app.web.transactions.transaction_service.delete_transaction",
              {"csrf_token": token, "confirmed": "yes"}),
+            (f"/transactions/{transaction}/summary-exclusion", "app.web.transactions.transaction_service.set_transaction_summary_exclusion",
+             {"csrf_token": token, "excluded_from_summary": "true"}),
             (f"/transactions/{transaction}/sources/{source}/unlink", "app.web.transactions.source_processing_service.unlink_observation",
              {"csrf_token": token, "confirmed": "yes"}),
         ]

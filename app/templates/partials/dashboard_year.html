@@ -25,9 +25,10 @@
           </header>
           {% for entry in period.currencies %}
             <div class="min-w-0 border-t border-base-200 pt-4">
-              <p class="mb-2 text-xs font-medium text-base-content/70">Net spending · {{ entry.currency }}</p>
+              <p class="mb-2 text-xs font-medium text-base-content/70">Net spending</p>
               {{ amount_link(period, entry) }}
               <p class="mt-2 text-sm text-base-content/70">{{ entry.count }} {{ 'transaction' if entry.count == 1 else 'transactions' }}</p>
+              <p class="mt-2 text-sm text-base-content/70">{{ money(entry.turnover, entry.currency, show_plus=false) }} in turnover</p>
             </div>
           {% else %}
             <p class="text-sm text-base-content/70" role="status">No purchase or refund transactions</p>

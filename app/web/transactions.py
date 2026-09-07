@@ -176,7 +176,11 @@ async def transaction_list(request: Request, db: DB, user: ActiveUser):
         create_params = {"return_url": return_url}
         if parsed and parsed.card_id and not errors:
             create_params["card_id"] = parsed.card_id
-        advanced = sum(bool(values.get(key)) for key in ("card_id", "kind", "direction", "currency")) + bool(values.get("min_abs_amount") or values.get("max_abs_amount"))
+        advanced = (
+            sum(bool(values.get(key)) for key in ("card_id", "kind", "direction", "currency"))
+            + bool(values.get("min_abs_amount") or values.get("max_abs_amount"))
+            + bool(values.get("excluded_from_summary"))
+        )
         context = {**refs, "filters": values, "transactions": records, "total": total, "source_counts": counts,
                    "page": current_page, "pages": max(1, (total + 49) // 50), "start": (current_page - 1) * 50 + 1 if total else 0,
                    "end": min(current_page * 50, total), "previous_url": parsed.url(current_page - 1) if parsed and current_page > 1 else None,
@@ -450,7 +454,7 @@ async def sources_context(request, db, transaction, return_url, page=None, messa
 
 async def detail_response(
     request, db, user, transaction, return_url=None, page=None, message=None,
-    sources_only=False, move_state=None,
+    sources_only=False, move_state=None, detail_message=None,
 ):
     return_url = safe_return_url(return_url or request.query_params.get("return_url"))
     if not message and request.query_params.get("unlinked"):
@@ -464,10 +468,17 @@ async def detail_response(
             f"Observation moved to transaction #{moved_to}. "
             "Both transactions were recanonicalized."
         )
+    summary_state = request.query_params.get("summary_exclusion")
+    if detail_message is None and summary_state in {"excluded", "included"}:
+        detail_message = (
+            "Transaction excluded from the summary."
+            if summary_state == "excluded"
+            else "Transaction included in the summary."
+        )
     context = await sources_context(request, db, transaction, return_url, page, message, move_state)
     context.update(transaction=transaction, return_url=return_url, back_url=return_url,
                    edit_url=f"/transactions/{transaction.id}/edit?" + urlencode({"return_url": return_url}),
-                   message="Transaction saved." if request.query_params.get("saved") == "1" else None)
+                   message=detail_message or ("Transaction saved." if request.query_params.get("saved") == "1" else None))
     if is_htmx(request):
         return render(request, user, "_sources" if sources_only else "_detail", context)
     return render(request, user, "detail", context)
@@ -664,6 +675,72 @@ async def delete_page(request: Request, transaction_id: str, db: DB, user: Activ
         await db.rollback()
         return error_page(request, user, "Deletion could not be confirmed. Refresh the list before trying again.", 503, return_url)
     return navigate(request, return_url)
+
+
+@router.post("/{transaction_id}/summary-exclusion", response_class=HTMLResponse)
+async def set_summary_exclusion_page(
+    request: Request, transaction_id: str, db: DB, user: ActiveUser
+):
+    posted = await request.form()
+    return_url = safe_return_url(posted.get("return_url"))
+    transaction = await lookup(db, transaction_id)
+    if transaction is None:
+        return error_page(
+            request, user, "This transaction no longer exists.", back_url=return_url
+        )
+    if not valid_csrf(request, posted.get("csrf_token")):
+        return error_page(
+            request,
+            user,
+            "Security token is invalid. Refresh the page before trying again.",
+            403,
+            detail_url(transaction.id, return_url),
+        )
+    raw_state = posted.get("excluded_from_summary")
+    if raw_state not in {"true", "false"}:
+        return error_page(
+            request,
+            user,
+            "Choose whether this transaction should be included in the summary.",
+            422,
+            detail_url(transaction.id, return_url),
+        )
+    excluded = raw_state == "true"
+    try:
+        updated = await transaction_service.set_transaction_summary_exclusion(
+            db, transaction.id, excluded
+        )
+    except SQLAlchemyError:
+        await db.rollback()
+        return error_page(
+            request,
+            user,
+            "The summary setting could not be confirmed. Refresh the transaction before trying again.",
+            503,
+            detail_url(transaction.id, return_url),
+        )
+    if updated is None:
+        return error_page(request, user, "This transaction no longer exists.", back_url=return_url)
+    detail_message = (
+        "Transaction excluded from the summary."
+        if excluded
+        else "Transaction included in the summary."
+    )
+    if is_htmx(request):
+        return await detail_response(
+            request,
+            db,
+            user,
+            updated,
+            return_url,
+            detail_message=detail_message,
+        )
+    return navigate(
+        request,
+        detail_url(updated.id, return_url)
+        + "&"
+        + urlencode({"summary_exclusion": "excluded" if excluded else "included"}),
+    )
 
 
 @router.post("/{transaction_id}/sources/{observation_id}/unlink", response_class=HTMLResponse)

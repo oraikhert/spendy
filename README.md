@@ -104,7 +104,10 @@ previous year in January. `previous_year` indicates whether more history is avai
 and the next year that can be requested. Their calendar is determined by the
 application server and the effective timezone of each card. Each current-period
 currency also exposes `largest_expenses`: up to three largest negative `Purchase`
-amounts, with their descriptions.
+amounts, with their descriptions. Every currency entry exposes net spending that
+omits transactions flagged `excluded_from_summary`, plus turnover that includes them.
+Transaction create/read/update responses expose that flag, and the transaction list
+accepts `excluded_from_summary=true|false` as an optional filter.
 For exact validation limits and payloads, use Swagger and
 [input schemas](app/schemas/), rather than maintaining a second endpoint catalog.
 

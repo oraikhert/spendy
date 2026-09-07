@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import and_, func, literal, or_, select, union_all
+from sqlalchemy import and_, case, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -22,8 +22,9 @@ class LargestSpending:
 class CurrencySpending:
     currency: str
     net_spending: Decimal
+    turnover: Decimal
     count: int
-    average: Decimal
+    average: Decimal | None
     comparison_percent: Decimal | None = None
     largest_expenses: tuple[LargestSpending, ...] = ()
 
@@ -171,9 +172,18 @@ async def _aggregate_periods(
                 zone == timezone_name, effective_date >= start, effective_date < end,
             ))
         queries.append(
-            select(literal(index).label("period"), Transaction.currency,
-                   func.sum(Transaction.amount).label("signed_sum"),
-                   func.count(Transaction.id).label("count"))
+            select(
+                literal(index).label("period"),
+                Transaction.currency,
+                func.sum(case(
+                    (Transaction.excluded_from_summary.is_(False), Transaction.amount),
+                    else_=Decimal(0),
+                )).label("included_signed_sum"),
+                func.sum(Transaction.amount).label("total_signed_sum"),
+                func.sum(case(
+                    (Transaction.excluded_from_summary.is_(False), 1), else_=0,
+                )).label("count"),
+            )
             .select_from(Transaction).join(Card).join(Account)
             .where(Transaction.transaction_kind.in_(("purchase", "refund")),
                    or_(False, *conditions))
@@ -181,9 +191,12 @@ async def _aggregate_periods(
         )
     rows = (await db.execute(union_all(*queries))).all()
     groups: list[list[CurrencySpending]] = [[] for _ in query_periods]
-    for index, currency, signed_sum, count in rows:
-        net = -signed_sum
-        groups[index].append(CurrencySpending(currency, net, count, net / count))
+    for index, currency, included_signed_sum, total_signed_sum, count in rows:
+        net = -included_signed_sum
+        turnover = -total_signed_sum
+        groups[index].append(CurrencySpending(
+            currency, net, turnover, count, net / count if count else None,
+        ))
 
     largest_expenses: dict[str, tuple[LargestSpending, ...]] = {}
     if include_largest_expenses:
@@ -210,6 +223,7 @@ async def _aggregate_periods(
             .where(
                 Transaction.transaction_kind == "purchase",
                 Transaction.amount < 0,
+                Transaction.excluded_from_summary.is_(False),
                 or_(False, *conditions),
             )
             .subquery()

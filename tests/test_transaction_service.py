@@ -83,8 +83,13 @@ class TransactionInputTests(unittest.TestCase):
         self.assertEqual(data.transaction_datetime.microsecond, 123456)
         self.assertEqual(data.transaction_datetime.utcoffset(), timedelta(hours=4))
         self.assertIsNone(TransactionUpdate(location="   ").location)
+        self.assertFalse(TransactionCreate(**BASE_INPUT).excluded_from_summary)
         self.assertEqual(TransactionUpdate().model_dump(exclude_unset=True), {})
         self.assertEqual(TransactionUpdate(location=None).model_dump(exclude_unset=True), {"location": None})
+        self.assertEqual(
+            TransactionUpdate(excluded_from_summary=True).model_dump(exclude_unset=True),
+            {"excluded_from_summary": True},
+        )
 
     def test_invalid_fields_and_required_nulls(self):
         cases = [
@@ -108,11 +113,14 @@ class TransactionInputTests(unittest.TestCase):
             with self.subTest(required=name), self.assertRaises(ValidationError):
                 TransactionUpdate(**{name: None})
         with self.assertRaises(ValidationError):
+            TransactionUpdate(excluded_from_summary=None)
+        with self.assertRaises(ValidationError):
             TransactionUpdate(card_id=1)
 
     def test_response_does_not_revalidate_legacy_input_rules(self):
         legacy = TransactionResponse(
             **{**BASE_INPUT, "description": "", "currency": "aed"},
+            excluded_from_summary=False,
             id=1, original_currency="USD", original_amount=None, fx_rate=Decimal("0"),
             created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, 1),
         )
@@ -220,6 +228,27 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         # The old positional call contract remains valid.
         rows, total = await service.get_transactions(self.db, None, None, None, None, None, None, None, None, 1, 1)
         self.assertEqual((total, len(rows)), (4, 1))
+
+    async def test_summary_exclusion_filter_and_dedicated_update(self):
+        included = await self.record(description="Included")
+        excluded = await self.record(
+            description="Excluded", excluded_from_summary=True
+        )
+        rows, total = await service.get_transactions(
+            self.db, excluded_from_summary=True
+        )
+        self.assertEqual((total, [row.id for row in rows]), (1, [excluded.id]))
+        rows, total = await service.get_transactions(
+            self.db, excluded_from_summary=False
+        )
+        self.assertEqual((total, [row.id for row in rows]), (1, [included.id]))
+        updated = await service.set_transaction_summary_exclusion(
+            self.db, included.id, True
+        )
+        self.assertTrue(updated.excluded_from_summary)
+        self.assertIsNone(
+            await service.set_transaction_summary_exclusion(self.db, 9999, True)
+        )
 
     async def test_invalid_query_combinations(self):
         invalid = [
@@ -477,10 +506,25 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 422)
             response = await client.post("/api/v1/transactions", json=BASE_INPUT)
             self.assertEqual(response.status_code, 201, response.text)
+            self.assertFalse(response.json()["excluded_from_summary"])
             transaction_id = response.json()["id"]
-            for patch in ({"card_id": self.cards[1].id}, {"amount": None}, {"original_currency": "USD"}):
+            for patch in ({"card_id": self.cards[1].id}, {"amount": None}, {"original_currency": "USD"}, {"excluded_from_summary": None}):
                 response = await client.patch(f"/api/v1/transactions/{transaction_id}", json=patch)
                 self.assertEqual(response.status_code, 422, response.text)
+            response = await client.patch(
+                f"/api/v1/transactions/{transaction_id}",
+                json={"excluded_from_summary": True},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.json()["excluded_from_summary"])
+            self.assertEqual(
+                (await client.get("/api/v1/transactions", params={"excluded_from_summary": "true"})).json()["total"],
+                1,
+            )
+            self.assertEqual(
+                (await client.get("/api/v1/transactions", params={"excluded_from_summary": "false"})).json()["total"],
+                0,
+            )
             response = await client.get("/api/v1/transactions", params={"min_abs_amount": "1"})
             self.assertEqual(response.status_code, 422)
             response = await client.get("/api/v1/transactions", params={"currency": "AED", "direction": "out", "min_abs_amount": "12.34", "max_abs_amount": "12.34"})

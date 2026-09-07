@@ -33,6 +33,7 @@
   <a class="link link-hover font-semibold transaction-text" href="{{ detail_url(transaction.id, return_url) }}">{{ transaction.description or 'No description' }}</a>
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-base-content/65">
     <span class="badge badge-ghost badge-sm">{{ kind_label(transaction.transaction_kind) }}</span>
+    {% if transaction.excluded_from_summary %}<span class="badge badge-warning badge-sm">Excluded</span>{% endif %}
     <a class="link" href="{{ detail_url(transaction.id, return_url, 'sources') }}">{{ source_counts.get(transaction.id, 0) }} sources</a>
   </div>
   {% if transaction.location and transaction.location != transaction.description %}<p class="transaction-text mt-1 text-sm text-base-content/65">{{ transaction.location }}</p>{% endif %}

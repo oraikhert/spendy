@@ -45,6 +45,7 @@ class TransactionBase(BaseModel):
     description: str
     location: str | None = None
     transaction_kind: str = Field(..., pattern="^(purchase|topup|refund|other)$")
+    excluded_from_summary: bool
     original_amount: Decimal | None = Field(None, decimal_places=2)
     original_currency: str | None = Field(None, min_length=3, max_length=3)
     fx_rate: Decimal | None = Field(None, decimal_places=6)
@@ -89,6 +90,7 @@ class TransactionCreate(TransactionInput):
     description: str
     location: str | None = Field(None, max_length=200)
     transaction_kind: str = Field(..., pattern="^(purchase|topup|refund|other)$")
+    excluded_from_summary: bool = False
     original_amount: Amount | None = None
     original_currency: str | None = None
     fx_rate: ExchangeRate | None = None
@@ -109,6 +111,7 @@ class TransactionUpdate(TransactionInput):
     description: str | None = None
     location: str | None = Field(None, max_length=200)
     transaction_kind: str | None = Field(None, pattern="^(purchase|topup|refund|other)$")
+    excluded_from_summary: bool = False
     original_amount: Amount | None = None
     original_currency: str | None = None
     fx_rate: ExchangeRate | None = None

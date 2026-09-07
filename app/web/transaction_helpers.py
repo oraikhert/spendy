@@ -13,7 +13,7 @@ from app.web.presentation import money
 
 
 KINDS = {"purchase": "Purchase", "topup": "Top-up", "refund": "Refund", "other": "Other"}
-FILTER_NAMES = {"q", "period", "date_from", "date_to", "account_id", "card_id", "kind", "direction", "currency", "min_abs_amount", "max_abs_amount", "page"}
+FILTER_NAMES = {"q", "period", "date_from", "date_to", "account_id", "card_id", "kind", "direction", "currency", "min_abs_amount", "max_abs_amount", "excluded_from_summary", "page"}
 
 
 class ListFilters(BaseModel):
@@ -29,6 +29,7 @@ class ListFilters(BaseModel):
     currency: str = ""
     min_abs_amount: Decimal | None = Field(None, ge=0, max_digits=15, decimal_places=2, allow_inf_nan=False)
     max_abs_amount: Decimal | None = Field(None, ge=0, max_digits=15, decimal_places=2, allow_inf_nan=False)
+    excluded_from_summary: bool | None = None
     page: int = Field(1, ge=1, le=1000000000)
 
     @field_validator("q", "currency", mode="before")
@@ -82,7 +83,10 @@ class ListFilters(BaseModel):
         return result
 
     def values(self):
-        return {key: "" if value is None else str(value) for key, value in self.model_dump().items()}
+        return {
+            key: "" if value is None else str(value).lower() if isinstance(value, bool) else str(value)
+            for key, value in self.model_dump().items()
+        }
 
     def url(self, page=None):
         values = self.values()

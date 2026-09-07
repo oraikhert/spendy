@@ -46,7 +46,7 @@
           <div class="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-3">
             {% for entry in current.currencies %}
               <section class="min-w-0 space-y-4 border-t border-base-200 pt-5" aria-labelledby="currency-{{ loop.index }}">
-                <h3 id="currency-{{ loop.index }}" class="text-sm font-medium text-base-content/70">Net spending · {{ entry.currency }}</h3>
+                <h3 id="currency-{{ loop.index }}" class="text-sm font-medium text-base-content/70">Net spending</h3>
                 <div class="min-w-0">{{ amount_link(current, entry, true) }}</div>
                 <dl class="grid min-w-0 grid-cols-2 gap-4 text-sm">
                   <div class="min-w-0">
@@ -55,7 +55,7 @@
                   </div>
                   <div class="min-w-0">
                     <dt class="text-base-content/70">Average per transaction</dt>
-                    <dd class="mt-1 text-base font-semibold tabular-nums [overflow-wrap:anywhere]">{{ money(entry.average, entry.currency, show_plus=false) }}</dd>
+                    <dd class="mt-1 text-base font-semibold tabular-nums [overflow-wrap:anywhere]">{% if entry.average is none %}Not available{% else %}{{ money(entry.average, entry.currency, show_plus=false) }}{% endif %}</dd>
                   </div>
                 </dl>
                 {% if entry.largest_expenses %}
@@ -79,6 +79,7 @@
                     vs {{ overview.comparison.date_from.strftime('%d %b') }}–{{ overview.comparison.date_to.strftime('%d %b %Y') }}
                   {% endif %}
                 </p>
+                <p class="text-sm text-base-content/70"><span class="font-semibold text-base-content tabular-nums">{{ money(entry.turnover, entry.currency, show_plus=false) }}</span> in turnover</p>
               </section>
             {% endfor %}
           </div>

@@ -5,13 +5,18 @@ the current month and earlier calendar years. Interface labels are English.
 
 ## Summary data
 
-- A transaction contributes when its type is `Purchase` or `Refund`, regardless
-  of its amount sign. `Top-up`, `Other`, and undated transactions do not contribute.
+- A transaction contributes to net spending when its type is `Purchase` or `Refund`,
+  regardless of its amount sign, and `excluded_from_summary` is false. `Top-up`,
+  `Other`, and undated transactions do not contribute.
 - The effective date is the transaction date, falling back to the posting date.
   Creation and update timestamps never substitute for a missing financial date.
 - Net spending is `-SUM(amount)` for the contributing transactions. A normally
   positive refund reduces spending; refunds exceeding purchases produce negative
   net spending. A zero net result with contributing transactions is not an empty state.
+- Turnover is `-SUM(amount)` for every dated `Purchase` and `Refund` in the period,
+  including transactions excluded from net spending. It uses the same spending-sign
+  convention as net spending. A currency represented only by excluded transactions
+  therefore remains visible with zero net spending and its nonzero turnover.
 - Amounts are grouped by the transaction currency and are never added across
   currencies. Original amounts, account currencies, saved exchange rates, recorded
   FX fees, and live conversion rates are excluded.
@@ -42,35 +47,38 @@ primary route to the transaction list; the Dashboard does not duplicate it.
 ### Current month
 
 The first and visually strongest full-width section identifies the current month
-and its inclusive date range. Each currency with at least one contributing transaction
-has a compact summary containing:
+and its inclusive date range. Each currency with at least one dated `Purchase` or
+`Refund`, including an excluded one, has a compact summary containing:
 
 - net spending;
-- contributing transaction count;
-- average net spending per contributing transaction; and
+- included transaction count, labeled `Transactions`;
+- average net spending per contributing transaction;
+- turnover including excluded transactions, shown as compact supporting text; and
 - change from the matching part of the previous month.
 
 For each currency, the current-month section also lists up to three largest expenses.
 They are `Purchase` transactions with a negative stored amount, ordered by absolute
 spend descending; refunds and anomalous positive purchases are excluded.
 
-The average is net spending divided by the contributing count in that currency.
-Count and average describe the same `Purchase` and `Refund` records as the total.
+The average is net spending divided by the included count in that currency. It is
+unavailable when that count is zero. Count and average describe the same non-excluded
+`Purchase` and `Refund` records as net spending. Largest expenses also exclude flagged
+transactions.
 
 ### Earlier months and years
 
 The current-year heading follows the current-month section and contains every earlier
 complete month in that calendar year. In January, this otherwise empty group is
 omitted: the previous year is shown immediately instead. Each card identifies one
-complete month and lists net spending and contributing transaction count for every
-currency present in that month. Historical cards do not repeat averages or
+complete month and lists net spending, included transaction count, then turnover for
+every currency present in that month. Historical cards do not repeat averages or
 month-over-month percentages.
 
 At the bottom, `Show more` appends all twelve months of the immediately preceding
 year under its own year heading. Repeating it appends the next preceding year. Empty
 months within an available year still render. The button is disabled after the earliest
-calendar year that has a contributing `Purchase` or `Refund`; it is also disabled when
-there is no contributing data at all.
+calendar year that has a dated `Purchase` or `Refund`, including an excluded one; it is
+also disabled when there is no such data at all.
 
 The page has no category, merchant, account, card, income, balance, budget, forecast,
 chart, or recent-transaction section. Transaction type is not presented as a spending
@@ -93,7 +101,7 @@ text identifies the period and currency even when the visible amount is brief.
 
 ## States and accessibility
 
-- With no contributing current-month transactions, the primary section says
+- With no dated current-month `Purchase` or `Refund`, the primary section says
   `No purchase or refund transactions this month`; historical months still render.
 - An empty historical month says `No purchase or refund transactions` within its card.
 - Several currencies remain separate at every viewport width. Long formatted amounts

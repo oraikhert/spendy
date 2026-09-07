@@ -37,6 +37,7 @@ async def get_transactions(
     direction: str | None = Query(None, pattern="^(out|in)$"),
     min_abs_amount: Decimal | None = Query(None),
     max_abs_amount: Decimal | None = Query(None),
+    excluded_from_summary: bool | None = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0)
 ):
@@ -56,6 +57,7 @@ async def get_transactions(
             direction=direction,
             min_abs_amount=min_abs_amount,
             max_abs_amount=max_abs_amount,
+            excluded_from_summary=excluded_from_summary,
             limit=limit,
             offset=offset,
         )

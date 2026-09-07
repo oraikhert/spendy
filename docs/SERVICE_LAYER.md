@@ -257,6 +257,14 @@ exposes a complete historical year and its next predecessor. Neither endpoint ac
 account, card, or currency filters. The web route renders a complete 503 error state on
 a failed read, with no partial totals.
 
+Transactions may be marked `excluded_from_summary`. The transaction list can filter
+this flag without hiding excluded records by default. Dashboard net spending, included
+count, average, comparison, and largest expenses ignore flagged transactions. Turnover
+remains `-SUM(amount)` across all dated `Purchase` and `Refund` records, including
+flagged ones; this keeps an excluded-only currency and its history visible. The
+dedicated transaction service operation commits only this flag, while source
+canonicalization leaves it unchanged.
+
 When changing these contracts, use synthetic fixtures and isolate DB/network work.
 Cover duplicate content, ambiguous matches, reprocessing links, FX failure, zero
 amounts and date boundaries as relevant. Existing runnable checks are listed in

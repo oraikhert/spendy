@@ -64,6 +64,41 @@ LOC-SYNTHETIC-1 300.00
 Remaining Principle Balance 100.00
 """
 
+INITIAL_INSTALLMENT_STATEMENT = """
+Emirates NBD
+Credit Card Statement
+Card Number: 9999 XXXX XXXX 1111
+Card Type: Synthetic Rewards
+Statement Period: 26-Jan-25 to 25-Feb-25
+Available Credit Limit (AED)
+Transaction Date Posting Date Description Amount
+18/02/2025 18/02/2025 LOAN ON CARD PROCESSING FEE 130.00
+18/02/2025 18/02/2025 VAT ON PROCESSING FEE 6.50
+18/02/2025 18/02/2025 LOC-SYNTHETIC-1 300.00
+18/02/2025 INSTALLMENT PLAN EMI (01/03) 100.00
+LOC-SYNTHETIC-1 300.00
+Remaining Principle Balance 200.00
+STATEMENT SUMMARY
+Previous Statement Purchase / Cash Advance Interest/Other Charges Payments/Credits Total Payment Due Current Balance
+0.00 100.00 136.50 0.00 236.50 436.50
+"""
+
+SECOND_INSTALLMENT_STATEMENT = """
+Emirates NBD
+Credit Card Statement
+Card Number: 9999 XXXX XXXX 1111
+Card Type: Synthetic Rewards
+Statement Period: 26-Feb-25 to 25-Mar-25
+Available Credit Limit (AED)
+Transaction Date Posting Date Description Amount
+18/02/2025 INSTALLMENT PLAN EMI (02/03) 100.00
+LOC-SYNTHETIC-1 300.00
+Remaining Principle Balance 100.00
+STATEMENT SUMMARY
+Previous Statement Purchase / Cash Advance Interest/Other Charges Payments/Credits Total Payment Due Current Balance
+236.50 100.00 0.00 0.00 336.50 436.50
+"""
+
 
 class StatementParserTests(unittest.TestCase):
     def test_metadata_rows_fx_signs_and_summary(self):
@@ -116,6 +151,36 @@ class StatementParserTests(unittest.TestCase):
             foreign.extraction_metadata["local_posting_date"],
             "2026-01-02",
         )
+
+    def test_installment_principal_is_excluded_and_payments_use_sequence_dates(self):
+        first = parse_emirates_nbd_statement_text(
+            [INITIAL_INSTALLMENT_STATEMENT], source_timezone="Asia/Dubai"
+        )
+        second = parse_emirates_nbd_statement_text(
+            [SECOND_INSTALLMENT_STATEMENT], source_timezone="Asia/Dubai"
+        )
+
+        self.assertEqual(first.status.value, "processed")
+        principal = next(
+            value
+            for value in first.observations
+            if value.extraction_metadata.get("statement_entry_type") == "loan_principal"
+        )
+        first_payment = first.observations[-1]
+        second_payment = second.observations[-1]
+        self.assertEqual(principal.transaction_kind, "other")
+        self.assertTrue(principal.extraction_metadata["excluded_from_summary"])
+        self.assertEqual(
+            first_payment.extraction_metadata["local_transaction_date"], "2025-02-18"
+        )
+        self.assertEqual(
+            second_payment.extraction_metadata["local_transaction_date"], "2025-03-18"
+        )
+        self.assertEqual(
+            second_payment.extraction_metadata["installment_plan_id"],
+            "LOC-SYNTHETIC-1",
+        )
+        self.assertEqual(second_payment.extraction_metadata["installment_number"], 2)
 
     def test_wrong_pdf_password_is_rejected(self):
         stream = BytesIO()

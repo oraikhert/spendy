@@ -760,6 +760,72 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 2,
             )
 
+    async def test_statement_installments_with_distinct_sequence_do_not_merge(self):
+        observed_at = datetime(2026, 1, 5, 12, tzinfo=UTC)
+
+        def parse_statement(source):
+            number = 2 if source.file_content.endswith(b"-2") else 3
+            return ParserResult(
+                status=ParseStatus.PROCESSED,
+                observations=(
+                    ObservationInput(
+                        source_item_key="installment",
+                        amount=Decimal("-100.00"),
+                        currency="AED",
+                        transaction_datetime=observed_at,
+                        description=(
+                            f"INSTALLMENT PLAN EMI ({number:02d}/12) "
+                            "LOC-SYNTHETIC-1 1200.00 Remaining Principle Balance 1000.00"
+                        ),
+                        transaction_kind="purchase",
+                        card_last_four="1111",
+                        extraction_metadata={
+                            "statement_entry_type": "installment_payment",
+                            "installment_plan_id": "LOC-SYNTHETIC-1",
+                            "installment_number": number,
+                            "installment_count": 12,
+                        },
+                    ),
+                ),
+                bank_statement=ParsedBankStatement(
+                    bank="Emirates NBD",
+                    statement_period_start=date(2026, 1, 1),
+                    statement_period_end=date(2026, 1, 31),
+                    statement_currency="AED",
+                    card_type="Synthetic Rewards",
+                    card_last_four="1111",
+                    page_count=1,
+                ),
+            )
+
+        parser = RegisteredParser(
+            name="emirates_nbd_credit_card_statement_pdf",
+            version="3-test",
+            parse=parse_statement,
+        )
+        key = (SourceKind.BANK_STATEMENT.value, "application/pdf")
+        transaction_ids = []
+        with patch.dict(PARSER_REGISTRY, {key: (parser,)}):
+            for number in (2, 3):
+                response = await self.client.post(
+                    "/api/v1/source-payloads/upload",
+                    data={"source_kind": "bank_statement"},
+                    files={
+                        "file": (
+                            f"statement-{number}.pdf",
+                            f"%PDF-synthetic-{number}".encode(),
+                            "application/pdf",
+                        )
+                    },
+                )
+                self.assertEqual(response.status_code, 201, response.text)
+                observation_id = response.json()["observations"][0]["id"]
+                async with self.sessions() as db:
+                    link = await db.get(TransactionSourceLink, observation_id)
+                    transaction_ids.append(link.transaction_id)
+
+        self.assertEqual(len(set(transaction_ids)), 2)
+
     async def test_statement_timezone_matches_sms_across_utc_date_boundary(self):
         sms = await self.client.post(
             "/api/v1/source-payloads/text",

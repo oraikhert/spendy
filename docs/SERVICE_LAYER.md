@@ -130,6 +130,13 @@ A recognized statement whose rows cannot be extracted consistently is kept as a 
 payload/detail without observations. The configured upload limit defaults to 20 MiB,
 and the statement parser rejects more than 100 pages.
 
+Emirates NBD installment blocks preserve the printed plan date in extraction metadata
+and derive each payment's effective date from its sequence number. Their matching
+identity includes the LOC reference plus installment number/count, so equal monthly
+amounts do not collapse into one transaction. A separate dated LOC principal row that
+matches the plan reference and principal is retained as an `other` observation, marked
+excluded from summaries, and omitted from the purchase/charge total reconciliation.
+
 ## Matching and dates
 
 [find_matching_transactions](../app/utils/matching.py) first restricts candidates by

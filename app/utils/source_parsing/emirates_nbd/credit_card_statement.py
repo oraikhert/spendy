@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -42,6 +43,20 @@ _FX_RE = re.compile(
 _ORIGINAL_RE = re.compile(
     r"^(?P<description>.+?)\s+"
     r"(?P<amount>\d[\d,]*\.\d{2})\s+(?P<currency>[A-Z]{3})\s*$"
+)
+_INSTALLMENT_RE = re.compile(
+    r"^INSTALLMENT\s+PLAN\s+EMI\s*\(\s*(?P<number>\d{1,2})\s*/\s*"
+    r"(?P<count>\d{1,2})\s*\)$",
+    re.IGNORECASE,
+)
+_INSTALLMENT_PLAN_RE = re.compile(
+    r"^(?P<plan_id>LOC-[A-Z0-9-]+)\s+(?P<principal>\d[\d,]*\.\d{2})$",
+    re.IGNORECASE,
+)
+_REMAINING_PRINCIPAL_RE = re.compile(
+    r"^Remaining\s+Principle\s+Balance\s+"
+    r"(?P<remaining>\d[\d,]*\.\d{2})$",
+    re.IGNORECASE,
 )
 _PERIOD_RE = re.compile(
     r"Statement\s+Period\s*:\s*(?P<start>\d{2}-[A-Za-z]{3}-\d{2})"
@@ -165,6 +180,15 @@ def _transaction_kind(description: str, is_credit: bool) -> str:
     return "purchase"
 
 
+def _add_months_clamped(value: date, months: int) -> date:
+    """Shift a date by whole months while clamping short month ends."""
+    month_index = value.year * 12 + value.month - 1 + months
+    year, zero_based_month = divmod(month_index, 12)
+    month = zero_based_month + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
 def _statement_summary_totals(full_text: str) -> tuple[Decimal, Decimal]:
     marker = full_text.find("STATEMENT SUMMARY")
     if marker < 0:
@@ -215,6 +239,7 @@ def _parse_observations(
                 is_credit = bool(row_match.group("credit"))
                 signed_amount = abs(value) if is_credit else -abs(value)
                 description = " ".join(row_match.group("description").split())
+                installment_match = _INSTALLMENT_RE.fullmatch(description)
                 current_row = {
                     "item_index": len(rows) + 1,
                     "page_number": page_number,
@@ -229,11 +254,28 @@ def _parse_observations(
                     "description": description,
                     "amount": signed_amount,
                     "transaction_kind": _transaction_kind(description, is_credit),
+                    "printed_transaction_date": None,
+                    "installment_number": None,
+                    "installment_count": None,
+                    "installment_plan_id": None,
+                    "installment_principal": None,
+                    "remaining_principal": None,
+                    "excluded_from_statement_totals": False,
                     "original_amount": None,
                     "original_currency": None,
                     "fx_rate": None,
                     "raw_lines": [stripped],
                 }
+                if installment_match is not None:
+                    current_row["printed_transaction_date"] = current_row[
+                        "transaction_date"
+                    ]
+                    current_row["installment_number"] = int(
+                        installment_match.group("number")
+                    )
+                    current_row["installment_count"] = int(
+                        installment_match.group("count")
+                    )
                 rows.append(current_row)
                 continue
 
@@ -272,11 +314,66 @@ def _parse_observations(
                 normalized.startswith("LOC-")
                 or normalized.startswith("Remaining Principle Balance")
             ):
+                plan_match = _INSTALLMENT_PLAN_RE.fullmatch(normalized)
+                remaining_match = _REMAINING_PRINCIPAL_RE.fullmatch(normalized)
+                if current_row["installment_number"] is not None:
+                    if plan_match is not None:
+                        current_row["installment_plan_id"] = plan_match.group(
+                            "plan_id"
+                        ).upper()
+                        current_row["installment_principal"] = _decimal(
+                            plan_match.group("principal"), "installment principal"
+                        )
+                    elif remaining_match is not None:
+                        current_row["remaining_principal"] = _decimal(
+                            remaining_match.group("remaining"),
+                            "remaining installment principal",
+                        )
                 current_row["description"] = f"{current_row['description']} {normalized}"
                 current_row["raw_lines"].append(stripped)
 
     if not rows:
         raise _StatementExtractionError("No statement transactions were found")
+
+    installment_plans: dict[str, dict[str, object]] = {}
+    for row in rows:
+        installment_number = row["installment_number"]
+        if installment_number is None:
+            continue
+        installment_count = int(row["installment_count"])
+        if not 1 <= int(installment_number) <= installment_count:
+            raise _StatementExtractionError("Invalid installment sequence")
+        plan_id = row["installment_plan_id"]
+        principal = row["installment_principal"]
+        remaining = row["remaining_principal"]
+        if plan_id is None or principal is None or remaining is None:
+            raise _StatementExtractionError("Incomplete installment details")
+        printed_date = row["printed_transaction_date"]
+        effective_date = _add_months_clamped(
+            printed_date, int(installment_number) - 1
+        )
+        date_source = "installment_sequence"
+        if not (
+            statement.statement_period_start
+            <= effective_date
+            <= statement.statement_period_end
+        ):
+            effective_date = statement.statement_period_end
+            date_source = "statement_period_end"
+        row["transaction_date"] = effective_date
+        installment_plans[str(plan_id)] = row
+        row["installment_date_source"] = date_source
+
+    for row in rows:
+        plan = installment_plans.get(str(row["description"]).upper())
+        if plan is None:
+            continue
+        if (
+            abs(Decimal(row["amount"])) == Decimal(plan["installment_principal"])
+            and row["transaction_date"] == plan["printed_transaction_date"]
+        ):
+            row["transaction_kind"] = "other"
+            row["excluded_from_statement_totals"] = True
 
     observations = []
     for row in rows:
@@ -288,6 +385,28 @@ def _parse_observations(
             "row_number": row["item_index"],
             "local_transaction_date": transaction_date.isoformat(),
         }
+        if row["installment_number"] is not None:
+            metadata.update(
+                {
+                    "statement_entry_type": "installment_payment",
+                    "installment_plan_id": row["installment_plan_id"],
+                    "installment_number": row["installment_number"],
+                    "installment_count": row["installment_count"],
+                    "installment_principal": str(row["installment_principal"]),
+                    "remaining_principal": str(row["remaining_principal"]),
+                    "printed_plan_date": row["printed_transaction_date"].isoformat(),
+                    "installment_date_source": row["installment_date_source"],
+                }
+            )
+        if row["excluded_from_statement_totals"]:
+            metadata.update(
+                {
+                    "statement_entry_type": "loan_principal",
+                    "installment_plan_id": row["description"],
+                    "excluded_from_statement_totals": True,
+                    "excluded_from_summary": True,
+                }
+            )
         if posting_date is not None:
             metadata["local_posting_date"] = posting_date.isoformat()
         if fx_rate is not None:
@@ -350,7 +469,15 @@ def parse_emirates_nbd_statement_text(
         )
         expected_debits, expected_credits = _statement_summary_totals(document_text)
         parsed_debits = -sum(
-            (value.amount for value in observations if value.amount and value.amount < 0),
+            (
+                value.amount
+                for value in observations
+                if value.amount
+                and value.amount < 0
+                and not value.extraction_metadata.get(
+                    "excluded_from_statement_totals", False
+                )
+            ),
             Decimal("0"),
         )
         parsed_credits = sum(

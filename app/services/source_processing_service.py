@@ -65,8 +65,13 @@ from app.utils.matching import (
 MATCHER_NAME = "same_day_amount_merchant"
 MATCHER_VERSION = "4"
 STATEMENT_MATCHER_NAME = "statement_same_day_amount_score"
-STATEMENT_MATCHER_VERSION = "4"
+STATEMENT_MATCHER_VERSION = "5"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
+_INSTALLMENT_DESCRIPTION_RE = re.compile(
+    r"^INSTALLMENT\s+PLAN\s+EMI\s*\(\s*(?P<number>\d{1,2})\s*/\s*"
+    r"(?P<count>\d{1,2})\s*\)\s+(?P<plan_id>LOC-[A-Z0-9-]+)\b",
+    re.IGNORECASE,
+)
 
 
 class SourceProcessingError(ValueError):
@@ -572,6 +577,74 @@ async def _transactions_with_sms_from_other_payload(
     return set(result.all())
 
 
+def _installment_identity_from_metadata(
+    metadata: dict[str, Any],
+) -> tuple[str, int, int] | None:
+    if metadata.get("statement_entry_type") != "installment_payment":
+        return None
+    plan_id = metadata.get("installment_plan_id")
+    number = metadata.get("installment_number")
+    count = metadata.get("installment_count")
+    if (
+        not isinstance(plan_id, str)
+        or not isinstance(number, int)
+        or not isinstance(count, int)
+    ):
+        return None
+    return plan_id.upper(), number, count
+
+
+def _installment_identity_from_description(
+    description: str,
+) -> tuple[str, int, int] | None:
+    match = _INSTALLMENT_DESCRIPTION_RE.match(description)
+    if match is None:
+        return None
+    return (
+        match.group("plan_id").upper(),
+        int(match.group("number")),
+        int(match.group("count")),
+    )
+
+
+async def _matching_installment_transactions(
+    db: AsyncSession,
+    observation: TransactionObservation,
+    candidates: list[Transaction],
+) -> list[Transaction]:
+    identity = _installment_identity_from_metadata(observation.extraction_metadata)
+    if identity is None or not candidates:
+        return candidates
+    candidate_ids = {candidate.id for candidate in candidates}
+    result = await db.execute(
+        select(
+            TransactionSourceLink.transaction_id,
+            TransactionObservation.extraction_metadata,
+        )
+        .join(
+            TransactionObservation,
+            TransactionObservation.id == TransactionSourceLink.observation_id,
+        )
+        .where(TransactionSourceLink.transaction_id.in_(candidate_ids))
+    )
+    identities_by_transaction: dict[int, set[tuple[str, int, int]]] = {}
+    for transaction_id, metadata in result.all():
+        candidate_identity = _installment_identity_from_metadata(metadata or {})
+        if candidate_identity is not None:
+            identities_by_transaction.setdefault(transaction_id, set()).add(
+                candidate_identity
+            )
+    return [
+        candidate
+        for candidate in candidates
+        if identity in identities_by_transaction.get(candidate.id, set())
+        or (
+            candidate.id not in identities_by_transaction
+            and _installment_identity_from_description(candidate.description) == identity
+        )
+    ]
+
+
 async def _link_automatically(
     db: AsyncSession,
     observation: TransactionObservation,
@@ -611,6 +684,8 @@ async def _link_automatically(
         exclude_transaction_ids=claimed_transaction_ids if is_statement else None,
         business_timezone=business_timezone,
     )
+    if is_statement:
+        matches = await _matching_installment_transactions(db, observation, matches)
     date_conflicts = await _date_consistency_conflicts(
         db, observation, {transaction.id for transaction in matches}
     )
@@ -674,6 +749,9 @@ async def _link_automatically(
             description=observation.description or observation.raw_fragment or "No description",
             location=observation.location,
             transaction_kind=observation.transaction_kind or "other",
+            excluded_from_summary=bool(
+                observation.extraction_metadata.get("excluded_from_summary", False)
+            ),
             merchant_norm=merchant_norm,
             fingerprint=generate_fingerprint(
                 card_id=observation.card_id,

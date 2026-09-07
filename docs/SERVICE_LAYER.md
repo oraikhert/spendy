@@ -243,16 +243,18 @@ accept username or email, check password and active status, and create JWTs with
 DB writes. Registration policy belongs to routes; CLI creation bypasses it.
 
 [Dashboard overview](../app/services/dashboard_service.py) is the single business
-operation used by `GET /api/v1/dashboard` and the cookie-authenticated HTML page. It
-returns immutable period/currency values without ORM records and implements the
+operation used by `GET /api/v1/dashboard`, its historical-year subresource, and the
+cookie-authenticated HTML page. It returns immutable period/currency values without ORM records and implements the
 [Dashboard calendar and spending contract](ui/DASHBOARD.md#summary-data), with an
-injectable server-calendar `today`. Two read-only SQL queries discover effective
-card timezones and aggregate the thirteen displayed periods plus the comparison range;
-query count does not grow with transaction count. It never commits or converts
-currencies. The API exposes the current period, twelve previous periods and comparison
-date range through typed response schemas. It accepts no date, account, card or
-currency filters. The web route renders a complete 503 error state on a failed read,
-with no partial totals.
+injectable server-calendar `today`. Read-only SQL queries discover effective card
+timezones, find the earliest calendar year with contributing data, and aggregate the
+displayed periods plus the comparison range; query count does not grow with transaction
+count. It never commits or converts currencies. The default API response exposes the
+current period, earlier months in the current year (or the complete previous year in
+January), comparison date range, and the next historical year; `/years/{year}` exposes
+a complete historical year and its next predecessor. Neither endpoint accepts account,
+card, or currency filters. The web route renders a complete 503 error state on a failed
+read, with no partial totals.
 
 When changing these contracts, use synthetic fixtures and isolate DB/network work.
 Cover duplicate content, ambiguous matches, reprocessing links, FX failure, zero

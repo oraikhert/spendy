@@ -1,7 +1,7 @@
 """Server-rendered Dashboard route."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user_from_cookie_required
 from app.database import get_db
 from app.models.user import User
-from app.services.dashboard_service import get_dashboard_overview
+from app.services.dashboard_service import (
+    DashboardYearUnavailable,
+    get_dashboard_overview,
+    get_dashboard_year,
+)
 from app.web.presentation import money
 from app.web.transaction_helpers import ListFilters
 
@@ -45,4 +49,24 @@ async def dashboard(
         context=context,
         status_code=status_code,
         headers={"Cache-Control": "private, no-store", "Vary": "Cookie"},
+    )
+
+
+@router.get("/dashboard/years/{year}", response_class=HTMLResponse)
+async def dashboard_year(
+    request: Request,
+    year: int,
+    user: Annotated[User, Depends(get_current_user_from_cookie_required)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Render the next historical year for the Dashboard HTMX expander."""
+    try:
+        overview = await get_dashboard_year(db, year=year)
+    except DashboardYearUnavailable as exc:
+        raise HTTPException(status_code=404, detail="Dashboard year is unavailable") from exc
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/dashboard_year.html",
+        context={"user": {"username": user.username}, "year_summary": overview},
+        headers={"Cache-Control": "private, no-store", "Vary": "Cookie, HX-Request"},
     )

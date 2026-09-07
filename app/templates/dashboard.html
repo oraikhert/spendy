@@ -22,7 +22,7 @@
 <div class="mx-auto my-6 max-w-6xl space-y-8 sm:my-10" hx-history="false">
   <header class="space-y-2">
     <h1 class="text-3xl font-bold tracking-tight">Dashboard</h1>
-    <p class="text-base-content/70">Your spending this month, with the previous 12 months for context.</p>
+    <p class="text-base-content/70">Your spending this month, with earlier months in the current year for context.</p>
   </header>
 
   {% if overview is none %}
@@ -75,30 +75,10 @@
       </div>
     </section>
 
-    <section aria-labelledby="previous-months" class="space-y-4">
-      <h2 id="previous-months" class="text-lg font-semibold">Previous months</h2>
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {% for period in overview.previous %}
-          <section class="card min-w-0 border border-base-300 bg-base-100" aria-labelledby="month-{{ loop.index }}">
-            <div class="card-body gap-5 p-5 sm:p-6">
-              <header class="space-y-1">
-                <h3 id="month-{{ loop.index }}" class="text-lg font-semibold">{{ period.date_from.strftime('%B %Y') }}</h3>
-                <p class="text-xs text-base-content/70">{{ date_range(period) }}</p>
-              </header>
-              {% for entry in period.currencies %}
-                <div class="min-w-0 border-t border-base-200 pt-4">
-                  <p class="mb-2 text-xs font-medium text-base-content/70">Net spending · {{ entry.currency }}</p>
-                  {{ amount_link(period, entry) }}
-                  <p class="mt-2 text-sm text-base-content/70">{{ entry.count }} {{ 'transaction' if entry.count == 1 else 'transactions' }}</p>
-                </div>
-              {% else %}
-                <p class="text-sm text-base-content/70" role="status">No purchase or refund transactions</p>
-              {% endfor %}
-            </div>
-          </section>
-        {% endfor %}
-      </div>
-    </section>
+    <div id="dashboard-year-list" class="space-y-8">
+      {% set year_summary = namespace(year=overview.year, months=overview.previous, previous_year=overview.previous_year) %}
+      {% include "partials/dashboard_year.html" %}
+    </div>
   {% endif %}
 </div>
 {% endblock %}

@@ -1,7 +1,7 @@
 # Dashboard
 
 The Dashboard is the authenticated landing page for a compact view of spending in
-the current month and the twelve preceding months. Interface labels are English.
+the current month and earlier calendar years. Interface labels are English.
 
 ## Summary data
 
@@ -23,7 +23,7 @@ the current month and the twelve preceding months. Interface labels are English.
 The application server calendar determines today. For every card, calendar-day
 boundaries use the card timezone, then its account timezone, then UTC. The current
 period runs from the first day of the current month through today, inclusive. The
-twelve earlier periods are complete calendar months and appear newest first.
+earlier periods are complete calendar months and appear newest first within a year.
 
 Current-month change compares each currency with the same numbered date range in
 the preceding month. If the preceding month is shorter, its range ends on its final
@@ -33,7 +33,7 @@ percentage.
 
 ## Page layout
 
-`/dashboard` starts with `Dashboard` and a short explanation of the thirteen-month view.
+`/dashboard` starts with `Dashboard` and a short explanation of the current-year view.
 The page body contains no `Add transaction`, `View transactions`, logout, profile,
 account-status, administrator-status, or other quick-action control. The persistent
 `Transactions` link beside the user control in the global navigation remains the
@@ -53,12 +53,20 @@ has a compact summary containing:
 The average is net spending divided by the contributing count in that currency.
 Count and average describe the same `Purchase` and `Refund` records as the total.
 
-### Previous months
+### Earlier months and years
 
-Twelve secondary cards follow the current-month section. Each card identifies one
+The current-year heading follows the current-month section and contains every earlier
+complete month in that calendar year. In January, this otherwise empty group is
+omitted: the previous year is shown immediately instead. Each card identifies one
 complete month and lists net spending and contributing transaction count for every
 currency present in that month. Historical cards do not repeat averages or
 month-over-month percentages.
+
+At the bottom, `Show more` appends all twelve months of the immediately preceding
+year under its own year heading. Repeating it appends the next preceding year. Empty
+months within an available year still render. The button is disabled after the earliest
+calendar year that has a contributing `Purchase` or `Refund`; it is also disabled when
+there is no contributing data at all.
 
 The page has no category, merchant, account, card, income, balance, budget, forecast,
 chart, or recent-transaction section. Transaction type is not presented as a spending
@@ -86,6 +94,8 @@ text identifies the period and currency even when the visible amount is brief.
 - An empty historical month says `No purchase or refund transactions` within its card.
 - Several currencies remain separate at every viewport width. Long formatted amounts
   wrap without hiding their currency or causing horizontal page scrolling.
+- `Show more` uses the same outline/disabled treatment as transaction pagination and
+  announces its loading state; it appends content rather than replacing the summary.
 - Negative net spending is explicitly labeled as a net refund rather than relying
   on color or the minus sign alone.
 - A read failure replaces the summary with a concise error and a `Retry` link to

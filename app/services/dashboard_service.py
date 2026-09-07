@@ -9,10 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.card import Card
 from app.models.transaction import Transaction
-from app.utils.business_time import business_day_utc_bounds
-
-
-PREVIOUS_MONTH_COUNT = 12
+from app.utils.business_time import business_date, business_day_utc_bounds
 
 
 @dataclass(frozen=True)
@@ -42,6 +39,19 @@ class DashboardOverview:
     current: SpendingPeriod
     previous: tuple[SpendingPeriod, ...]
     comparison: ComparisonPeriod
+    year: int
+    previous_year: int | None
+
+
+@dataclass(frozen=True)
+class DashboardYear:
+    year: int
+    months: tuple[SpendingPeriod, ...]
+    previous_year: int | None
+
+
+class DashboardYearUnavailable(ValueError):
+    """Raised when a requested historical dashboard year is unavailable."""
 
 
 async def get_dashboard_overview(
@@ -54,16 +64,72 @@ async def get_dashboard_overview(
     data. ``today`` is injectable so calendar behavior can be checked deterministically.
     """
     today = today if today is not None else date.today()
-    periods = [SpendingPeriod(today.replace(day=1), today)]
-    for _ in range(PREVIOUS_MONTH_COUNT):
-        end = periods[-1].date_from - timedelta(days=1)
-        periods.append(SpendingPeriod(end.replace(day=1), end))
-    previous = periods[1]
-    comparison = ComparisonPeriod(
-        previous.date_from,
-        previous.date_to.replace(day=min(today.day, previous.date_to.day)),
+    current = SpendingPeriod(today.replace(day=1), today)
+    display_year = today.year if today.month > 1 else today.year - 1
+    previous = tuple(
+        _month_period(display_year, month)
+        for month in range(
+            today.month - 1 if today.month > 1 else 12,
+            0,
+            -1,
+        )
     )
-    query_periods = [*periods, SpendingPeriod(comparison.date_from, comparison.date_to)]
+    comparison_month_end = current.date_from - timedelta(days=1)
+    comparison_period = SpendingPeriod(
+        comparison_month_end.replace(day=1), comparison_month_end,
+    )
+    comparison = ComparisonPeriod(
+        comparison_period.date_from,
+        comparison_period.date_to.replace(
+            day=min(today.day, comparison_period.date_to.day),
+        ),
+    )
+    populated, earliest_year = await _aggregate_periods(
+        db,
+        (current, *previous),
+        SpendingPeriod(comparison.date_from, comparison.date_to),
+    )
+    return DashboardOverview(
+        populated[0], tuple(populated[1:]), comparison, display_year,
+        _previous_available_year(display_year, earliest_year),
+    )
+
+
+async def get_dashboard_year(
+    db: AsyncSession, *, year: int, today: date | None = None,
+) -> DashboardYear:
+    """Return every month in an available completed calendar year."""
+    today = today if today is not None else date.today()
+    if year >= today.year:
+        raise DashboardYearUnavailable("A historical year is required")
+    months = tuple(_month_period(year, month) for month in range(12, 0, -1))
+    populated, earliest_year = await _aggregate_periods(db, months)
+    if earliest_year is None or year < earliest_year:
+        raise DashboardYearUnavailable("No dashboard data exists for this year")
+    return DashboardYear(
+        year, tuple(populated), _previous_available_year(year, earliest_year),
+    )
+
+
+def _month_period(year: int, month: int) -> SpendingPeriod:
+    date_from = date(year, month, 1)
+    next_month = (
+        date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    )
+    return SpendingPeriod(date_from, next_month - timedelta(days=1))
+
+
+def _previous_available_year(year: int, earliest_year: int | None) -> int | None:
+    return year - 1 if earliest_year is not None and earliest_year < year else None
+
+
+async def _aggregate_periods(
+    db: AsyncSession,
+    periods: tuple[SpendingPeriod, ...],
+    comparison: SpendingPeriod | None = None,
+) -> tuple[list[SpendingPeriod], int | None]:
+    """Aggregate periods and find the first business-calendar year with data."""
+    query_periods = [*periods, *([comparison] if comparison is not None else [])]
 
     zone = func.coalesce(Card.timezone, Account.timezone, "UTC")
     timezones = (await db.execute(
@@ -72,6 +138,20 @@ async def get_dashboard_overview(
     effective_date = func.coalesce(
         Transaction.transaction_datetime, Transaction.posting_datetime,
     )
+    earliest_rows = (await db.execute(
+        select(zone, func.min(effective_date))
+        .select_from(Transaction).join(Card).join(Account)
+        .where(
+            Transaction.transaction_kind.in_(("purchase", "refund")),
+            effective_date.is_not(None),
+        )
+        .group_by(zone)
+    )).all()
+    earliest_year = min((
+        business_date(effective, timezone_name).year
+        for timezone_name, effective in earliest_rows
+        if effective is not None
+    ), default=None)
     queries = []
     for index, period in enumerate(query_periods):
         conditions = []
@@ -96,17 +176,19 @@ async def get_dashboard_overview(
         net = -signed_sum
         groups[index].append(CurrencySpending(currency, net, count, net / count))
 
-    baseline = {entry.currency: entry.net_spending for entry in groups[-1]}
-    groups[0] = [replace(
-        entry,
-        comparison_percent=(
-            ((entry.net_spending - baseline[entry.currency])
-             / abs(baseline[entry.currency]) * Decimal(100))
-            .quantize(Decimal(1), rounding=ROUND_HALF_UP)
-            if baseline.get(entry.currency) else None
-        ),
-    ) for entry in groups[0]]
+    if comparison is not None:
+        baseline = {entry.currency: entry.net_spending for entry in groups[-1]}
+        groups[0] = [replace(
+            entry,
+            comparison_percent=(
+                ((entry.net_spending - baseline[entry.currency])
+                 / abs(baseline[entry.currency]) * Decimal(100))
+                .quantize(Decimal(1), rounding=ROUND_HALF_UP)
+                if baseline.get(entry.currency) else None
+            ),
+        ) for entry in groups[0]]
+        groups = groups[:-1]
     populated = [replace(period, currencies=tuple(sorted(
         entries, key=lambda entry: entry.currency,
-    ))) for period, entries in zip(periods, groups[:-1])]
-    return DashboardOverview(populated[0], tuple(populated[1:]), comparison)
+    ))) for period, entries in zip(periods, groups)]
+    return populated, earliest_year

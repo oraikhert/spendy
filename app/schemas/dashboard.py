@@ -32,3 +32,11 @@ class DashboardOverviewResponse(DashboardModel):
     current: SpendingPeriodResponse
     previous: list[SpendingPeriodResponse]
     comparison: ComparisonPeriodResponse
+    year: int
+    previous_year: int | None
+
+
+class DashboardYearResponse(DashboardModel):
+    year: int
+    months: list[SpendingPeriodResponse]
+    previous_year: int | None

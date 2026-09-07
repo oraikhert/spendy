@@ -4,7 +4,13 @@ from unittest.mock import patch
 
 import httpx
 
-from test_dashboard_service import DashboardDatabase, TODAY, User, get_dashboard_overview
+from test_dashboard_service import (
+    DashboardDatabase,
+    TODAY,
+    User,
+    get_dashboard_overview,
+    get_dashboard_year,
+)
 from app.core.security import create_access_token
 from app.database import get_db
 from app.main import app
@@ -29,17 +35,25 @@ class DashboardApiTests(DashboardDatabase):
         async def fixed_overview(db):
             return await get_dashboard_overview(db, today=TODAY)
 
+        async def fixed_year(db, *, year):
+            return await get_dashboard_year(db, year=year, today=TODAY)
+
         app.dependency_overrides[get_db] = override_db
         self.overview_patch = patch(
             "app.api.v1.dashboard.get_dashboard_overview", side_effect=fixed_overview,
         )
         self.overview_patch.start()
+        self.year_patch = patch(
+            "app.api.v1.dashboard.get_dashboard_year", side_effect=fixed_year,
+        )
+        self.year_patch.start()
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test",
         )
 
     async def asyncTearDown(self):
         self.overview_patch.stop()
+        self.year_patch.stop()
         await self.client.aclose()
         app.dependency_overrides.clear()
         await super().asyncTearDown()
@@ -58,14 +72,17 @@ class DashboardApiTests(DashboardDatabase):
         self.assertEqual(response.headers["pragma"], "no-cache")
         self.assertEqual(response.headers["vary"], "Authorization")
         payload = response.json()
-        self.assertEqual(set(payload), {"current", "previous", "comparison"})
+        self.assertEqual(
+            set(payload), {"current", "previous", "comparison", "year", "previous_year"},
+        )
         self.assertEqual(
             (payload["current"]["date_from"], payload["current"]["date_to"]),
             ("2026-03-01", "2026-03-06"),
         )
-        self.assertEqual(len(payload["previous"]), 12)
-        self.assertEqual(payload["previous"][-1]["date_from"], "2025-03-01")
-        self.assertEqual(payload["previous"][-1]["date_to"], "2025-03-31")
+        self.assertEqual(len(payload["previous"]), 2)
+        self.assertEqual((payload["year"], payload["previous_year"]), (2026, 2025))
+        self.assertEqual(payload["previous"][-1]["date_from"], "2026-01-01")
+        self.assertEqual(payload["previous"][-1]["date_to"], "2026-01-31")
         self.assertEqual(
             [(entry["currency"], entry["net_spending"], entry["count"],
               entry["comparison_percent"])
@@ -85,9 +102,20 @@ class DashboardApiTests(DashboardDatabase):
         self.assertNotIn("total_spent", payload)
         self.assertNotIn("by_kind", payload)
 
+        historical = await self.client.get(
+            "/api/v1/dashboard/years/2025", headers=self.authorization(),
+        )
+        self.assertEqual(historical.status_code, 200)
+        self.assertEqual(historical.headers["vary"], "Authorization")
+        self.assertEqual(historical.json()["year"], 2025)
+        self.assertEqual(len(historical.json()["months"]), 12)
+        self.assertIsNone(historical.json()["previous_year"])
+
     async def test_authentication_and_removed_summary_route(self):
         missing = await self.client.get("/api/v1/dashboard")
         self.assertEqual(missing.status_code, 401)
+        missing_year = await self.client.get("/api/v1/dashboard/years/2025")
+        self.assertEqual(missing_year.status_code, 401)
         inactive = await self.client.get(
             "/api/v1/dashboard", headers=self.authorization(2),
         )

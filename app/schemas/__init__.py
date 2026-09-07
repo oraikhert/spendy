@@ -35,6 +35,7 @@ from app.schemas.dashboard import (
     ComparisonPeriodResponse,
     CurrencySpendingResponse,
     DashboardOverviewResponse,
+    DashboardYearResponse,
     SpendingPeriodResponse,
 )
 
@@ -71,5 +72,6 @@ __all__ = [
     "ComparisonPeriodResponse",
     "CurrencySpendingResponse",
     "DashboardOverviewResponse",
+    "DashboardYearResponse",
     "SpendingPeriodResponse",
 ]

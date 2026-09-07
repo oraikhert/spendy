@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 with patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}):
     from app.database import Base
     from app.models import Account, Card, Transaction, User
-    from app.services.dashboard_service import get_dashboard_overview
+    from app.services.dashboard_service import (
+        DashboardYearUnavailable,
+        get_dashboard_overview,
+        get_dashboard_year,
+    )
 
 TODAY = date(2026, 3, 6)
 
@@ -80,14 +84,14 @@ class DashboardDatabase(unittest.IsolatedAsyncioTestCase):
 
 
 class DashboardServiceTests(DashboardDatabase):
-    async def test_thirteen_periods_membership_currencies_and_timezone_bounds(self):
+    async def test_current_year_periods_membership_currencies_and_timezone_bounds(self):
         statements = []
         @event.listens_for(self.engine.sync_engine, "before_cursor_execute")
         def count_queries(connection, cursor, statement, parameters, context, many):
             statements.append(statement)
         async with self.sessions() as db:
             overview = await get_dashboard_overview(db, today=TODAY)
-        self.assertEqual(len(statements), 2)
+        self.assertEqual(len(statements), 3)
         current = overview.current
         self.assertEqual((current.date_from, current.date_to), (date(2026, 3, 1), TODAY))
         self.assertEqual([entry.currency for entry in current.currencies], ["AED", "EUR", "USD"])
@@ -101,24 +105,29 @@ class DashboardServiceTests(DashboardDatabase):
         self.assertEqual([(period.date_from, period.date_to) for period in overview.previous], [
             (date(2026, 2, 1), date(2026, 2, 28)),
             (date(2026, 1, 1), date(2026, 1, 31)),
-            (date(2025, 12, 1), date(2025, 12, 31)),
-            (date(2025, 11, 1), date(2025, 11, 30)),
-            (date(2025, 10, 1), date(2025, 10, 31)),
-            (date(2025, 9, 1), date(2025, 9, 30)),
-            (date(2025, 8, 1), date(2025, 8, 31)),
-            (date(2025, 7, 1), date(2025, 7, 31)),
-            (date(2025, 6, 1), date(2025, 6, 30)),
-            (date(2025, 5, 1), date(2025, 5, 31)),
-            (date(2025, 4, 1), date(2025, 4, 30)),
-            (date(2025, 3, 1), date(2025, 3, 31)),
         ])
         self.assertEqual(
-            [p.currencies[0].net_spending for p in overview.previous[:3]],
-            [Decimal(66), Decimal(30), Decimal(20)],
+            [p.currencies[0].net_spending for p in overview.previous],
+            [Decimal(66), Decimal(30)],
         )
-        self.assertTrue(all(not period.currencies for period in overview.previous[3:11]))
-        self.assertEqual(overview.previous[11].currencies[0].net_spending, Decimal(15))
+        self.assertEqual((overview.year, overview.previous_year), (2026, 2025))
         self.assertEqual(overview.comparison.date_to, date(2026, 2, 6))
+
+    async def test_historical_years_are_complete_until_earliest_data_year(self):
+        async with self.sessions() as db:
+            overview = await get_dashboard_year(db, year=2025, today=TODAY)
+            with self.assertRaises(DashboardYearUnavailable):
+                await get_dashboard_year(db, year=2024, today=TODAY)
+        self.assertEqual(overview.year, 2025)
+        self.assertEqual(len(overview.months), 12)
+        self.assertEqual(
+            [(period.date_from, period.date_to) for period in overview.months[:2]],
+            [(date(2025, 12, 1), date(2025, 12, 31)),
+             (date(2025, 11, 1), date(2025, 11, 30))],
+        )
+        march = next(period for period in overview.months if period.date_from.month == 3)
+        self.assertEqual(march.currencies[0].net_spending, Decimal(15))
+        self.assertIsNone(overview.previous_year)
 
     async def test_short_month_comparison_and_negative_baseline(self):
         async with self.sessions() as db:
@@ -135,12 +144,17 @@ class DashboardServiceTests(DashboardDatabase):
             self.assertEqual(overview.current.currencies[1].comparison_percent, Decimal(50))
             self.assertIsNone(overview.current.currencies[2].comparison_percent)
 
-    async def test_empty_dataset_has_all_periods(self):
+    async def test_january_starts_with_the_complete_previous_year(self):
         async with self.sessions() as db:
             overview = await get_dashboard_overview(db, today=date(2028, 1, 1))
         self.assertFalse(overview.current.currencies)
         self.assertEqual(len(overview.previous), 12)
-        self.assertTrue(all(not p.currencies for p in overview.previous))
+        self.assertEqual(
+            [(period.date_from, period.date_to) for period in overview.previous[:2]],
+            [(date(2027, 12, 1), date(2027, 12, 31)),
+             (date(2027, 11, 1), date(2027, 11, 30))],
+        )
+        self.assertEqual((overview.year, overview.previous_year), (2027, 2026))
 
 
 if __name__ == "__main__":

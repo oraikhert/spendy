@@ -1,0 +1,47 @@
+{% macro date_range(period) %}
+  <time datetime="{{ period.date_from.isoformat() }}">{{ period.date_from.strftime('%d %b %Y') }}</time>
+  <span aria-hidden="true">–</span><span class="sr-only">through</span>
+  <time datetime="{{ period.date_to.isoformat() }}">{{ period.date_to.strftime('%d %b %Y') }}</time>
+{% endmacro %}
+
+{% macro amount_link(period, entry) %}
+  <a href="{{ period_url(period) }}"
+     class="inline-block max-w-full rounded-sm text-2xl font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere] hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+     aria-label="{{ money(entry.net_spending, entry.currency, show_plus=false) }} net spending, {{ period.date_from.strftime('%B %Y') }}, {{ period.date_from.isoformat() }} through {{ period.date_to.isoformat() }}. Show transactions for this period.">{{ money(entry.net_spending, entry.currency, show_plus=false) }}</a>
+  {% if entry.net_spending < 0 %}
+    <p class="mt-2 text-sm text-base-content/70">Net refund · refunds exceed purchases.</p>
+  {% endif %}
+{% endmacro %}
+
+<section id="dashboard-year-{{ year_summary.year }}" aria-labelledby="dashboard-year-heading-{{ year_summary.year }}" class="space-y-4">
+  <h2 id="dashboard-year-heading-{{ year_summary.year }}" class="text-lg font-semibold">{{ year_summary.year }}</h2>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    {% for period in year_summary.months %}
+      <section class="card min-w-0 border border-base-300 bg-base-100" aria-labelledby="month-{{ year_summary.year }}-{{ period.date_from.month }}">
+        <div class="card-body gap-5 p-5 sm:p-6">
+          <header class="space-y-1">
+            <h3 id="month-{{ year_summary.year }}-{{ period.date_from.month }}" class="text-lg font-semibold">{{ period.date_from.strftime('%B %Y') }}</h3>
+            <p class="text-xs text-base-content/70">{{ date_range(period) }}</p>
+          </header>
+          {% for entry in period.currencies %}
+            <div class="min-w-0 border-t border-base-200 pt-4">
+              <p class="mb-2 text-xs font-medium text-base-content/70">Net spending · {{ entry.currency }}</p>
+              {{ amount_link(period, entry) }}
+              <p class="mt-2 text-sm text-base-content/70">{{ entry.count }} {{ 'transaction' if entry.count == 1 else 'transactions' }}</p>
+            </div>
+          {% else %}
+            <p class="text-sm text-base-content/70" role="status">No purchase or refund transactions</p>
+          {% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  </div>
+</section>
+<div id="dashboard-load-more" class="flex justify-center">
+  {% if year_summary.previous_year is not none %}
+    <button type="button" class="btn btn-outline btn-sm" hx-get="/dashboard/years/{{ year_summary.previous_year }}" hx-target="#dashboard-load-more" hx-swap="outerHTML" hx-indicator="#dashboard-loading" aria-controls="dashboard-year-list">Show more</button>
+    <span id="dashboard-loading" class="htmx-indicator ml-3 self-center text-sm" role="status"><span class="loading loading-spinner loading-xs" aria-hidden="true"></span> Loading year…</span>
+  {% else %}
+    <button type="button" class="btn btn-outline btn-sm" disabled>Show more</button>
+  {% endif %}
+</div>

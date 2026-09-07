@@ -102,7 +102,9 @@ used by the HTML Dashboard: earlier months of the current calendar year, or the 
 previous year in January. `previous_year` indicates whether more history is available.
 `GET /api/v1/dashboard/years/{year}` returns all months for one available earlier year
 and the next year that can be requested. Their calendar is determined by the
-application server and the effective timezone of each card.
+application server and the effective timezone of each card. Each current-period
+currency also exposes `largest_expenses`: up to three largest negative `Purchase`
+amounts, with their descriptions.
 For exact validation limits and payloads, use Swagger and
 [input schemas](app/schemas/), rather than maintaining a second endpoint catalog.
 

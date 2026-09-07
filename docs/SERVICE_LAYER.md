@@ -251,10 +251,11 @@ timezones, find the earliest calendar year with contributing data, and aggregate
 displayed periods plus the comparison range; query count does not grow with transaction
 count. It never commits or converts currencies. The default API response exposes the
 current period, earlier months in the current year (or the complete previous year in
-January), comparison date range, and the next historical year; `/years/{year}` exposes
-a complete historical year and its next predecessor. Neither endpoint accepts account,
-card, or currency filters. The web route renders a complete 503 error state on a failed
-read, with no partial totals.
+January), comparison date range, and the next historical year. Current-period currency
+entries also include up to three largest negative `Purchase` amounts. `/years/{year}`
+exposes a complete historical year and its next predecessor. Neither endpoint accepts
+account, card, or currency filters. The web route renders a complete 503 error state on
+a failed read, with no partial totals.
 
 When changing these contracts, use synthetic fixtures and isolate DB/network work.
 Cover duplicate content, ambiguous matches, reprocessing links, FX failure, zero

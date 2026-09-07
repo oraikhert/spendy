@@ -96,6 +96,12 @@ class DashboardApiTests(DashboardDatabase):
             "12.85714285714285714285714286",
         )
         self.assertEqual(
+            payload["current"]["currencies"][0]["largest_expenses"],
+            [{"description": "Synthetic dashboard fixture", "amount": "100.00"},
+             {"description": "Synthetic dashboard fixture", "amount": "6.00"},
+             {"description": "Synthetic dashboard fixture", "amount": "4.00"}],
+        )
+        self.assertEqual(
             payload["comparison"],
             {"date_from": "2026-02-01", "date_to": "2026-02-06"},
         )

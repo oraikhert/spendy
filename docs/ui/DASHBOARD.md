@@ -50,6 +50,10 @@ has a compact summary containing:
 - average net spending per contributing transaction; and
 - change from the matching part of the previous month.
 
+For each currency, the current-month section also lists up to three largest expenses.
+They are `Purchase` transactions with a negative stored amount, ordered by absolute
+spend descending; refunds and anomalous positive purchases are excluded.
+
 The average is net spending divided by the contributing count in that currency.
 Count and average describe the same `Purchase` and `Refund` records as the total.
 

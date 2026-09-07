@@ -76,8 +76,9 @@ class DashboardWebTests(DashboardDatabase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "private, no-store")
         body = response.text.split("<main", 1)[1].split("</main>", 1)[0]
-        for text in ("90.00 AED", "−25.00 EUR", "0.00 USD", "12.86 AED", "+125%", "Net refund", "No comparable spending", "66.00 AED", "30.00 AED"):
+        for text in ("90.00 AED", "−25.00 EUR", "0.00 USD", "12.86 AED", "+125%", "Net refund", "No comparable spending", "100.00 AED", "6.00 AED", "4.00 AED", "10.00 USD", "66.00 AED", "30.00 AED"):
             self.assertIn(text, body)
+        self.assertEqual(body.count("Largest expenses"), 2)
         for text in ("Welcome,", "Account info", "Administrator", "Quick actions", "Add transaction", "View transactions", "Log out", "<form"):
             self.assertNotIn(text, body)
         self.assertIn('href="/transactions"', response.text.split("<main", 1)[0])

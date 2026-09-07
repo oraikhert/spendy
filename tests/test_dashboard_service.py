@@ -91,7 +91,7 @@ class DashboardServiceTests(DashboardDatabase):
             statements.append(statement)
         async with self.sessions() as db:
             overview = await get_dashboard_overview(db, today=TODAY)
-        self.assertEqual(len(statements), 3)
+        self.assertEqual(len(statements), 4)
         current = overview.current
         self.assertEqual((current.date_from, current.date_to), (date(2026, 3, 1), TODAY))
         self.assertEqual([entry.currency for entry in current.currencies], ["AED", "EUR", "USD"])
@@ -100,6 +100,14 @@ class DashboardServiceTests(DashboardDatabase):
         self.assertEqual(aed.comparison_percent, Decimal("125"))
         self.assertEqual((eur.net_spending, eur.count), (Decimal("-25"), 1))
         self.assertEqual((usd.net_spending, usd.count, usd.average), (Decimal(0), 2, Decimal(0)))
+        self.assertEqual(
+            [(expense.description, expense.amount) for expense in aed.largest_expenses],
+            [("Synthetic dashboard fixture", Decimal(100)),
+             ("Synthetic dashboard fixture", Decimal(6)),
+             ("Synthetic dashboard fixture", Decimal(4))],
+        )
+        self.assertEqual([expense.amount for expense in usd.largest_expenses], [Decimal(10)])
+        self.assertFalse(eur.largest_expenses)
         self.assertIsNone(usd.comparison_percent)
         self.assertIsNone(eur.comparison_percent)
         self.assertEqual([(period.date_from, period.date_to) for period in overview.previous], [

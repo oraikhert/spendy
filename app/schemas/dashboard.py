@@ -9,12 +9,18 @@ class DashboardModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LargestSpendingResponse(DashboardModel):
+    description: str
+    amount: Decimal
+
+
 class CurrencySpendingResponse(DashboardModel):
     currency: str
     net_spending: Decimal
     count: int
     average: Decimal
     comparison_percent: Decimal | None = None
+    largest_expenses: list[LargestSpendingResponse]
 
 
 class SpendingPeriodResponse(DashboardModel):

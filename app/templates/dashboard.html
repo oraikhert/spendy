@@ -58,6 +58,19 @@
                     <dd class="mt-1 text-base font-semibold tabular-nums [overflow-wrap:anywhere]">{{ money(entry.average, entry.currency, show_plus=false) }}</dd>
                   </div>
                 </dl>
+                {% if entry.largest_expenses %}
+                  <section aria-labelledby="largest-expenses-{{ loop.index }}">
+                    <h4 id="largest-expenses-{{ loop.index }}" class="text-sm font-medium text-base-content/70">Largest expenses</h4>
+                    <ol class="mt-2 space-y-1 text-sm">
+                      {% for expense in entry.largest_expenses %}
+                        <li class="flex min-w-0 items-baseline justify-between gap-3">
+                          <span class="min-w-0 truncate">{{ expense.description }}</span>
+                          <span class="shrink-0 font-semibold tabular-nums">{{ money(expense.amount, entry.currency, show_plus=false) }}</span>
+                        </li>
+                      {% endfor %}
+                    </ol>
+                  </section>
+                {% endif %}
                 <p class="text-sm text-base-content/70">
                   {% if entry.comparison_percent is none %}
                     No comparable spending

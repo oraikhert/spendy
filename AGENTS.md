@@ -2,6 +2,7 @@
 
 ## Working context
 
+- Conduct all reasoning and write all user-facing responses in English, regardless of the language used in the request.
 - These are Codex project rules; do not import Cursor-specific restrictions.
 - Start with `git status --short` and a targeted `rg` search. Read the affected
   modules, callers, tests, and relevant docs, not the entire repository.

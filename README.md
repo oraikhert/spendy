@@ -20,6 +20,8 @@ Read the document for your task; there is no need to load the entire documentati
 |------|------------|
 | Install, run, use the API or run checks | This README |
 | Locate code or understand architectural decisions | [Architecture](docs/ARCHITECTURE.md) |
+| Understand workspace ownership, roles and access | [Workspaces](docs/WORKSPACES.md) |
+| Implement workspaces, iteration 1 | [Workspace development task v1](docs/requirements/WORKSPACES_v1.md) |
 | Understand the dashboard summary | [Dashboard UI](docs/ui/DASHBOARD.md) |
 | Implement the dashboard summary, iteration 1 | [Dashboard UI task v1](docs/requirements/DASHBOARD_UI_v1.md) |
 | Understand transaction screens and behavior | [Transactions UI](docs/ui/TRANSACTIONS.md) |

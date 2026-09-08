@@ -133,11 +133,13 @@ payload/detail without observations. The configured upload limit defaults to 20 
 and the statement parser rejects more than 100 pages.
 
 Emirates NBD installment blocks preserve the printed plan date in extraction metadata
-and derive each payment's effective date from its sequence number. Their matching
-identity includes the LOC reference plus installment number/count, so equal monthly
-amounts do not collapse into one transaction. A separate dated LOC principal row that
-matches the plan reference and principal is retained as an `other` observation, marked
-excluded from summaries, and omitted from the purchase/charge total reconciliation.
+and derive each payment's effective date from its sequence number. Loan On Card uses
+the printed `LOC-...` reference, while an Installment Payment Plan created by converting
+a completed purchase uses the purchase's merchant description as its plan reference.
+The reference plus installment number/count form the matching identity, so equal monthly
+amounts do not collapse into one transaction. A separate dated Loan On Card principal
+row that matches the plan reference and principal is retained as an `other` observation,
+marked excluded from summaries, and omitted from the purchase/charge total reconciliation.
 
 ## Matching and dates
 

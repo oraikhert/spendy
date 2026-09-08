@@ -99,6 +99,23 @@ Previous Statement Purchase / Cash Advance Interest/Other Charges Payments/Credi
 236.50 100.00 0.00 0.00 336.50 436.50
 """
 
+PURCHASE_INSTALLMENT_PLAN_STATEMENT = """
+Emirates NBD
+Credit Card Statement
+Card Number: 9999 XXXX XXXX 1111
+Card Type: Synthetic Rewards
+Statement Period: 07-Jul-23 to 06-Aug-23
+Available Credit Limit (AED)
+Transaction Date Posting Date Description Amount
+25/02/2023 INSTALLMENT PLAN EMI (06/06) 355.00
+SYNTHETIC MERCHANT 2130.00
+Remaining Principle Balance 0.00
+0.00 355.00 0.00 0.00 355.00 355.00
+STATEMENT SUMMARY
+Previous Statement Purchase / Cash Advance Interest/Other Charges Payments/Credits Total Payment Due Current Balance
+0.00 355.00 0.00 0.00 355.00 355.00
+"""
+
 MULTI_CARD_PAGE_ONE = """
 Emirates NBD
 Credit Card Statement
@@ -218,6 +235,24 @@ class StatementParserTests(unittest.TestCase):
             "LOC-SYNTHETIC-1",
         )
         self.assertEqual(second_payment.extraction_metadata["installment_number"], 2)
+
+    def test_purchase_installment_plan_uses_merchant_as_plan_reference(self):
+        result = parse_emirates_nbd_statement_text(
+            [PURCHASE_INSTALLMENT_PLAN_STATEMENT], source_timezone="Asia/Dubai"
+        )
+
+        self.assertEqual(result.status.value, "processed")
+        installment = result.observations[0]
+        self.assertEqual(
+            installment.extraction_metadata["installment_plan_id"],
+            "SYNTHETIC MERCHANT",
+        )
+        self.assertEqual(
+            installment.extraction_metadata["installment_principal"], "2130.00"
+        )
+        self.assertEqual(
+            installment.extraction_metadata["remaining_principal"], "0.00"
+        )
 
     def test_wrong_pdf_password_is_rejected(self):
         stream = BytesIO()

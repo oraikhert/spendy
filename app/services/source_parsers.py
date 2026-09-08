@@ -38,7 +38,7 @@ PARSER_REGISTRY: dict[tuple[str, str], tuple[RegisteredParser, ...]] = {
     (SourceKind.BANK_STATEMENT.value, "application/pdf"): (
         RegisteredParser(
             name="emirates_nbd_credit_card_statement_pdf",
-            version="4",
+            version="5",
             parse=parse_emirates_nbd_credit_card_statement,
         ),
     ),

@@ -49,8 +49,10 @@ _INSTALLMENT_RE = re.compile(
     r"(?P<count>\d{1,2})\s*\)$",
     re.IGNORECASE,
 )
+# Loan On Card prints an LOC reference; a converted-purchase Installment
+# Payment Plan prints the original merchant description in the same position.
 _INSTALLMENT_PLAN_RE = re.compile(
-    r"^(?P<plan_id>LOC-[A-Z0-9-]+)\s+(?P<principal>\d[\d,]*\.\d{2})$",
+    r"^(?P<plan_reference>.+?)\s+(?P<principal>\d[\d,]*\.\d{2})$",
     re.IGNORECASE,
 )
 _REMAINING_PRINCIPAL_RE = re.compile(
@@ -325,25 +327,36 @@ def _parse_observations(
                 current_row["raw_lines"].append(stripped)
                 continue
 
-            if current_row is not None and (
-                normalized.startswith("LOC-")
-                or normalized.startswith("Remaining Principle Balance")
+            if (
+                current_row is not None
+                and current_row["installment_number"] is not None
             ):
-                plan_match = _INSTALLMENT_PLAN_RE.fullmatch(normalized)
                 remaining_match = _REMAINING_PRINCIPAL_RE.fullmatch(normalized)
-                if current_row["installment_number"] is not None:
-                    if plan_match is not None:
-                        current_row["installment_plan_id"] = plan_match.group(
-                            "plan_id"
-                        ).upper()
-                        current_row["installment_principal"] = _decimal(
-                            plan_match.group("principal"), "installment principal"
-                        )
-                    elif remaining_match is not None:
-                        current_row["remaining_principal"] = _decimal(
-                            remaining_match.group("remaining"),
-                            "remaining installment principal",
-                        )
+                plan_match = (
+                    None
+                    if remaining_match is not None
+                    else _INSTALLMENT_PLAN_RE.fullmatch(normalized)
+                )
+                if (
+                    plan_match is not None
+                    and current_row["installment_plan_id"] is None
+                ):
+                    current_row["installment_plan_id"] = plan_match.group(
+                        "plan_reference"
+                    ).upper()
+                    current_row["installment_principal"] = _decimal(
+                        plan_match.group("principal"), "installment principal"
+                    )
+                elif (
+                    remaining_match is not None
+                    and current_row["remaining_principal"] is None
+                ):
+                    current_row["remaining_principal"] = _decimal(
+                        remaining_match.group("remaining"),
+                        "remaining installment principal",
+                    )
+                else:
+                    continue
                 current_row["description"] = f"{current_row['description']} {normalized}"
                 current_row["raw_lines"].append(stripped)
 
@@ -358,10 +371,10 @@ def _parse_observations(
         installment_count = int(row["installment_count"])
         if not 1 <= int(installment_number) <= installment_count:
             raise _StatementExtractionError("Invalid installment sequence")
-        plan_id = row["installment_plan_id"]
+        plan_reference = row["installment_plan_id"]
         principal = row["installment_principal"]
         remaining = row["remaining_principal"]
-        if plan_id is None or principal is None or remaining is None:
+        if plan_reference is None or principal is None or remaining is None:
             raise _StatementExtractionError("Incomplete installment details")
         printed_date = row["printed_transaction_date"]
         effective_date = _add_months_clamped(
@@ -376,7 +389,7 @@ def _parse_observations(
             effective_date = statement.statement_period_end
             date_source = "statement_period_end"
         row["transaction_date"] = effective_date
-        installment_plans[str(plan_id)] = row
+        installment_plans[str(plan_reference)] = row
         row["installment_date_source"] = date_source
 
     for row in rows:

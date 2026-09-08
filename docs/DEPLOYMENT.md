@@ -204,18 +204,23 @@ curl --fail http://127.0.0.1:8000/health
 ```
 
 The same update can be run as one command on the production server from the
-deployed checkout:
+deployed checkout. To create a standalone backup, use `backup.sh`; it restarts
+the app if it had been running before the backup.
 
 ```bash
 ./scripts/deploy.sh                 # update without a backup
 ./scripts/deploy_with_backup.sh     # update with database and upload backups
+./scripts/backup.sh                 # backup database and uploads only
 ```
 
-Both scripts expect the project at `/opt/spendy` and an existing `.env` file.
-They stop on the first failed command and wait for the health endpoint after the
-app restarts. If a migration fails, the app remains stopped for recovery. The
-backup script stores a PostgreSQL dump and an archive of `data/uploads` in
-`/var/backups/spendy` before starting the update.
+All three scripts expect the project at `/opt/spendy` and an existing `.env`
+file. The deployment scripts stop on the first failed command and wait for the
+health endpoint after the app restarts. If a migration fails, the app remains
+stopped for recovery. The
+backup scripts store a PostgreSQL dump and an archive of `data/uploads` in
+`/var/backups/spendy`. `deploy_with_backup.sh` leaves the app stopped after the
+backup so the deployment can apply migrations; `backup.sh` restores its prior
+running state.
 
 Run each step only after the previous one succeeds. If migration fails, leave the
 app stopped and use [migration recovery](MIGRATIONS.md#recovery-and-rollback).

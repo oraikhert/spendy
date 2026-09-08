@@ -10,6 +10,7 @@ from app.api.v1 import (
     dashboard,
     meta,
     exchange_rates,
+    workspaces,
 )
 
 api_router = APIRouter()
@@ -24,3 +25,5 @@ api_router.include_router(transaction_observations.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(meta.router)
 api_router.include_router(exchange_rates.router)
+
+api_router.include_router(workspaces.router)

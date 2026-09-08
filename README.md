@@ -71,8 +71,8 @@ the UI, set `REGISTRATION_ENABLED=true`, then start the app:
 python run.py
 ```
 
-Open [the web UI](http://localhost:8000), register and log in. To close registration
-afterward, set `REGISTRATION_ENABLED=false` and restart. For installations where
+Open [the web UI](http://localhost:8000), register, log in and explicitly create a
+workspace from onboarding. To close registration afterward, set `REGISTRATION_ENABLED=false` and restart. For installations where
 self-registration stays disabled, use [manual user creation](docs/DEPLOYMENT.md#users).
 Set a unique `SECRET_KEY` before using the app with real data. Web login sessions use
 `ACCESS_TOKEN_EXPIRE_MINUTES` as an inactivity timeout: authenticated requests and
@@ -95,10 +95,14 @@ registration is enabled. Login at `POST /api/v1/auth/login` uses form fields
 `username` (username or email) and `password`. Send the returned token as
 `Authorization: Bearer <access_token>` for protected requests.
 
-Account, card, transaction, source-payload, observation and dashboard APIs require an active user.
+Account, card, transaction, source-payload, observation and dashboard APIs require
+an active user and workspace membership. Create a workspace explicitly with
+`POST /api/v1/workspaces`; normal registration creates only the user. Financial
+requests accept `X-Workspace-ID`; see [selection rules](docs/WORKSPACES.md#workspace-context-and-isolation).
 Health, login, registration, exchange-rate lookup and transaction-kind metadata
-do not require a token; disabled registration returns 403. Authentication does not
-provide per-user budget isolation: see [the current access model](docs/ARCHITECTURE.md#access-model).
+do not require a token; disabled registration returns 403. Financial data is isolated
+by workspace membership; see
+[the current access model](docs/ARCHITECTURE.md#access-model).
 `GET /api/v1/dashboard` returns the same current month and initial historical group
 used by the HTML Dashboard: earlier months of the current calendar year, or the full
 previous year in January. `previous_year` indicates whether more history is available.
@@ -142,6 +146,8 @@ python tests/test_source_migration.py
 Run the transaction, source-processing and dashboard regressions without a running server:
 
 ```bash
+python tests/test_workspaces.py
+python tests/test_workspace_migration.py
 python tests/test_transaction_service.py
 python tests/test_transactions_web.py
 python tests/test_dashboard_service.py

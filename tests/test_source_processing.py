@@ -60,6 +60,9 @@ SMS = (
 )
 
 
+from tests.workspace_fixtures import CONTEXT, seed_workspace, add_fixture_memberships, WorkspaceAccessError
+
+
 class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -70,9 +73,11 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
 
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(seed_workspace)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         async with self.sessions() as db:
             account = Account(
+                workspace_id=1,
                 institution="Synthetic bank",
                 name="Main",
                 account_currency="AED",
@@ -81,6 +86,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             db.add(account)
             await db.flush()
             card = Card(
+                workspace_id=1,
                 account_id=account.id,
                 card_masked_number="**** 1111",
                 card_type="credit",
@@ -93,6 +99,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 is_active=True,
             )
             db.add_all([card, user])
+            await add_fixture_memberships(db)
             await db.commit()
             self.account_id = account.id
             self.card_id = card.id
@@ -239,7 +246,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             "/api/v1/source-payloads/text",
             json={"source_kind": "sms", "text": SMS, "account_id": 999999},
         )
-        self.assertEqual(invalid_context.status_code, 422, invalid_context.text)
+        self.assertEqual(invalid_context.status_code, 404, invalid_context.text)
         self.assertEqual(
             (await self.client.get("/api/v1/source-payloads/999999")).status_code,
             404,
@@ -259,6 +266,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             db.add_all(
                 [
                     Transaction(
+                        workspace_id=1,
                         card_id=self.card_id,
                         amount=Decimal("-12.34"),
                         currency="AED",
@@ -298,6 +306,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         observed_at = prior_date + timedelta(days=1)
         async with self.sessions() as db:
             existing = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-12.34"),
                 currency="AED",
@@ -337,6 +346,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         observed_at = datetime(2026, 8, 1, 10, 30, tzinfo=UTC)
         async with self.sessions() as db:
             existing = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-12.34"),
                 currency="AED",
@@ -372,6 +382,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         second_day = first_day + timedelta(days=1)
         async with self.sessions() as db:
             payload = SourcePayload(
+                workspace_id=1,
                 source_kind="bank_statement",
                 media_type="application/pdf",
                 ingestion_method="manual_upload",
@@ -381,6 +392,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 processing_status="processed",
             )
             transaction = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-12.34"),
                 currency="AED",
@@ -393,6 +405,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             db.add_all([payload, transaction])
             await db.flush()
             statement = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=payload.id,
                 source_item_key="row-1",
                 amount=Decimal("-12.34"),
@@ -406,6 +419,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             await db.flush()
             db.add(
                 TransactionSourceLink(
+                    workspace_id=1,
                     observation_id=statement.id,
                     transaction_id=transaction.id,
                     match_method="automatic",
@@ -576,6 +590,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         observed_at = datetime(2026, 1, 5, 12, tzinfo=UTC)
         async with self.sessions() as db:
             existing = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-12.34"),
                 currency="AED",
@@ -685,6 +700,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
     async def test_statement_rows_resolve_cards_from_separate_sections(self):
         async with self.sessions() as db:
             previous_card = Card(
+                workspace_id=1,
                 account_id=self.account_id,
                 card_masked_number="**** 2222",
                 card_type="credit",
@@ -746,6 +762,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         async with self.sessions() as db:
             transactions = [
                 Transaction(
+                    workspace_id=1,
                     card_id=self.card_id,
                     amount=Decimal("-12.34"),
                     currency="AED",
@@ -1180,6 +1197,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
     async def test_manual_link_list_and_unlink_api(self):
         async with self.sessions() as db:
             transaction = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-1.00"),
                 currency="AED",
@@ -1187,6 +1205,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 transaction_kind="other",
             )
             payload = SourcePayload(
+                workspace_id=1,
                 source_kind="bank_statement",
                 media_type="application/pdf",
                 ingestion_method="manual_upload",
@@ -1196,6 +1215,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 processing_status="processed",
             )
             sms_payload = SourcePayload(
+                workspace_id=1,
                 source_kind="sms",
                 media_type="text/plain",
                 ingestion_method="phone_api",
@@ -1206,6 +1226,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             db.add_all([transaction, payload, sms_payload])
             await db.flush()
             observation = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=payload.id,
                 source_item_key="line-1",
                 amount=Decimal("-99.00"),
@@ -1215,6 +1236,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 card_id=self.card_id,
             )
             sms_observation = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=sms_payload.id,
                 source_item_key="0",
                 amount=Decimal("-10.00"),
@@ -1227,13 +1249,14 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             await db.flush()
             db.add(
                 TransactionSourceLink(
+                    workspace_id=1,
                     observation_id=sms_observation.id,
                     transaction_id=transaction.id,
                     match_method="manual",
                 )
             )
             await db.flush()
-            await canonicalize_transaction(db, transaction)
+            await canonicalize_transaction(CONTEXT, db, transaction)
             await db.commit()
             transaction_id = transaction.id
             observation_id = observation.id
@@ -1284,6 +1307,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
         conflicting_at = observed_at + timedelta(days=1)
         async with self.sessions() as db:
             sms_payload = SourcePayload(
+                workspace_id=1,
                 source_kind="sms",
                 media_type="text/plain",
                 ingestion_method="phone_api",
@@ -1292,6 +1316,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 processing_status="processed",
             )
             statement_payload = SourcePayload(
+                workspace_id=1,
                 source_kind="bank_statement",
                 media_type="application/pdf",
                 ingestion_method="manual_upload",
@@ -1301,6 +1326,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 processing_status="processed",
             )
             old_transaction = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-1"),
                 currency="AED",
@@ -1308,6 +1334,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 transaction_kind="other",
             )
             target_transaction = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-2"),
                 currency="AED",
@@ -1315,6 +1342,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 transaction_kind="other",
             )
             conflicting_transaction = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-3"),
                 currency="AED",
@@ -1332,6 +1360,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             )
             await db.flush()
             remaining = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=sms_payload.id,
                 source_item_key="remaining",
                 amount=Decimal("-10"),
@@ -1341,6 +1370,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 card_id=self.card_id,
             )
             moving = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=statement_payload.id,
                 source_item_key="moving",
                 amount=Decimal("-99"),
@@ -1350,6 +1380,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 card_id=self.card_id,
             )
             target_source = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=sms_payload.id,
                 source_item_key="target",
                 amount=Decimal("-20"),
@@ -1359,6 +1390,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 card_id=self.card_id,
             )
             conflicting_source = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=sms_payload.id,
                 source_item_key="conflict",
                 amount=Decimal("-30"),
@@ -1372,21 +1404,25 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             db.add_all(
                 [
                     TransactionSourceLink(
+                        workspace_id=1,
                         observation_id=remaining.id,
                         transaction_id=old_transaction.id,
                         match_method="manual",
                     ),
                     TransactionSourceLink(
+                        workspace_id=1,
                         observation_id=moving.id,
                         transaction_id=old_transaction.id,
                         match_method="manual",
                     ),
                     TransactionSourceLink(
+                        workspace_id=1,
                         observation_id=target_source.id,
                         transaction_id=target_transaction.id,
                         match_method="manual",
                     ),
                     TransactionSourceLink(
+                        workspace_id=1,
                         observation_id=conflicting_source.id,
                         transaction_id=conflicting_transaction.id,
                         match_method="manual",
@@ -1394,8 +1430,8 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 ]
             )
             await db.flush()
-            await canonicalize_transaction(db, old_transaction)
-            await canonicalize_transaction(db, target_transaction)
+            await canonicalize_transaction(CONTEXT, db, old_transaction)
+            await canonicalize_transaction(CONTEXT, db, target_transaction)
             await db.commit()
             moving_id = moving.id
             old_id = old_transaction.id
@@ -1439,6 +1475,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
     async def test_create_transaction_from_observation_api(self):
         async with self.sessions() as db:
             payload = SourcePayload(
+                workspace_id=1,
                 source_kind="other",
                 media_type="text/plain",
                 ingestion_method="migration",
@@ -1449,6 +1486,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             db.add(payload)
             await db.flush()
             observation = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=payload.id,
                 source_item_key="manual-row",
                 description="Observation merchant",
@@ -1493,6 +1531,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_final_link_and_field_priority_canonicalization(self):
         async with self.sessions() as db:
             transaction = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-1"),
                 currency="AED",
@@ -1500,6 +1539,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 transaction_kind="other",
             )
             sms_payload = SourcePayload(
+                workspace_id=1,
                 source_kind="sms",
                 media_type="text/plain",
                 ingestion_method="phone_api",
@@ -1508,6 +1548,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 processing_status="processed",
             )
             statement_payload = SourcePayload(
+                workspace_id=1,
                 source_kind="bank_statement",
                 media_type="application/pdf",
                 ingestion_method="manual_upload",
@@ -1520,6 +1561,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             db.add_all([transaction, sms_payload, statement_payload])
             await db.flush()
             sms = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=sms_payload.id,
                 source_item_key="0",
                 amount=Decimal("-10"),
@@ -1530,6 +1572,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 location="SMS location",
             )
             statement = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=statement_payload.id,
                 source_item_key="row-1",
                 amount=Decimal("-11"),
@@ -1543,11 +1586,13 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             db.add_all(
                 [
                     TransactionSourceLink(
+                        workspace_id=1,
                         observation_id=sms.id,
                         transaction_id=transaction.id,
                         match_method="manual",
                     ),
                     TransactionSourceLink(
+                        workspace_id=1,
                         observation_id=statement.id,
                         transaction_id=transaction.id,
                         match_method="manual",
@@ -1555,7 +1600,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
                 ]
             )
             await db.flush()
-            await canonicalize_transaction(db, transaction)
+            await canonicalize_transaction(CONTEXT, db, transaction)
             self.assertEqual(transaction.amount, Decimal("-11"))
             self.assertEqual(transaction.description, "Statement merchant")
             self.assertEqual(transaction.transaction_datetime, sms.transaction_datetime)
@@ -1563,6 +1608,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(transaction.transaction_kind, "purchase")
 
             other = Transaction(
+                workspace_id=1,
                 card_id=self.card_id,
                 amount=Decimal("-1"),
                 currency="AED",
@@ -1573,6 +1619,7 @@ class SourceProcessingTests(unittest.IsolatedAsyncioTestCase):
             await db.flush()
             db.add(
                 TransactionSourceLink(
+                    workspace_id=1,
                     observation_id=sms.id,
                     transaction_id=other.id,
                     match_method="manual",

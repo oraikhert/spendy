@@ -6,6 +6,7 @@ from difflib import SequenceMatcher
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.workspace_context import WorkspaceContext
 from app.models.card import Card
 from app.models.transaction import Transaction
 from app.utils.business_time import (
@@ -20,6 +21,7 @@ MERCHANT_PREFIX_SIMILARITY_THRESHOLD = Decimal("0.5000")
 
 
 async def find_card_by_last_four(
+    context: WorkspaceContext,
     db: AsyncSession,
     last_four: str,
     account_id: int | None = None
@@ -41,11 +43,12 @@ async def find_card_by_last_four(
     if not last_four or len(last_four) != 4 or not last_four.isdigit():
         return None
 
-    cards = await find_cards_by_last_four(db, last_four, account_id)
+    cards = await find_cards_by_last_four(context, db, last_four, account_id)
     return cards[0] if cards else None
 
 
 async def find_cards_by_last_four(
+    context: WorkspaceContext,
     db: AsyncSession,
     last_four: str,
     account_id: int | None = None,
@@ -54,7 +57,7 @@ async def find_cards_by_last_four(
     if not last_four or len(last_four) != 4 or not last_four.isdigit():
         return []
 
-    query = select(Card).order_by(Card.id)
+    query = select(Card).where(Card.workspace_id == context.workspace_id).order_by(Card.id)
     if account_id is not None:
         query = query.where(Card.account_id == account_id)
     result = await db.execute(query)
@@ -131,6 +134,7 @@ def generate_fingerprint(
 
 
 async def find_matching_transactions(
+    context: WorkspaceContext,
     db: AsyncSession,
     card_id: int,
     amount: Decimal,
@@ -196,7 +200,7 @@ async def find_matching_transactions(
         amount_condition = amount_currency_match
 
     # Build query
-    query = select(Transaction).where(
+    query = select(Transaction).where(Transaction.workspace_id == context.workspace_id).where(
         and_(
             Transaction.card_id == card_id,
             amount_condition,

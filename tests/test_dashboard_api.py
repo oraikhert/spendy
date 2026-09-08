@@ -16,6 +16,9 @@ from app.database import get_db
 from app.main import app
 
 
+from tests.workspace_fixtures import CONTEXT, seed_workspace, add_fixture_memberships, WorkspaceAccessError
+
+
 class DashboardApiTests(DashboardDatabase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
@@ -26,17 +29,17 @@ class DashboardApiTests(DashboardDatabase):
                 User(id=2, username="api-inactive", email="api-inactive@example.test",
                      hashed_password="unused", is_active=False),
             ])
-            await db.commit()
+            await add_fixture_memberships(db)
 
         async def override_db():
             async with self.sessions() as db:
                 yield db
 
-        async def fixed_overview(db):
-            return await get_dashboard_overview(db, today=TODAY)
+        async def fixed_overview(context, db):
+            return await get_dashboard_overview(CONTEXT, db, today=TODAY)
 
-        async def fixed_year(db, *, year):
-            return await get_dashboard_year(db, year=year, today=TODAY)
+        async def fixed_year(context, db, *, year):
+            return await get_dashboard_year(CONTEXT, db, year=year, today=TODAY)
 
         app.dependency_overrides[get_db] = override_db
         self.overview_patch = patch(
@@ -70,7 +73,7 @@ class DashboardApiTests(DashboardDatabase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "private, no-store")
         self.assertEqual(response.headers["pragma"], "no-cache")
-        self.assertEqual(response.headers["vary"], "Authorization")
+        self.assertEqual(response.headers["vary"], "Authorization, X-Workspace-ID")
         payload = response.json()
         self.assertEqual(
             set(payload), {"current", "previous", "comparison", "year", "previous_year"},
@@ -114,7 +117,7 @@ class DashboardApiTests(DashboardDatabase):
             "/api/v1/dashboard/years/2025", headers=self.authorization(),
         )
         self.assertEqual(historical.status_code, 200)
-        self.assertEqual(historical.headers["vary"], "Authorization")
+        self.assertEqual(historical.headers["vary"], "Authorization, X-Workspace-ID")
         self.assertEqual(historical.json()["year"], 2025)
         self.assertEqual(len(historical.json()["months"]), 12)
         self.assertIsNone(historical.json()["previous_year"])

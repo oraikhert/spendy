@@ -115,6 +115,35 @@ statement payloads also need an explicit, reviewed metadata/date backfill before
 can benefit from source-local calendar semantics. Do not guess a zone from filenames
 or current server settings.
 
+## Workspace ownership migration
+
+`workspace_ownership_001` creates workspace and membership tables, removes the
+obsolete global user privilege column, and backfills all seven financial tables
+before enforcing ownership and same-workspace foreign keys. The Legacy Workspace
+assignment and empty-installation rules are canonical in
+[Workspaces](WORKSPACES.md#registration-and-onboarding).
+
+SQLite batch reconstruction temporarily disables foreign-key enforcement on the
+migration connection, checks the rebuilt graph before committing, and restores
+enforcement afterward. Runtime SQLite connections enable foreign keys. The revision
+preserves observation AUTOINCREMENT and its high-water mark through both directions,
+including IDs of previously deleted observations. A downgrade refuses before any
+schema change if more than one workspace exists, including empty workspaces; a safe
+zero/one-workspace downgrade preserves financial rows but removes membership roles.
+
+For retained data with no existing user, create the intended user through the CLI
+or normal registration, then run the explicit operator action against the reviewed
+database with `venv` active:
+
+```bash
+python scripts/assign_legacy_workspace_owner.py --workspace-id <legacy-id> --user-id <existing-active-user-id>
+```
+
+The script accepts only a creatorless Legacy Workspace with no owner. It serializes
+assignment and refuses to replace an existing owner. Registration never calls it.
+Back up retained data before migration or recovery; verify SQLite and PostgreSQL on
+a disposable copy of the actual pre-upgrade schema before production rollout.
+
 ## Recovery and rollback
 
 | Symptom or task | Procedure |

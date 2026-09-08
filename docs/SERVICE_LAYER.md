@@ -16,7 +16,13 @@ See [Architecture](ARCHITECTURE.md) for boundaries and the
 
 ## Transactions and errors
 
-Pass a separate `AsyncSession` to each request/task. Existing write services commit
+Pass a separate `AsyncSession` to each request/task. Financial services and their
+DB-backed matching/canonicalization helpers also require a `WorkspaceContext` as
+the first argument. It is a frozen snapshot of user ID, workspace ID, local role
+and display name, resolved by the route's membership dependency. No session-local
+or global default supplies ownership. Services scope queries, derive ownership on
+creation, and reject foreign objects even when present in the session identity map.
+See the [workspace boundary](WORKSPACES.md#workspace-context-and-isolation). Existing write services commit
 their changes and usually refresh returned objects. Read services do not commit.
 `get_db()` closes the session; it has no explicit commit/rollback workflow.
 Closing a session releases an uncommitted transaction, but a caller that catches
@@ -24,6 +30,7 @@ a database failure and continues using that session must roll it back first.
 
 | Operation | Commit boundary |
 |-----------|-----------------|
+| Workspace plus creator membership | One atomic service commit; rollback on failure |
 | User/account/card/transaction writes | Commit inside the service |
 | Text ingestion | Commit payload, observations, transactions, links and canonical values together |
 | Create transaction and link | Commit transaction/link/canonicalization together |
@@ -36,6 +43,8 @@ compose transaction CRUD commits. Filesystem and database writes cannot be truly
 atomic, so upload uses compensating file deletion on a failed commit.
 
 Expected business failures commonly use `ValueError`; routes map them to HTTP.
+`WorkspaceAccessError` carries workspace authorization/selection failures; financial
+route adapters map it to 403/404/409. Missing financial references return 404.
 CRUD lookups/updates may return `None`, and deletes/unlink return `False` when absent.
 Database integrity failures are not uniformly translated into domain errors, so
 prechecks alone do not guarantee race-safe handling of duplicate requests.
@@ -50,7 +59,7 @@ Updates apply only fields present in the input schema; deletes are hard deletes.
 Direct transaction creation validates card existence. Transaction filters reject
 unknown accounts/cards and incompatible account/card combinations. Other services
 have different reference checks; see the [access model](ARCHITECTURE.md#access-model)
-for shared access and route authentication.
+for workspace isolation and route authentication.
 
 Transaction creation/update derives `merchant_norm` and `fingerprint`. Direct CRUD
 does not perform source matching or automatic FX conversion. Fingerprints are indexed,
@@ -103,7 +112,7 @@ its version and creates zero or more observations. The current versioned registr
 supports Emirates NBD `sms` plus `text/plain` and Emirates NBD `bank_statement` plus
 `application/pdf`.
 
-Exact content hashes are indexed but not unique. The key is unique within the ingestion
+Exact content hashes are indexed but not unique. The key is unique within the workspace and ingestion
 method: an identical replay returns the existing resource without parsing or matching
 again, while reuse with different content or creation metadata is a conflict. Identical
 SMS content with different non-null idempotency keys represents distinct messages and
@@ -156,7 +165,7 @@ tokens and a higher similarity score. Merchant similarity never widens the card,
 money or date candidate set.
 
 The source day comes from posting time, then transaction time, then creation time.
-Candidates match when **any** of their posting, transaction or creation timestamps
+Candidates within the selected workspace match when **any** of their posting, transaction or creation timestamps
 falls within that same day (`[midnight, next midnight)`). Creation time is an OR
 condition even when other timestamps exist; this differs from list/summary filters.
 There is no adjacent-day tolerance. A shared business-date helper converts stored UTC
@@ -255,7 +264,8 @@ fingerprint and applicable FX rate are refreshed.
 [User services](../app/services/user_service.py) validate email/username uniqueness,
 hash passwords and commit writes. [Auth services](../app/services/auth_service.py)
 accept username or email, check password and active status, and create JWTs without
-DB writes. Registration policy belongs to routes; CLI creation bypasses it.
+DB writes. Registration policy belongs to routes; CLI creation bypasses it. All three normal registration entry points create only
+a user; [workspace creation](WORKSPACES.md#registration-and-onboarding) is explicit.
 
 [Dashboard overview](../app/services/dashboard_service.py) is the single business
 operation used by `GET /api/v1/dashboard`, its historical-year subresource, and the

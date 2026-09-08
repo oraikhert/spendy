@@ -1,5 +1,6 @@
 """Database models"""
 from app.models.user import User
+from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from app.models.account import Account
 from app.models.card import Card
 from app.models.transaction import Transaction
@@ -10,6 +11,9 @@ from app.models.transaction_source_link import MatchMethod, TransactionSourceLin
 
 __all__ = [
     "User",
+    "Workspace",
+    "WorkspaceMember",
+    "WorkspaceRole",
     "Account",
     "Card",
     "Transaction",

@@ -3,24 +3,24 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.workspace_context import WorkspaceContext
+from app.core.workspace_deps import get_api_workspace, WorkspaceRoute
 from app.database import get_db
-from app.core.deps import get_current_active_user
-from app.models.user import User
 from app.schemas.card import CardCreate, CardUpdate, CardResponse
 from app.services import card_service
 
 
-router = APIRouter(tags=["cards"])
+router = APIRouter(route_class=WorkspaceRoute, tags=["cards"])
 
 
 @router.get("/accounts/{account_id}/cards", response_model=list[CardResponse])
 async def get_cards_by_account(
     account_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
 ):
     """Get all cards for an account"""
-    cards = await card_service.get_cards_by_account(db, account_id)
+    cards = await card_service.get_cards_by_account(context, db, account_id)
     return cards
 
 
@@ -29,10 +29,10 @@ async def create_card(
     account_id: int,
     card_data: CardCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
 ):
     """Create a new card for an account"""
-    card = await card_service.create_card(db, account_id, card_data)
+    card = await card_service.create_card(context, db, account_id, card_data)
     return card
 
 
@@ -40,10 +40,10 @@ async def create_card(
 async def get_card(
     card_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
 ):
     """Get card by ID"""
-    card = await card_service.get_card(db, card_id)
+    card = await card_service.get_card(context, db, card_id)
     if not card:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -57,10 +57,10 @@ async def update_card(
     card_id: int,
     card_data: CardUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
 ):
     """Update card"""
-    card = await card_service.update_card(db, card_id, card_data)
+    card = await card_service.update_card(context, db, card_id, card_data)
     if not card:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -73,10 +73,10 @@ async def update_card(
 async def delete_card(
     card_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
 ):
     """Delete card"""
-    success = await card_service.delete_card(db, card_id)
+    success = await card_service.delete_card(context, db, card_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

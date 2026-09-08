@@ -21,7 +21,7 @@ This is the canonical map of the main directories, not a generated file inventor
 | [app/database.py](../app/database.py) | Engine, session factory and SQLite startup bootstrap |
 | [app/api/v1/](../app/api/v1/) | JSON routes, input/output schemas and HTTP error mapping |
 | [app/web/](../app/web/) | Cookie-authenticated HTML routes and HTMX responses |
-| [app/core/](../app/core/) | JWT/password helpers and authentication dependencies |
+| [app/core/](../app/core/) | JWT/password helpers, authentication and workspace dependencies |
 | [app/services/](../app/services/) | Business operations and database access |
 | [app/models/](../app/models/) | SQLAlchemy tables, relationships and constraints |
 | [app/schemas/](../app/schemas/) | Pydantic input and response contracts |
@@ -84,8 +84,9 @@ in [Transactions UI](ui/TRANSACTIONS.md).
 - **TransactionSourceLink** connects an observation to at most one canonical
   transaction. A transaction can be supported by many observations.
 - **BankStatementDetail** stores statement-wide metadata separately from its rows.
-- **User** stores login identity. It currently has no ownership relationship to
-  accounts or transactions.
+- **User** stores global login identity. **WorkspaceMember** connects users to
+  **Workspace** with a local role. Every financial record belongs to a workspace;
+  composite foreign keys enforce same-workspace parent relationships.
 
 Models are the source for current fields and relationships; revisions in
 [alembic/versions/](../alembic/versions/) define how deployed schemas evolve.
@@ -94,12 +95,15 @@ Do not maintain another column list or revision history here.
 ## Access model
 
 Protected JSON routes validate an active bearer-token user; web pages validate
-the JWT cookie. Current transaction-domain services do not filter records by user
-or family. Treat the installation as a shared dataset, not isolated personal budgets.
+the JWT cookie. Financial routes additionally resolve a membership-based immutable
+workspace context. Every financial service receives it explicitly and scopes its
+queries and writes. Header selection, onboarding and Legacy Workspace rules are
+defined in [Workspaces](WORKSPACES.md#workspace-context-and-isolation).
 
 Registration is controlled by `REGISTRATION_ENABLED` in API/web routes. The example
 `.env` disables it; the code default without that setting is enabled. The administrative
-creation script calls the user service directly and does not use that switch.
+creation script calls the user service directly and does not use that switch. All
+normal registration paths create only a user; workspace creation is explicit.
 
 Cookie login uses HttpOnly and SameSite=Lax; Secure depends on the request scheme.
 Transaction pages, fragments and mutations require an active cookie user.
@@ -111,15 +115,16 @@ renewed during one login retain a signed session ID so existing forms remain val
 Every transaction create/edit/delete/unlink POST validates a server-generated CSRF
 token bound to that login session; an HTMX header alone grants no access. Other cookie
 flows do not inherit this CSRF check automatically. Expired HTMX sessions use a full
-login redirect. These controls preserve the shared dataset; they do not add ownership.
-Transaction routes reject an explicit cross-origin `Origin` header, including on
+login redirect. Workspace create/select forms use the same login-bound CSRF check.
+Selection reissues the signed cookie while preserving its session ID, and every
+financial request revalidates membership. Financial and workspace web routes reject an explicit cross-origin `Origin` header, including on
 reads, so the existing JSON API CORS policy cannot expose cookie HTML or CSRF tokens.
 
-The read-only Dashboard summarizes the shared dataset through one service operation.
+The read-only Dashboard summarizes the selected workspace through one service operation.
 The JSON representation at `GET /api/v1/dashboard` requires an active bearer-token
 user; the HTML page requires an active cookie user. Dashboard responses use
-`private, no-store`; JSON varies by authorization, while HTML varies by cookie and
-disables HTMX history storage. It adds no ownership rule or mutation.
+`private, no-store`; JSON varies by authorization and workspace header, while HTML varies by cookie and
+disables HTMX history storage. It performs no mutation.
 
 Transaction responses and errors use `private, no-store` and
 vary by cookie/HTMX request headers. Transaction pages disable HTMX history caching

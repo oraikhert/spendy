@@ -41,7 +41,13 @@ from app.schemas.dashboard import (
 )
 
 
+from app.schemas.workspace import WorkspaceCreate, WorkspaceResponse, WorkspaceMemberResponse
+
+
 __all__ = [
+    "WorkspaceCreate",
+    "WorkspaceResponse",
+    "WorkspaceMemberResponse",
     "UserBase",
     "UserCreate",
     "UserUpdate",

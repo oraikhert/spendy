@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a user manually. Run with: python scripts/create_user.py --email a@b.com --username myuser --password secret123"""
+"""Create only a user; workspace creation and membership assignment are separate. Run with: python scripts/create_user.py --email a@b.com --username myuser --password secret123"""
 import argparse
 import asyncio
 import sys

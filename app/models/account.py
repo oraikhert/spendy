@@ -1,17 +1,18 @@
 """Account model"""
 from datetime import datetime
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
 
 from app.database import Base
+from app.models.workspace import WorkspaceOwned
 
 if TYPE_CHECKING:
     from app.models.card import Card
     from app.models.balance_snapshot import BalanceSnapshot
 
 
-class Account(Base):
+class Account(WorkspaceOwned, Base):
     """Account model - container for account currency and grouping cards/balances"""
     
     __tablename__ = "accounts"
@@ -30,11 +31,14 @@ class Account(Base):
     )
     
     # Relationships
-    cards: Mapped[list["Card"]] = relationship(
-        "Card",
+    cards: Mapped[list["Card"]] = relationship("Card", foreign_keys="Card.account_id",
         back_populates="account",
         cascade="all, delete-orphan"
     )
     
     def __repr__(self) -> str:
         return f"<Account(id={self.id}, name={self.name}, institution={self.institution})>"
+
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="uq_accounts_id_workspace"),
+    )

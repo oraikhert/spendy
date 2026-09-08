@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.workspace_context import WorkspaceContext, WorkspaceAccessError, workspace_get
 from app.models.account import Account
 from app.models.card import Card
 from app.models.source_payload import SourcePayload
@@ -48,15 +49,16 @@ def _validated_amount(value: Decimal | None, field: str) -> Decimal | None:
 
 
 async def _validate_references(
+    context: WorkspaceContext,
     db: AsyncSession, account_id: int | None, card_id: int | None
 ) -> None:
     if account_id is not None:
-        if not 0 < account_id <= MAX_RECORD_ID or await db.get(Account, account_id) is None:
-            raise ValueError("account_id: Account not found")
+        if not 0 < account_id <= MAX_RECORD_ID or await workspace_get(db, Account, account_id, context=context) is None:
+            raise WorkspaceAccessError(404, "Not Found")
     if card_id is not None:
-        card = await db.get(Card, card_id) if 0 < card_id <= MAX_RECORD_ID else None
+        card = await workspace_get(db, Card, card_id, context=context) if 0 < card_id <= MAX_RECORD_ID else None
         if card is None:
-            raise ValueError("card_id: Card not found")
+            raise WorkspaceAccessError(404, "Not Found")
         if account_id is not None and card.account_id != account_id:
             raise ValueError("card_id: Choose a card belonging to the selected account")
 
@@ -76,10 +78,11 @@ def _set_fingerprint(transaction: Transaction, business_timezone: str) -> None:
     )
 
 
-async def _refresh_fingerprint(db: AsyncSession, transaction: Transaction) -> None:
+async def _refresh_fingerprint(context: WorkspaceContext, db: AsyncSession, transaction: Transaction) -> None:
+    context.require_record(transaction)
     with db.no_autoflush:
         card = await db.scalar(
-            select(Card)
+            select(Card).where(Card.workspace_id == context.workspace_id)
             .where(Card.id == transaction.card_id)
             .options(selectinload(Card.account))
         )
@@ -87,7 +90,7 @@ async def _refresh_fingerprint(db: AsyncSession, transaction: Transaction) -> No
         if transaction.id is not None:
             observations = list(
                 await db.scalars(
-                    select(TransactionObservation)
+                    select(TransactionObservation).where(TransactionObservation.workspace_id == context.workspace_id)
                     .join(
                         TransactionSourceLink,
                         TransactionSourceLink.observation_id
@@ -100,7 +103,7 @@ async def _refresh_fingerprint(db: AsyncSession, transaction: Transaction) -> No
                 )
             )
     if card is None:
-        raise ValueError("card_id: Card not found")
+        raise WorkspaceAccessError(404, "Not Found")
     _set_fingerprint(
         transaction,
         transaction_business_timezone(card, observations),
@@ -108,11 +111,13 @@ async def _refresh_fingerprint(db: AsyncSession, transaction: Transaction) -> No
 
 
 async def refresh_account_transaction_fingerprints(
+    context: WorkspaceContext,
     db: AsyncSession, account_id: int
 ) -> None:
+    context.require_write()
     result = await db.execute(
-        select(Transaction)
-        .join(Card)
+        select(Transaction).where(Transaction.workspace_id == context.workspace_id)
+        .join(Card, Card.id == Transaction.card_id)
         .where(Card.account_id == account_id, Card.timezone.is_(None))
         .options(
             selectinload(Transaction.card).selectinload(Card.account),
@@ -130,10 +135,12 @@ async def refresh_account_transaction_fingerprints(
 
 
 async def refresh_card_transaction_fingerprints(
+    context: WorkspaceContext,
     db: AsyncSession, card_id: int
 ) -> None:
+    context.require_write()
     result = await db.execute(
-        select(Transaction)
+        select(Transaction).where(Transaction.workspace_id == context.workspace_id)
         .where(Transaction.card_id == card_id)
         .options(
             selectinload(Transaction.card).selectinload(Card.account),
@@ -151,27 +158,29 @@ async def refresh_card_transaction_fingerprints(
 
 
 async def create_transaction(
+    context: WorkspaceContext,
     db: AsyncSession, transaction_data: TransactionCreate
 ) -> Transaction:
     """Create and commit a record; the selected card must exist."""
-    await _validate_references(db, None, transaction_data.card_id)
-    transaction = Transaction(**transaction_data.model_dump())
-    await _refresh_fingerprint(db, transaction)
+    context.require_write()
+    await _validate_references(context, db, None, transaction_data.card_id)
+    transaction = Transaction(workspace_id=context.workspace_id, **transaction_data.model_dump())
+    await _refresh_fingerprint(context, db, transaction)
     db.add(transaction)
     try:
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         raise ValueError("card_id: The transaction could not be saved; refresh the available cards") from exc
-    return await get_transaction(db, transaction.id)
+    return await get_transaction(context, db, transaction.id)
 
 
-async def get_transaction(db: AsyncSession, transaction_id: int) -> Transaction | None:
+async def get_transaction(context: WorkspaceContext, db: AsyncSession, transaction_id: int) -> Transaction | None:
     """Get a record with the card and account required by the HTML views."""
     if not 0 < transaction_id <= MAX_RECORD_ID:
         return None
     result = await db.execute(
-        select(Transaction)
+        select(Transaction).where(Transaction.workspace_id == context.workspace_id)
         .where(Transaction.id == transaction_id)
         .options(selectinload(Transaction.card).selectinload(Card.account))
     )
@@ -179,6 +188,7 @@ async def get_transaction(db: AsyncSession, transaction_id: int) -> Transaction 
 
 
 async def get_transactions(
+    context: WorkspaceContext,
     db: AsyncSession,
     account_id: int | None = None,
     card_id: int | None = None,
@@ -206,7 +216,7 @@ async def get_transactions(
     acquire a date fallback.
     """
     _validate_page(limit, offset)
-    await _validate_references(db, account_id, card_id)
+    await _validate_references(context, db, account_id, card_id)
     if kind is not None and kind not in {"purchase", "topup", "refund", "other"}:
         raise ValueError("kind: Choose a valid transaction type")
     if direction is not None and direction not in {"out", "in"}:
@@ -250,13 +260,13 @@ async def get_transactions(
     if card_id is not None:
         filters.append(Transaction.card_id == card_id)
     if account_id is not None:
-        filters.append(Transaction.card_id.in_(select(Card.id).where(Card.account_id == account_id)))
+        filters.append(Transaction.card_id.in_(select(Card.id).where(Card.workspace_id == context.workspace_id).where(Card.account_id == account_id)))
     if date_from is not None:
         filters.append(effective_date >= date_from)
     if date_to is not None:
         filters.append(effective_date <= date_to)
     if calendar_date_from is not None or calendar_date_to is not None:
-        timezone_query = select(Card.id, Card.timezone, Account.timezone).join(Account)
+        timezone_query = select(Card.id, Card.timezone, Account.timezone).where(Card.workspace_id == context.workspace_id).join(Account, Account.id == Card.account_id)
         if card_id is not None:
             timezone_query = timezone_query.where(Card.id == card_id)
         elif account_id is not None:
@@ -301,9 +311,9 @@ async def get_transactions(
     if excluded_from_summary is not None:
         filters.append(Transaction.excluded_from_summary == excluded_from_summary)
 
-    total = await db.scalar(select(func.count(Transaction.id)).where(*filters))
+    total = await db.scalar(select(func.count(Transaction.id)).where(Transaction.workspace_id == context.workspace_id).where(*filters))
     result = await db.execute(
-        select(Transaction)
+        select(Transaction).where(Transaction.workspace_id == context.workspace_id)
         .where(*filters)
         .options(selectinload(Transaction.card).selectinload(Card.account))
         .order_by(effective_date.desc().nullslast(), Transaction.id.desc())
@@ -314,10 +324,12 @@ async def get_transactions(
 
 
 async def update_transaction(
+    context: WorkspaceContext,
     db: AsyncSession, transaction_id: int, transaction_data: TransactionUpdate
 ) -> Transaction | None:
     """Commit explicit changes, preserving omitted fields and unchanged legacy FX."""
-    transaction = await get_transaction(db, transaction_id)
+    context.require_write()
+    transaction = await get_transaction(context, db, transaction_id)
     if transaction is None:
         return None
     update_data = transaction_data.model_dump(exclude_unset=True)
@@ -358,45 +370,48 @@ async def update_transaction(
     for field, value in update_data.items():
         setattr(transaction, field, value)
     if update_data:
-        await _refresh_fingerprint(db, transaction)
+        await _refresh_fingerprint(context, db, transaction)
         await db.commit()
-    return await get_transaction(db, transaction_id)
+    return await get_transaction(context, db, transaction_id)
 
 
 async def set_transaction_summary_exclusion(
+    context: WorkspaceContext,
     db: AsyncSession, transaction_id: int, excluded: bool
 ) -> Transaction | None:
     """Set the summary-exclusion flag and commit without recanonicalizing data."""
-    transaction = await get_transaction(db, transaction_id)
+    context.require_write()
+    transaction = await get_transaction(context, db, transaction_id)
     if transaction is None:
         return None
     if transaction.excluded_from_summary != excluded:
         transaction.excluded_from_summary = excluded
         await db.commit()
-    return await get_transaction(db, transaction_id)
+    return await get_transaction(context, db, transaction_id)
 
 
-async def delete_transaction(db: AsyncSession, transaction_id: int) -> bool:
+async def delete_transaction(context: WorkspaceContext, db: AsyncSession, transaction_id: int) -> bool:
     """Atomically remove the record and only its links, keeping all sources/files."""
-    transaction = await get_transaction(db, transaction_id)
+    context.require_write()
+    transaction = await get_transaction(context, db, transaction_id)
     if transaction is None:
         return False
     await db.execute(
-        delete(TransactionSourceLink).where(TransactionSourceLink.transaction_id == transaction_id)
+        delete(TransactionSourceLink).where(TransactionSourceLink.workspace_id == context.workspace_id).where(TransactionSourceLink.transaction_id == transaction_id)
     )
     # Bulk deletion avoids loading every link through the ORM cascade.
-    await db.execute(delete(Transaction).where(Transaction.id == transaction_id))
+    await db.execute(delete(Transaction).where(Transaction.workspace_id == context.workspace_id).where(Transaction.id == transaction_id))
     await db.commit()
     return True
 
 
-async def get_source_counts(db: AsyncSession, transaction_ids: list[int]) -> dict[int, int]:
+async def get_source_counts(context: WorkspaceContext, db: AsyncSession, transaction_ids: list[int]) -> dict[int, int]:
     """Count links in batches, including zero for records without a source."""
     identifiers = list(dict.fromkeys(transaction_ids))
     counts = dict.fromkeys(identifiers, 0)
     for start in range(0, len(identifiers), REFERENCE_BATCH_SIZE):
         rows = await db.execute(
-            select(TransactionSourceLink.transaction_id, func.count())
+            select(TransactionSourceLink.transaction_id, func.count()).where(TransactionSourceLink.workspace_id == context.workspace_id)
             .where(TransactionSourceLink.transaction_id.in_(identifiers[start:start + REFERENCE_BATCH_SIZE]))
             .group_by(TransactionSourceLink.transaction_id)
         )
@@ -405,25 +420,27 @@ async def get_source_counts(db: AsyncSession, transaction_ids: list[int]) -> dic
 
 
 async def get_transaction_observations_page(
+    context: WorkspaceContext,
     db: AsyncSession, transaction_id: int, limit: int = 20, offset: int = 0
 ) -> tuple[list[TransactionSourceLink], int]:
     """Return bounded observation links and their total."""
     _validate_page(limit, offset)
     total = await db.scalar(
-        select(func.count()).select_from(TransactionSourceLink)
+        select(func.count()).select_from(TransactionSourceLink).where(TransactionSourceLink.workspace_id == context.workspace_id)
         .where(TransactionSourceLink.transaction_id == transaction_id)
     )
-    links = await get_transaction_observations(db, transaction_id, limit=limit, offset=offset)
+    links = await get_transaction_observations(context, db, transaction_id, limit=limit, offset=offset)
     return links, total
 
 
 async def get_transaction_observations(
+    context: WorkspaceContext,
     db: AsyncSession, transaction_id: int, limit: int = 100, offset: int = 0
 ) -> list[TransactionSourceLink]:
     """Retrieve links with the observation and safe payload summary eagerly loaded."""
     _validate_page(limit, offset)
     result = await db.execute(
-        select(TransactionSourceLink)
+        select(TransactionSourceLink).where(TransactionSourceLink.workspace_id == context.workspace_id)
         .join(
             TransactionObservation,
             TransactionObservation.id == TransactionSourceLink.observation_id,
@@ -445,14 +462,14 @@ async def get_transaction_observations(
     return list(result.scalars().all())
 
 
-async def get_transaction_references(db: AsyncSession) -> dict:
+async def get_transaction_references(context: WorkspaceContext, db: AsyncSession) -> dict:
     """Read every selector option in bounded, stable batches without lazy I/O."""
     accounts = []
     cards = []
     last_id = 0
     while True:
         rows = (await db.execute(
-            select(Account.id, Account.institution, Account.name)
+            select(Account.id, Account.institution, Account.name).where(Account.workspace_id == context.workspace_id)
             .where(Account.id > last_id).order_by(Account.id).limit(REFERENCE_BATCH_SIZE)
         )).all()
         accounts.extend({"id": row.id, "label": f"{row.institution} · {row.name}"} for row in rows)
@@ -462,7 +479,7 @@ async def get_transaction_references(db: AsyncSession) -> dict:
     last_id = 0
     while True:
         rows = (await db.execute(
-            select(Card.id, Card.account_id, Card.name, Card.card_masked_number, Account.account_currency)
+            select(Card.id, Card.account_id, Card.name, Card.card_masked_number, Account.account_currency).where(Card.workspace_id == context.workspace_id)
             .join(Account, Account.id == Card.account_id)
             .where(Card.id > last_id).order_by(Card.id).limit(REFERENCE_BATCH_SIZE)
         )).all()
@@ -474,9 +491,9 @@ async def get_transaction_references(db: AsyncSession) -> dict:
             break
         last_id = rows[-1].id
     saved_codes = union(
-        select(Transaction.currency.label("code")),
-        select(Transaction.original_currency.label("code")),
-        select(Account.account_currency.label("code")),
+        select(Transaction.currency.label("code")).where(Transaction.workspace_id == context.workspace_id),
+        select(Transaction.original_currency.label("code")).where(Transaction.workspace_id == context.workspace_id),
+        select(Account.account_currency.label("code")).where(Account.workspace_id == context.workspace_id),
     ).subquery()
     currencies = set()
     offset = 0

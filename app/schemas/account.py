@@ -1,6 +1,6 @@
 """Account schemas"""
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.utils.business_time import DEFAULT_TIMEZONE, normalize_timezone_name
 
@@ -19,11 +19,15 @@ class AccountBase(BaseModel):
 
 
 class AccountCreate(AccountBase):
+    model_config = ConfigDict(extra="forbid")
+
     """Schema for creating an account"""
     pass
 
 
 class AccountUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     """Schema for updating an account"""
     institution: str | None = Field(None, max_length=255)
     name: str | None = Field(None, max_length=255)

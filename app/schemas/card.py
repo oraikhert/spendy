@@ -1,6 +1,6 @@
 """Card schemas"""
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.utils.business_time import normalize_timezone_name
 
@@ -19,11 +19,15 @@ class CardBase(BaseModel):
 
 
 class CardCreate(CardBase):
+    model_config = ConfigDict(extra="forbid")
+
     """Schema for creating a card"""
     pass
 
 
 class CardUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     """Schema for updating a card"""
     card_masked_number: str | None = Field(None, max_length=255)
     card_type: str | None = Field(None, pattern="^(debit|credit)$")

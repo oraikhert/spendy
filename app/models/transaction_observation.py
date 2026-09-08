@@ -4,18 +4,19 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, ForeignKeyConstraint
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.models.workspace import WorkspaceOwned
 
 if TYPE_CHECKING:
     from app.models.source_payload import SourcePayload
     from app.models.transaction_source_link import TransactionSourceLink
 
 
-class TransactionObservation(Base):
+class TransactionObservation(WorkspaceOwned, Base):
     """One source assertion about one financial transaction."""
 
     __tablename__ = "transaction_observations"
@@ -57,9 +58,8 @@ class TransactionObservation(Base):
         nullable=False,
     )
 
-    payload: Mapped["SourcePayload"] = relationship("SourcePayload", back_populates="observations")
-    transaction_link: Mapped["TransactionSourceLink | None"] = relationship(
-        "TransactionSourceLink",
+    payload: Mapped["SourcePayload"] = relationship("SourcePayload", foreign_keys="TransactionObservation.source_payload_id", back_populates="observations")
+    transaction_link: Mapped["TransactionSourceLink | None"] = relationship("TransactionSourceLink", foreign_keys="TransactionSourceLink.observation_id",
         back_populates="observation",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -67,6 +67,11 @@ class TransactionObservation(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="uq_transaction_observations_id_workspace"),
+        ForeignKeyConstraint(["source_payload_id", "workspace_id"], ["source_payloads.id", "source_payloads.workspace_id"], name="fk_transaction_observations_source_payload_id_workspace", ondelete="CASCADE"),
+        ForeignKeyConstraint(["account_id", "workspace_id"], ["accounts.id", "accounts.workspace_id"], name="fk_transaction_observations_account_id_workspace"),
+        ForeignKeyConstraint(["card_id", "workspace_id"], ["cards.id", "cards.workspace_id"], name="fk_transaction_observations_card_id_workspace"),
+
         UniqueConstraint(
             "source_payload_id", "source_item_key", name="uq_observation_payload_item"
         ),

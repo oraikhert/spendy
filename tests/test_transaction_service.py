@@ -41,6 +41,9 @@ BASE_INPUT = {
 }
 
 
+from tests.workspace_fixtures import CONTEXT, seed_workspace, add_fixture_memberships, WorkspaceAccessError
+
+
 class TransactionInputTests(unittest.TestCase):
     def test_account_and_card_timezone_validation(self):
         account = AccountCreate(
@@ -144,17 +147,18 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
 
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(seed_workspace)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.db = self.sessions()
         self.accounts = [
-            Account(institution="Synthetic bank", name="Family", account_currency="AED"),
-            Account(institution="Other bank", name="Travel", account_currency="USD"),
+            Account(workspace_id=1, institution="Synthetic bank", name="Family", account_currency="AED"),
+            Account(workspace_id=1, institution="Other bank", name="Travel", account_currency="USD"),
         ]
         self.db.add_all(self.accounts)
         await self.db.flush()
         self.cards = [
-            Card(account_id=self.accounts[0].id, name="Everyday", card_masked_number="**** 1111", card_type="debit"),
-            Card(account_id=self.accounts[1].id, name="Travel", card_masked_number="**** 2222", card_type="credit"),
+            Card(workspace_id=1, account_id=self.accounts[0].id, name="Everyday", card_masked_number="**** 1111", card_type="debit"),
+            Card(workspace_id=1, account_id=self.accounts[1].id, name="Travel", card_masked_number="**** 2222", card_type="credit"),
         ]
         self.db.add_all(self.cards)
         await self.db.commit()
@@ -165,7 +169,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def record(self, **values):
         data = {**BASE_INPUT, "card_id": self.cards[0].id, **values}
-        transaction = Transaction(**data)
+        transaction = Transaction(workspace_id=1, **data)
         self.db.add(transaction)
         await self.db.commit()
         return transaction
@@ -176,20 +180,21 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         newer = await self.record(transaction_datetime=datetime(2026, 2, 10))
         tie = await self.record(transaction_datetime=datetime(2026, 2, 10))
         self.db.expunge_all()
-        rows, total = await service.get_transactions(self.db, limit=2)
+        rows, total = await service.get_transactions(CONTEXT, self.db, limit=2)
         self.assertEqual(total, 4)
         self.assertEqual([row.id for row in rows], [older.id, tie.id])
         self.assertEqual(rows[0].card.account.name, "Family")
-        rows, _ = await service.get_transactions(self.db, limit=2, offset=2)
+        rows, _ = await service.get_transactions(CONTEXT, self.db, limit=2, offset=2)
         self.assertEqual([row.id for row in rows], [newer.id, undated.id])
         rows, total = await service.get_transactions(
+            CONTEXT,
             self.db,
             date_from=datetime(2026, 2, 1),
             date_to=datetime(2026, 2, 28, 23, 59, 59, 999999),
         )
         self.assertEqual(total, 2)
         self.assertEqual([row.id for row in rows], [tie.id, newer.id])
-        selected = await service.get_transaction(self.db, newer.id)
+        selected = await service.get_transaction(CONTEXT, self.db, newer.id)
         self.assertEqual(selected.card.account.institution, "Synthetic bank")
 
     async def test_full_inclusive_date_bounds_and_literal_search(self):
@@ -200,11 +205,11 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.record(description="Shop 100Xoff", transaction_datetime=start)
         await self.record(description="Shop 10%_off", transaction_datetime=finish + timedelta(microseconds=1))
         await self.record(description="Shop 10%_off")
-        rows, total = await service.get_transactions(self.db, date_from=start, date_to=finish, q="  shop 10%_off  ")
+        rows, total = await service.get_transactions(CONTEXT, self.db, date_from=start, date_to=finish, q="  shop 10%_off  ")
         self.assertEqual(total, 2)
         self.assertEqual([row.id for row in rows], [last.id, first.id])
         backslash = await self.record(description="Synthetic \\ store")
-        rows, total = await service.get_transactions(self.db, q="\\")
+        rows, total = await service.get_transactions(CONTEXT, self.db, q="\\")
         self.assertEqual((total, rows[0].id), (1, backslash.id))
 
     async def test_all_filters_signed_and_absolute_zero_and_paging(self):
@@ -213,20 +218,21 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         zero = await self.record(amount=Decimal("0"), currency="AED")
         await self.record(amount=Decimal("-10"), currency="USD", card_id=self.cards[1].id)
         rows, total = await service.get_transactions(
+            CONTEXT,
             self.db, account_id=self.accounts[0].id, card_id=self.cards[0].id,
             currency=" aed ", direction="out", min_abs_amount=Decimal("10"),
             max_abs_amount=Decimal("10"), kind="refund", limit=1,
         )
         self.assertEqual((total, rows[0].id), (1, negative.id))
-        rows, total = await service.get_transactions(self.db, currency="AED", direction="in")
+        rows, total = await service.get_transactions(CONTEXT, self.db, currency="AED", direction="in")
         self.assertEqual((total, rows[0].id), (1, positive.id))
-        rows, total = await service.get_transactions(self.db, currency="AED", min_abs_amount=0, max_abs_amount=0)
+        rows, total = await service.get_transactions(CONTEXT, self.db, currency="AED", min_abs_amount=0, max_abs_amount=0)
         self.assertEqual((total, rows[0].id), (1, zero.id))
-        rows, total = await service.get_transactions(self.db, min_amount=Decimal("-10"), max_amount=Decimal("-10"))
+        rows, total = await service.get_transactions(CONTEXT, self.db, min_amount=Decimal("-10"), max_amount=Decimal("-10"))
         self.assertEqual(total, 2)
         self.assertTrue(all(row.amount == Decimal("-10") for row in rows))
         # The old positional call contract remains valid.
-        rows, total = await service.get_transactions(self.db, None, None, None, None, None, None, None, None, 1, 1)
+        rows, total = await service.get_transactions(CONTEXT, self.db, None, None, None, None, None, None, None, None, 1, 1)
         self.assertEqual((total, len(rows)), (4, 1))
 
     async def test_summary_exclusion_filter_and_dedicated_update(self):
@@ -235,19 +241,22 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
             description="Excluded", excluded_from_summary=True
         )
         rows, total = await service.get_transactions(
+            CONTEXT,
             self.db, excluded_from_summary=True
         )
         self.assertEqual((total, [row.id for row in rows]), (1, [excluded.id]))
         rows, total = await service.get_transactions(
+            CONTEXT,
             self.db, excluded_from_summary=False
         )
         self.assertEqual((total, [row.id for row in rows]), (1, [included.id]))
         updated = await service.set_transaction_summary_exclusion(
+            CONTEXT,
             self.db, included.id, True
         )
         self.assertTrue(updated.excluded_from_summary)
         self.assertIsNone(
-            await service.set_transaction_summary_exclusion(self.db, 9999, True)
+            await service.set_transaction_summary_exclusion(CONTEXT, self.db, 9999, True)
         )
 
     async def test_invalid_query_combinations(self):
@@ -267,15 +276,16 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
             {"min_amount": Decimal("0.001")}, {"limit": 0}, {"limit": 1001}, {"offset": -1},
         ]
         for query in invalid:
-            with self.subTest(query=query), self.assertRaises(ValueError):
-                await service.get_transactions(self.db, **query)
+            expected = WorkspaceAccessError if set(query) in ({"account_id"}, {"card_id"}) else ValueError
+            with self.subTest(query=query), self.assertRaises(expected):
+                await service.get_transactions(CONTEXT, self.db, **query)
 
     async def test_create_missing_card_and_no_ingestion_or_deduplication(self):
-        with self.assertRaisesRegex(ValueError, "card_id"):
-            await service.create_transaction(self.db, TransactionCreate(**{**BASE_INPUT, "card_id": 9999}))
+        with self.assertRaisesRegex(WorkspaceAccessError, "Not Found"):
+            await service.create_transaction(CONTEXT, self.db, TransactionCreate(**{**BASE_INPUT, "card_id": 9999}))
         data = TransactionCreate(**BASE_INPUT)
-        first = await service.create_transaction(self.db, data)
-        second = await service.create_transaction(self.db, data)
+        first = await service.create_transaction(CONTEXT, self.db, data)
+        second = await service.create_transaction(CONTEXT, self.db, data)
         self.assertNotEqual(first.id, second.id)
         self.assertEqual(first.fingerprint, second.fingerprint)
         self.assertEqual(first.amount, Decimal("-12.34"))
@@ -285,6 +295,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_timezone_changes_refresh_existing_fingerprints(self):
         transaction = await service.create_transaction(
+            CONTEXT,
             self.db,
             TransactionCreate(
                 **BASE_INPUT,
@@ -295,6 +306,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("|2026-08-04|", transaction.fingerprint)
         source_transaction = await service.create_transaction(
+            CONTEXT,
             self.db,
             TransactionCreate(
                 **{**BASE_INPUT, "description": "Statement-backed purchase"},
@@ -304,6 +316,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         payload = SourcePayload(
+            workspace_id=1,
             source_kind="bank_statement",
             media_type="application/pdf",
             ingestion_method="manual_upload",
@@ -313,6 +326,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.db.add(payload)
         await self.db.flush()
         observation = TransactionObservation(
+            workspace_id=1,
             source_payload_id=payload.id,
             source_item_key="0",
             transaction_datetime=datetime(
@@ -323,6 +337,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.db.flush()
         self.db.add(
             TransactionSourceLink(
+                workspace_id=1,
                 observation_id=observation.id,
                 transaction_id=source_transaction.id,
                 match_method="manual",
@@ -331,6 +346,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.db.commit()
 
         await account_service.update_account(
+            CONTEXT,
             self.db,
             self.accounts[0].id,
             AccountUpdate(timezone="Asia/Dubai"),
@@ -339,6 +355,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("|2026-08-04|", source_transaction.fingerprint)
 
         await card_service.update_card(
+            CONTEXT,
             self.db,
             self.cards[0].id,
             CardUpdate(timezone="UTC"),
@@ -347,6 +364,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("|2026-08-04|", source_transaction.fingerprint)
 
         await card_service.update_card(
+            CONTEXT,
             self.db,
             self.cards[0].id,
             CardUpdate(timezone=None),
@@ -362,7 +380,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.db.expunge_all()
         self.statements.clear()
-        updated = await service.update_transaction(self.db, old.id, TransactionUpdate(description="  Edited  "))
+        updated = await service.update_transaction(CONTEXT, self.db, old.id, TransactionUpdate(description="  Edited  "))
         self.assertEqual(updated.description, "Edited")
         self.assertIsNone(updated.original_amount)
         self.assertEqual(updated.original_currency, "USD")
@@ -374,31 +392,31 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("transaction_datetime=", updates[0])
         self.assertNotIn("fx_fee=", updates[0])
         with self.assertRaisesRegex(ValueError, "original_amount"):
-            await service.update_transaction(self.db, old.id, TransactionUpdate(amount="20"))
+            await service.update_transaction(CONTEXT, self.db, old.id, TransactionUpdate(amount="20"))
         self.assertEqual(updated.amount, Decimal("-12.34"))
-        await service.update_transaction(self.db, old.id, TransactionUpdate(location=None, transaction_datetime=None))
+        await service.update_transaction(CONTEXT, self.db, old.id, TransactionUpdate(location=None, transaction_datetime=None))
         self.assertIsNone(updated.location)
         self.assertIsNone(updated.transaction_datetime)
 
     async def test_update_merged_fx_and_explicit_pair_clear(self):
         saved = await self.record(original_amount=Decimal("-5"), original_currency="USD", fx_rate=Decimal("2"), fx_fee=Decimal("1.50"))
-        updated = await service.update_transaction(self.db, saved.id, TransactionUpdate(original_amount="-6"))
+        updated = await service.update_transaction(CONTEXT, self.db, saved.id, TransactionUpdate(original_amount="-6"))
         self.assertEqual(updated.original_amount, Decimal("-6"))
         self.assertEqual(updated.original_currency, "USD")
         with self.assertRaisesRegex(ValueError, "original_currency"):
-            await service.update_transaction(self.db, saved.id, TransactionUpdate(original_currency=None))
-        updated = await service.update_transaction(self.db, saved.id, TransactionUpdate(original_amount=None, original_currency=None))
+            await service.update_transaction(CONTEXT, self.db, saved.id, TransactionUpdate(original_currency=None))
+        updated = await service.update_transaction(CONTEXT, self.db, saved.id, TransactionUpdate(original_amount=None, original_currency=None))
         self.assertIsNone(updated.original_amount)
         self.assertIsNone(updated.original_currency)
         self.assertIsNone(updated.fx_rate)
         self.assertEqual(updated.fx_fee, Decimal("1.50"))
         standalone = await self.record(fx_rate=Decimal("2"))
-        updated = await service.update_transaction(self.db, standalone.id, TransactionUpdate(original_amount=None, original_currency=None))
+        updated = await service.update_transaction(CONTEXT, self.db, standalone.id, TransactionUpdate(original_amount=None, original_currency=None))
         self.assertIsNone(updated.fx_rate)
         invalid_currency = await self.record(currency="123", original_amount=Decimal("1"), original_currency="USD")
         with self.assertRaisesRegex(ValueError, "currency"):
-            await service.update_transaction(self.db, invalid_currency.id, TransactionUpdate(fx_rate="2"))
-        self.assertIsNone(await service.update_transaction(self.db, 9999, TransactionUpdate(description="Missing")))
+            await service.update_transaction(CONTEXT, self.db, invalid_currency.id, TransactionUpdate(fx_rate="2"))
+        self.assertIsNone(await service.update_transaction(CONTEXT, self.db, 9999, TransactionUpdate(description="Missing")))
 
     async def test_observation_pages_counts_and_delete_preserve_payloads_and_other_links(self):
         transaction = await self.record()
@@ -407,58 +425,65 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
             attachment = Path(directory) / "synthetic.txt"
             attachment.write_text("Synthetic attachment", encoding="utf-8")
             payloads = [SourcePayload(
+                workspace_id=1,
                 source_kind="other", media_type="text/plain", ingestion_method="migration",
                 content_hash=f"{index:064x}", raw_text=f"Source {index}",
                 created_at=datetime(2026, 1, 1), file_path=str(attachment) if index == 0 else None,
             ) for index in range(23)]
             other_payload = SourcePayload(
+                workspace_id=1,
                 source_kind="other", media_type="text/plain", ingestion_method="migration",
                 content_hash="f" * 64, raw_text="Other source", created_at=datetime(2026, 1, 1),
             )
             self.db.add_all([*payloads, other_payload])
             await self.db.flush()
             observations = [TransactionObservation(
+                workspace_id=1,
                 source_payload_id=payload.id, source_item_key="0", raw_fragment=payload.raw_text,
             ) for payload in payloads]
             other_observation = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=other_payload.id, source_item_key="0", raw_fragment="Other source",
             )
             self.db.add_all([*observations, other_observation])
             await self.db.flush()
             self.db.add_all([TransactionSourceLink(
+                workspace_id=1,
                 transaction_id=transaction.id, observation_id=observation.id, match_method="manual",
             ) for observation in observations])
             self.db.add(TransactionSourceLink(
+                workspace_id=1,
                 transaction_id=other.id, observation_id=other_observation.id, match_method="manual",
             ))
             await self.db.commit()
             self.db.expunge_all()
             self.statements.clear()
-            counts = await service.get_source_counts(self.db, [transaction.id, other.id, 9999])
+            counts = await service.get_source_counts(CONTEXT, self.db, [transaction.id, other.id, 9999])
             self.assertEqual(counts, {transaction.id: 23, other.id: 1, 9999: 0})
             self.assertEqual(len(self.statements), 1)
-            page, total = await service.get_transaction_observations_page(self.db, transaction.id)
+            page, total = await service.get_transaction_observations_page(CONTEXT, self.db, transaction.id)
             self.assertEqual(total, 23)
             self.assertEqual([link.observation_id for link in page], [value.id for value in reversed(observations)][0:20])
             self.assertEqual(page[0].observation.payload.raw_text, "Source 22")
-            page, total = await service.get_transaction_observations_page(self.db, transaction.id, offset=20)
+            page, total = await service.get_transaction_observations_page(CONTEXT, self.db, transaction.id, offset=20)
             self.assertEqual(len(page), 3)
-            self.assertTrue(await service.delete_transaction(self.db, transaction.id))
-            self.assertFalse(await service.delete_transaction(self.db, transaction.id))
+            self.assertTrue(await service.delete_transaction(CONTEXT, self.db, transaction.id))
+            self.assertFalse(await service.delete_transaction(CONTEXT, self.db, transaction.id))
             self.assertEqual(await self.db.scalar(select(func.count()).select_from(SourcePayload)), 24)
             self.assertEqual(await self.db.scalar(select(func.count()).select_from(TransactionObservation)), 24)
-            self.assertEqual(await service.get_source_counts(self.db, [other.id]), {other.id: 1})
+            self.assertEqual(await service.get_source_counts(CONTEXT, self.db, [other.id]), {other.id: 1})
             self.assertEqual(await self.db.scalar(select(func.count()).select_from(Account)), 2)
             self.assertEqual(await self.db.scalar(select(func.count()).select_from(Card)), 2)
             self.assertTrue(attachment.is_file())
 
     async def test_all_reference_options_are_reachable_across_batches(self):
         self.db.add_all([Card(
+            workspace_id=1,
             account_id=self.accounts[0].id, name=f"Synthetic {index}",
             card_masked_number=f"**** {index + 3000}", card_type="debit",
         ) for index in range(service.REFERENCE_BATCH_SIZE + 1)])
         await self.record(currency="EUR", original_currency="GBP")
-        references = await service.get_transaction_references(self.db)
+        references = await service.get_transaction_references(CONTEXT, self.db)
         self.assertEqual(len(references["cards"]), service.REFERENCE_BATCH_SIZE + 3)
         self.assertEqual(references["currencies"], ["AED", "EUR", "GBP", "USD"])
         self.assertEqual(references["accounts"][0]["label"], "Synthetic bank · Family")
@@ -469,7 +494,7 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
         active = User(username="synthetic-active", email="active@example.test", hashed_password="unused", is_active=True)
         inactive = User(username="synthetic-inactive", email="inactive@example.test", hashed_password="unused", is_active=False)
         self.db.add_all([active, inactive])
-        await self.db.commit()
+        await add_fixture_memberships(self.db)
         app = FastAPI()
         app.include_router(router, prefix="/api/v1")
 
@@ -486,15 +511,14 @@ class TransactionServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await client.get("/api/v1/transactions", headers={"Authorization": f"Bearer {inactive_token}"})).status_code, 400)
             client.headers["Authorization"] = f"Bearer {token}"
             response = await client.post("/api/v1/transactions", json={**BASE_INPUT, "card_id": 9999})
-            self.assertEqual(response.status_code, 422)
-            self.assertIn("card_id", response.json()["detail"])
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual("Not Found", response.json()["detail"])
             for identifier in (2**31, 999999999999999999999999):
                 response = await client.post("/api/v1/transactions", json={**BASE_INPUT, "card_id": identifier})
                 self.assertEqual(response.status_code, 422)
                 for field in ("account_id", "card_id"):
                     response = await client.get("/api/v1/transactions", params={field: str(identifier)})
-                    self.assertEqual(response.status_code, 422)
-                    self.assertIn(field, response.json()["detail"])
+                    self.assertEqual(response.status_code, 404)
                 for suffix in ("", "/observations"):
                     response = await client.get(f"/api/v1/transactions/{identifier}{suffix}")
                     self.assertEqual(response.status_code, 404)

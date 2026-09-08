@@ -28,17 +28,20 @@ with patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}):
 TODAY = date(2026, 3, 6)
 
 
+from tests.workspace_fixtures import CONTEXT, seed_workspace, add_fixture_memberships, WorkspaceAccessError
+
+
 async def seed_dashboard(db):
-    account = Account(institution="Synthetic Bank", name="Family", account_currency="GBP", timezone="Asia/Dubai")
+    account = Account(workspace_id=1, institution="Synthetic Bank", name="Family", account_currency="GBP", timezone="Asia/Dubai")
     db.add(account)
     await db.flush()
-    card = Card(account_id=account.id, name="Everyday", card_type="debit", card_masked_number="**** 1000")
-    utc_card = Card(account_id=account.id, name="Travel", card_type="debit", card_masked_number="**** 2000", timezone="UTC")
+    card = Card(workspace_id=1, account_id=account.id, name="Everyday", card_type="debit", card_masked_number="**** 1000")
+    utc_card = Card(workspace_id=1, account_id=account.id, name="Travel", card_type="debit", card_masked_number="**** 2000", timezone="UTC")
     db.add_all([card, utc_card])
     await db.flush()
 
     def add(amount, currency="AED", kind="purchase", when="2026-03-02T12:00:00", **kwargs):
-        db.add(Transaction(card_id=kwargs.pop("card_id", card.id), amount=Decimal(amount), currency=currency,
+        db.add(Transaction(workspace_id=1, card_id=kwargs.pop("card_id", card.id), amount=Decimal(amount), currency=currency,
                            transaction_kind=kind, description="Synthetic dashboard fixture",
                            transaction_datetime=datetime.fromisoformat(when) if when else None, **kwargs))
 
@@ -77,6 +80,7 @@ class DashboardDatabase(unittest.IsolatedAsyncioTestCase):
             connection.execute("PRAGMA foreign_keys=ON")
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(seed_workspace)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         async with self.sessions() as db:
             await seed_dashboard(db)
@@ -92,7 +96,7 @@ class DashboardServiceTests(DashboardDatabase):
         def count_queries(connection, cursor, statement, parameters, context, many):
             statements.append(statement)
         async with self.sessions() as db:
-            overview = await get_dashboard_overview(db, today=TODAY)
+            overview = await get_dashboard_overview(CONTEXT, db, today=TODAY)
         self.assertEqual(len(statements), 4)
         current = overview.current
         self.assertEqual((current.date_from, current.date_to), (date(2026, 3, 1), TODAY))
@@ -130,9 +134,9 @@ class DashboardServiceTests(DashboardDatabase):
 
     async def test_historical_years_are_complete_until_earliest_data_year(self):
         async with self.sessions() as db:
-            overview = await get_dashboard_year(db, year=2025, today=TODAY)
+            overview = await get_dashboard_year(CONTEXT, db, year=2025, today=TODAY)
             with self.assertRaises(DashboardYearUnavailable):
-                await get_dashboard_year(db, year=2024, today=TODAY)
+                await get_dashboard_year(CONTEXT, db, year=2024, today=TODAY)
         self.assertEqual(overview.year, 2025)
         self.assertEqual(len(overview.months), 12)
         self.assertEqual(
@@ -146,23 +150,23 @@ class DashboardServiceTests(DashboardDatabase):
 
     async def test_short_month_comparison_and_negative_baseline(self):
         async with self.sessions() as db:
-            overview = await get_dashboard_overview(db, today=date(2026, 3, 31))
+            overview = await get_dashboard_overview(CONTEXT, db, today=date(2026, 3, 31))
             self.assertEqual(overview.comparison.date_to, date(2026, 2, 28))
             # Negative prior net spending uses abs(previous) as denominator.
-            db.add(Transaction(card_id=1, amount=Decimal("50"), currency="EUR", transaction_kind="refund",
+            db.add(Transaction(workspace_id=1, card_id=1, amount=Decimal("50"), currency="EUR", transaction_kind="refund",
                                description="Synthetic prior refund", transaction_datetime=datetime(2026, 2, 2)))
             for amount, kind in (("-10", "purchase"), ("10", "refund")):
-                db.add(Transaction(card_id=1, amount=Decimal(amount), currency="USD", transaction_kind=kind,
+                db.add(Transaction(workspace_id=1, card_id=1, amount=Decimal(amount), currency="USD", transaction_kind=kind,
                                    description="Synthetic zero baseline", transaction_datetime=datetime(2026, 2, 2)))
             await db.commit()
-            overview = await get_dashboard_overview(db, today=TODAY)
+            overview = await get_dashboard_overview(CONTEXT, db, today=TODAY)
             currencies = {entry.currency: entry for entry in overview.current.currencies}
             self.assertEqual(currencies["EUR"].comparison_percent, Decimal(50))
             self.assertIsNone(currencies["USD"].comparison_percent)
 
     async def test_january_starts_with_the_complete_previous_year(self):
         async with self.sessions() as db:
-            overview = await get_dashboard_overview(db, today=date(2028, 1, 1))
+            overview = await get_dashboard_overview(CONTEXT, db, today=date(2028, 1, 1))
         self.assertFalse(overview.current.currencies)
         self.assertEqual(len(overview.previous), 12)
         self.assertEqual(

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core.workspace_context import WorkspaceContext
 from app.models.card import Card
 from app.models.transaction import Transaction
 from app.models.transaction_source_link import TransactionSourceLink
@@ -76,21 +77,24 @@ def transaction_business_timezone(
 
 
 async def _canonical_business_timezone(
+    context: WorkspaceContext,
     db: AsyncSession,
     transaction: Transaction,
     observations: list[TransactionObservation],
 ) -> str:
+    context.require_record(transaction)
     card = await db.scalar(
-        select(Card)
+        select(Card).where(Card.workspace_id == context.workspace_id)
         .where(Card.id == transaction.card_id)
         .options(selectinload(Card.account))
     )
     return transaction_business_timezone(card, observations)
 
 
-async def _canonical_money(db: AsyncSession, transaction: Transaction, observation):
+async def _canonical_money(context: WorkspaceContext, db: AsyncSession, transaction: Transaction, observation):
     # Import lazily so standalone parser imports do not recurse through the eager
     # app.services package exports back into source processing.
+    context.require_record(transaction)
     from app.services.exchange_rate_service import exchange_rate_service
 
     amount = observation.amount
@@ -104,7 +108,7 @@ async def _canonical_money(db: AsyncSession, transaction: Transaction, observati
         return amount, currency, observation.original_amount, observation.original_currency, fx_rate
 
     card = await db.scalar(
-        select(Card).where(Card.id == transaction.card_id).options(selectinload(Card.account))
+        select(Card).where(Card.workspace_id == context.workspace_id).where(Card.id == transaction.card_id).options(selectinload(Card.account))
     )
     if card is None or not card.account or currency.upper() == card.account.account_currency.upper():
         return amount, currency, None, None, None
@@ -114,12 +118,15 @@ async def _canonical_money(db: AsyncSession, transaction: Transaction, observati
 
 
 async def canonicalize_transaction(
+    context: WorkspaceContext,
     db: AsyncSession,
     transaction: Transaction
 ) -> Transaction:
     """Recalculate every source-backed canonical field without committing."""
+    context.require_record(transaction)
+    context.require_write()
     query = (
-        select(TransactionSourceLink)
+        select(TransactionSourceLink).where(TransactionSourceLink.workspace_id == context.workspace_id)
         .where(TransactionSourceLink.transaction_id == transaction.id)
         .options(
             selectinload(TransactionSourceLink.observation).selectinload(
@@ -134,11 +141,12 @@ async def canonicalize_transaction(
 
     observations = [link.observation for link in links]
     business_timezone = await _canonical_business_timezone(
+        context,
         db, transaction, observations
     )
     money_source = _money_winner(observations)
     if money_source is not None:
-        money = await _canonical_money(db, transaction, money_source)
+        money = await _canonical_money(context, db, transaction, money_source)
         if money is not None:
             (
                 transaction.amount,

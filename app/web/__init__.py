@@ -1,6 +1,6 @@
 """Web routes for Jinja2 + HTMX pages"""
 from fastapi import APIRouter
-from app.web import auth, dashboard, transactions
+from app.web import auth, dashboard, transactions, workspaces
 
 web_router = APIRouter()
 
@@ -8,3 +8,5 @@ web_router = APIRouter()
 web_router.include_router(auth.router, prefix="/auth", tags=["web-auth"])
 web_router.include_router(dashboard.router)
 web_router.include_router(transactions.router)
+
+web_router.include_router(workspaces.router)

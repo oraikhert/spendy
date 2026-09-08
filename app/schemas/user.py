@@ -29,7 +29,6 @@ class UserInDB(UserBase):
     """Schema for user in database (includes hashed password)"""
     id: int
     hashed_password: str
-    is_superuser: bool
     created_at: datetime
     updated_at: datetime
     
@@ -39,7 +38,6 @@ class UserInDB(UserBase):
 class User(UserBase):
     """Schema for user response (public data)"""
     id: int
-    is_superuser: bool
     created_at: datetime
     updated_at: datetime
     

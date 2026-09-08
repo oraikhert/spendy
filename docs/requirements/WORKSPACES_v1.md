@@ -1,6 +1,6 @@
 # Workspaces — development task v1
 
-Iteration: **v1** · Status: **Planned** · Baseline: **2026-09-08**
+Iteration: **v1** · Status: **In progress — Iteration 1 complete** · Baseline: **2026-09-08**
 
 Implement the [Workspace contract](../WORKSPACES.md) in three independently
 acceptable delivery stages. That document defines the target behavior; this task
@@ -13,7 +13,7 @@ The baseline revision is `5679f3054444aa9483696c208ca7de173e45594c`.
 
 | Area | Available | Required work |
 |---|---|---|
-| Identity | Active users, bearer/cookie authentication and a global `is_superuser` flag with no authorization use | Remove `is_superuser`; make authority workspace-specific |
+| Identity | Active users, bearer/cookie authentication and a global privilege flag with no authorization use | Remove the global privilege flag; make authority workspace-specific |
 | Access | Every authenticated active user can reach the same accounts, cards, transactions and sources | Add mandatory workspace context and isolate every financial operation |
 | Registration | API, web and CLI user creation create a global user | Keep user-only creation and add explicit workspace onboarding |
 | Database | Financial tables have global IDs and cross-record foreign keys but no ownership key | Add workspace tables, tenant keys, same-workspace constraints and a legacy-data backfill |
@@ -22,8 +22,8 @@ The baseline revision is `5679f3054444aa9483696c208ca7de173e45594c`.
 | Email | No SMTP settings, client or background worker | Add bounded async SMTP delivery for invitations without introducing a worker |
 | Lifecycle | Accounts/cards/transactions use hard deletion; no aggregate archive/delete workflow exists | Add reversible workspace archive and guarded aggregate deletion |
 
-Do not infer ownership through the current user parameter passed to routes: services
-currently omit it from their queries. Source payloads also require direct ownership
+At the baseline revision, the current-user route parameter did not imply ownership:
+services omitted it from their queries. Source payloads also require direct ownership
 because they may exist without an account, card, observation or transaction.
 
 ## Iteration 1 — ownership foundation
@@ -33,7 +33,7 @@ because they may exist without an account, card, observation or transaction.
 - Add `Workspace` and `WorkspaceMember`, the three workspace-local roles, relationships
   and response/input schemas. Add a dedicated context dependency for bearer and cookie
   routes. There is no global administrator or membership bypass.
-- Add a migration that drops `users.is_superuser` without rewriting the deployed
+- Add a migration that drops the legacy global privilege column without rewriting the deployed
   initial revision. Add `workspace_id` to every tenant-owned financial table, backfill
   retained records into one Legacy Workspace, then enforce non-null and same-workspace
   relationships. The lowest existing user ID is owner; other users are editors.
@@ -48,7 +48,7 @@ because they may exist without an account, card, observation or transaction.
 - Add `X-Workspace-ID` resolution to existing JSON financial routes. Return `409` for
   no membership or ambiguous omitted selection and preserve current endpoint URLs,
   pagination, response shapes, money rules and HTTP authentication behavior.
-- Remove `is_superuser` from ORM models, Pydantic schemas, responses, exports, scripts
+- Remove the global privilege flag from ORM models, Pydantic schemas, responses, exports, scripts
   and documentation. Normal API/web registration and `scripts/create_user.py` continue
   to create only a user and never create or select a workspace.
 - Add workspace list/create/read endpoints and minimal web onboarding, creation and
@@ -71,7 +71,7 @@ roles exist, but invitation and member-management workflows are not yet exposed.
 - Cover the zero/one/multiple membership header outcomes and a cross-workspace source
   link attempt.
 - Upgrade a disposable SQLite database containing legacy users and financial records;
-  verify the first-user owner rule, removal of `is_superuser`, backfill and foreign-key
+  verify the first-user owner rule, removal of the global privilege flag, backfill and foreign-key
   enforcement. Exercise the guarded downgrade on a safe single-workspace fixture.
 - Run the directly affected transaction, source-processing, dashboard and auth scripts
   with isolated databases. PostgreSQL migration execution may remain unverified but
@@ -85,8 +85,56 @@ or UI. Workspace archive and deletion are unavailable.
 
 ### Completion record
 
-Record completion date, Workspace contract revision, migration revision, focused
-checks, affected regression scripts, backend limitations and browser verification.
+Completed **2026-09-08**, against the Workspace contract at Git revision
+`4c4b3a9ca8ce214bd1555f53c49be1da12ca98a6` (this change removes the obsolete
+privilege-field name from that document without changing its target semantics).
+Migration: `workspace_ownership_001`, following `txn_summary_excl_001`.
+
+Implemented the seven-table ownership boundary, immutable service context, local
+roles with server-side write checks, explicit workspace JSON/web creation and
+selection, and the operator-only ownerless Legacy Workspace recovery script.
+API, web and CLI registration remain user-only. Existing financial URLs and public
+response shapes are preserved; unavailable reference IDs now consistently return
+404. Account/card inputs reject ownership fields, matching existing strict
+transaction/source inputs.
+
+Verification on disposable SQLite with foreign keys enabled:
+
+- `tests/test_workspaces.py`: registration through all three entry points,
+  atomic creation/rollback, zero/one/multiple membership resolution, invalid and
+  archived selections, workspace reads, cross-workspace financial/reference/source
+  isolation, independent idempotency, viewer denial, unscoped metadata, immutable
+  context, signed-session selection and explicit Legacy owner recovery.
+- `tests/test_workspace_migration.py`: empty, users-only, retained-data/users and
+  ownerless backfills; minimum-ID ownership; removed privilege column; non-null,
+  role, membership and same-workspace constraints; guarded downgrade and retained
+  SQLite observation AUTOINCREMENT high-water marks.
+- Affected regressions: `tests/test_transaction_service.py`,
+  `tests/test_source_processing.py`, `tests/test_transactions_web.py` (including
+  authentication, CSRF and sliding sessions), `tests/test_dashboard_service.py`,
+  `tests/test_dashboard_api.py`, `tests/test_dashboard_web.py`, and
+  `tests/test_source_migration.py`. Existing financial fixtures now explicitly
+  create a synthetic workspace and memberships. The dashboard HTML check was
+  corrected to match the existing lowercase “in turnover” label.
+- `tests/test_api.py`: authentication checks passed on a separate disposable
+  server at port 8137; port 8000 was already occupied and was left untouched.
+- Browser: actual registration → onboarding, blank-name validation with focus,
+  explicit creation → Dashboard, second-workspace creation and switching back.
+  Desktop and 360 × 800 layouts checked; mobile document width was 360 px with no
+  horizontal overflow. The temporary viewport override was reset.
+- Parser regressions: `tests/test_parsing.py` and
+  `tests/test_parsing_kind_location.py` passed after the matching-helper import changes.
+- `git diff --check` and `alembic check` (no ORM/schema drift); full diff and
+  PostgreSQL schema SQL/constraints reviewed.
+  PostgreSQL migration execution remains untested; no retained database was migrated.
+
+Remaining limitations are the iteration boundary above: no invitations, membership
+management, rename/archive/restore/delete workflows, or collaborator onboarding.
+Viewer mutation controls are still presented by existing financial templates;
+services deny those writes, with role-aware presentation deferred to Iteration 2.
+The existing account/card list services retain their unbounded response contract;
+workspace lists are bounded and ordered. No blockers remain for Iteration 1.
+**Workspace v1 remains open for Iterations 2 and 3.**
 
 ## Iteration 2 — collaboration
 
@@ -217,7 +265,7 @@ Keep new coverage intentionally compact:
 - `tests/test_workspaces.py` covers user-only registration, context selection,
   isolation, representative role behavior, last-owner protection, mocked invitations
   and archive/delete rules.
-- `tests/test_workspace_migration.py` covers `is_superuser` removal, legacy backfill,
+- `tests/test_workspace_migration.py` covers the global privilege flag removal, legacy backfill,
   first-user ownership, tenant constraints and guarded SQLite downgrade.
 - `tests/test_workspaces_web.py` covers onboarding, creation, switching, invite
   acceptance, viewer restrictions, CSRF, archive and exact-name deletion.

@@ -47,6 +47,9 @@ with patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}):
     )
 
 
+from tests.workspace_fixtures import CONTEXT, seed_workspace, add_fixture_memberships, WorkspaceAccessError
+
+
 class Forms(HTMLParser):
     """Read successful controls as a browser does, including untouched edit values."""
 
@@ -121,27 +124,29 @@ async def seed_web_fixtures(db, upload_dir):
     active = User(username="web-active", email="web-active@example.test", hashed_password="unused", is_active=True)
     other = User(username="web-other", email="web-other@example.test", hashed_password="unused", is_active=True)
     inactive = User(username="web-inactive", email="web-inactive@example.test", hashed_password="unused", is_active=False)
-    account = Account(institution="Synthetic Bank", name="Everyday account", account_currency="AED")
-    foreign_account = Account(institution="Example Bank", name="Travel account", account_currency="USD")
+    account = Account(workspace_id=1, institution="Synthetic Bank", name="Everyday account", account_currency="AED")
+    foreign_account = Account(workspace_id=1, institution="Example Bank", name="Travel account", account_currency="USD")
     db.add_all([active, other, inactive, account, foreign_account])
-    await db.flush()
-    card = Card(account_id=account.id, name="Everyday card", card_masked_number="**** 1234", card_type="debit")
-    foreign_card = Card(account_id=foreign_account.id, name="Travel card", card_masked_number="**** 9876", card_type="credit")
+    await add_fixture_memberships(db)
+    card = Card(workspace_id=1, account_id=account.id, name="Everyday card", card_masked_number="**** 1234", card_type="debit")
+    foreign_card = Card(workspace_id=1, account_id=foreign_account.id, name="Travel card", card_masked_number="**** 9876", card_type="credit")
     db.add_all([card, foreign_card])
     await db.flush()
     precise = datetime(2026, 2, 16, 12, 34, 56, 123456)
     transaction = Transaction(
+        workspace_id=1,
         card_id=card.id, amount=Decimal("-12.34"), currency="AED", description="Synthetic legacy transaction",
         transaction_kind="purchase", transaction_datetime=precise, posting_datetime=precise + timedelta(hours=1),
         location="Synthetic location", original_amount=Decimal("-3.36"), original_currency=None,
         fx_rate=Decimal("3.672500"), fx_fee=Decimal("0.25"),
     )
-    other_transaction = Transaction(card_id=foreign_card.id, amount=Decimal("4.00"), currency="USD",
+    other_transaction = Transaction(workspace_id=1, card_id=foreign_card.id, amount=Decimal("4.00"), currency="USD",
                                     description="Other linked transaction", transaction_kind="refund")
     upload_dir.mkdir(parents=True, exist_ok=True)
     fixture_file = upload_dir / "synthetic.txt"
     fixture_file.write_text("Synthetic attachment only", encoding="utf-8")
     payload = SourcePayload(
+        workspace_id=1,
         source_kind="sms", media_type="text/plain", ingestion_method="phone_api",
         raw_text="Synthetic original source <script>alert('unsafe')</script>",
         file_path=str(fixture_file), original_filename="statement <unsafe>.txt",
@@ -153,6 +158,7 @@ async def seed_web_fixtures(db, upload_dir):
         },
     )
     other_payload = SourcePayload(
+        workspace_id=1,
         source_kind="bank_statement", media_type="application/pdf", ingestion_method="manual_upload",
         file_path=str(fixture_file), original_filename="other-statement.pdf", content_hash="b" * 64,
         received_at=datetime(2026, 3, 1), processing_status="processed",
@@ -161,6 +167,7 @@ async def seed_web_fixtures(db, upload_dir):
     db.add_all([transaction, other_transaction, payload, other_payload])
     await db.flush()
     observation = TransactionObservation(
+        workspace_id=1,
         source_payload_id=payload.id, source_item_key="sms-0", amount=Decimal("-12.34"),
         currency="AED", original_amount=Decimal("-3.36"), original_currency="USD",
         transaction_datetime=precise, posting_datetime=precise + timedelta(hours=1),
@@ -170,6 +177,7 @@ async def seed_web_fixtures(db, upload_dir):
         extraction_confidence=Decimal("0.8750"), extraction_metadata={},
     )
     other_observation = TransactionObservation(
+        workspace_id=1,
         source_payload_id=other_payload.id, source_item_key="statement-0", amount=Decimal("4.00"),
         currency="USD", description="Other source extraction", transaction_kind="refund",
         card_id=foreign_card.id, card_last_four="9876", extraction_metadata={},
@@ -178,11 +186,13 @@ async def seed_web_fixtures(db, upload_dir):
     await db.flush()
     db.add_all([
         TransactionSourceLink(
+            workspace_id=1,
             transaction_id=transaction.id, observation_id=observation.id,
             match_method="automatic", match_confidence=Decimal("0.9000"),
             matcher_name="synthetic_matcher", matcher_version="1-test",
         ),
         TransactionSourceLink(
+            workspace_id=1,
             transaction_id=other_transaction.id, observation_id=other_observation.id,
             match_method="manual",
         ),
@@ -210,6 +220,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
 
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(seed_workspace)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         async with self.sessions() as db:
             self.data = await seed_web_fixtures(db, self.upload_dir)
@@ -258,7 +269,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
     async def add_transactions(self, entries):
         async with self.sessions() as db:
             defaults = dict(card_id=self.data["card"], amount=Decimal("-1.00"), currency="AED", transaction_kind="purchase")
-            objects = [Transaction(**{**defaults, **entry}) for entry in entries]
+            objects = [Transaction(workspace_id=1, **{**defaults, **entry}) for entry in entries]
             db.add_all(objects)
             await db.commit()
             return [item.id for item in objects]
@@ -270,6 +281,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             kinds = ["sms", "bank_statement", "bank_app", "other"]
             for number in range(count):
                 payloads.append(SourcePayload(
+                    workspace_id=1,
                     source_kind=kinds[number % len(kinds)], media_type="text/plain",
                     ingestion_method="migration", raw_text=f"Synthetic raw payload {number:02d}",
                     file_path=str(self.upload_dir / f"private-{number}.payload") if number == 0 else None,
@@ -283,6 +295,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             db.add_all(payloads)
             await db.flush()
             observations = [TransactionObservation(
+                workspace_id=1,
                 source_payload_id=payload.id, source_item_key="0",
                 amount=Decimal("-2.00") if number % 2 else None,
                 currency="AED" if number % 2 else None,
@@ -293,6 +306,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             db.add_all(observations)
             await db.flush()
             db.add_all([TransactionSourceLink(
+                workspace_id=1,
                 transaction_id=self.data["transaction"], observation_id=observation.id,
                 match_method="migration",
             ) for observation in observations])
@@ -417,7 +431,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.headers.get("hx-redirect"), "/auth/login")
         self.assertEqual(await self.snapshot(), before)
 
-    async def test_shared_dataset_remains_visible_to_another_active_user(self):
+    async def test_workspace_dataset_remains_visible_to_another_member(self):
         self.login(self.data["other"])
         response = await self.client.get(f"/transactions/{self.data['transaction']}")
         self.assertEqual(response.status_code, 200)
@@ -516,7 +530,9 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         for change in invalid:
             with self.subTest(change=change):
                 response = await self.client.post("/transactions/new", data={**fields, **change}, headers={"HX-Request": "true"})
-                self.assertEqual(response.status_code, 422, response.text[:700])
+                self.assertEqual(response.status_code, 404 if change.get("card_id") == "999999" else 422, response.text[:700])
+                if response.status_code == 404:
+                    continue
                 self.assertIn("csrf_token", response.text)
                 if "description" not in change:
                     self.assertIn(fields["description"], response.text)
@@ -571,7 +587,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         for params in invalid_filters:
             with self.subTest(params=params):
                 response = await self.client.get("/transactions", params=params)
-                self.assertEqual(response.status_code, 422, response.text[:600])
+                self.assertEqual(response.status_code, 404 if params.get("account_id") == "999999" else 422, response.text[:600])
                 self.assertNotIn("Filter fixture positive", response.text)
 
     async def test_summary_exclusion_action_badge_and_filters(self):
@@ -888,7 +904,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid.status_code, 422)
         self.assertIn("Choose a different destination transaction", invalid.text)
         missing = await self.client.post(move_path, data={**fields, "observation_id": str(source), "transaction_id": "999999"})
-        self.assertEqual(missing.status_code, 422)
+        self.assertEqual(missing.status_code, 404)
         self.assertIn("Destination transaction not found", missing.text)
         async with self.sessions() as db:
             self.assertEqual((await db.get(TransactionSourceLink, source)).transaction_id, transaction)
@@ -912,6 +928,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         target = (await self.add_transactions([{"description": "Conflicting move destination"}]))[0]
         async with self.sessions() as db:
             payload = SourcePayload(
+                workspace_id=1,
                 source_kind="sms", media_type="text/plain", ingestion_method="migration",
                 raw_text="Synthetic conflicting source", content_hash="e" * 64,
                 processing_status="processed", ingestion_metadata={},
@@ -919,12 +936,14 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             db.add(payload)
             await db.flush()
             observation = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=payload.id, source_item_key="conflicting-date",
                 transaction_datetime=datetime(2026, 2, 17), extraction_metadata={},
             )
             db.add(observation)
             await db.flush()
             db.add(TransactionSourceLink(
+                workspace_id=1,
                 transaction_id=target, observation_id=observation.id, match_method="manual",
             ))
             await db.commit()
@@ -958,6 +977,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
     async def test_htmx_unlink_refreshes_canonical_transaction_and_checks_parent(self):
         async with self.sessions() as db:
             statement = SourcePayload(
+                workspace_id=1,
                 source_kind="bank_statement", media_type="application/pdf",
                 ingestion_method="manual_upload", original_filename="canonical.pdf",
                 content_hash="d" * 64, received_at=datetime(2026, 4, 2),
@@ -966,6 +986,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             db.add(statement)
             await db.flush()
             observation = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=statement.id, source_item_key="row-1",
                 amount=Decimal("-50.00"), currency="AED",
                 posting_datetime=datetime(2026, 2, 17), description="Statement canonical",
@@ -974,6 +995,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             db.add(observation)
             await db.flush()
             db.add(TransactionSourceLink(
+                workspace_id=1,
                 transaction_id=self.data["transaction"], observation_id=observation.id,
                 match_method="automatic",
             ))
@@ -1055,12 +1077,14 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         transaction = self.data["transaction"]
         async with self.sessions() as db:
             shared = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=self.data["payload"], source_item_key="sms-1",
                 description="Second observation from shared payload", extraction_metadata={},
             )
             db.add(shared)
             await db.flush()
             db.add(TransactionSourceLink(
+                workspace_id=1,
                 transaction_id=transaction, observation_id=shared.id, match_method="manual",
             ))
             await db.commit()
@@ -1149,6 +1173,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(old_download.status_code, 404)
         async with self.sessions() as db:
             payload = SourcePayload(
+                workspace_id=1,
                 source_kind="sms", media_type="text/plain", ingestion_method="phone_api",
                 raw_text="Unlinked private source", file_path="/private/storage/secret.payload",
                 original_filename="private-source.txt", content_hash="c" * 64,
@@ -1157,6 +1182,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
             db.add(payload)
             await db.flush()
             observation = TransactionObservation(
+                workspace_id=1,
                 source_payload_id=payload.id, source_item_key="unlinked",
                 description="Unlinked observation must stay hidden", extraction_metadata={},
             )

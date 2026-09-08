@@ -23,8 +23,8 @@ migration rules remain in [Service contracts](SERVICE_LAYER.md) and
 
 ## Identity and data model
 
-Spendy has no global administrator or superuser. The user model contains no
-`is_superuser` field, and no authenticated identity can bypass workspace membership.
+Spendy has no global administrator or superuser. No authenticated identity can
+bypass workspace membership.
 Administrative authority comes only from the user's role in a particular workspace.
 
 The workspace domain contains these records:
@@ -141,7 +141,7 @@ is created for an empty installation.
 
 Workspace responses expose the workspace ID, name, status, current user's role and
 timestamps. Financial create/update schemas do not expose writable workspace fields.
-User responses do not contain `is_superuser`.
+User responses contain no global privilege flag.
 
 ### Workspace lifecycle
 

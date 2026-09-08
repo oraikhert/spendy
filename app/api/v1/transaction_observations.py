@@ -6,9 +6,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_active_user
+from app.core.workspace_context import WorkspaceContext
+from app.core.workspace_deps import get_api_workspace, WorkspaceRoute
 from app.database import get_db
-from app.models.user import User
 from app.schemas.transaction import MAX_RECORD_ID, TransactionResponse
 from app.schemas.transaction_observation import (
     TransactionCreateFromObservation,
@@ -26,7 +26,7 @@ from app.services.source_processing_service import (
 )
 
 
-router = APIRouter(prefix="/transaction-observations", tags=["transaction-observations"])
+router = APIRouter(route_class=WorkspaceRoute, prefix="/transaction-observations", tags=["transaction-observations"])
 
 
 def _raise_source_error(exc: Exception) -> None:
@@ -44,7 +44,7 @@ def _raise_source_error(exc: Exception) -> None:
 @router.get("", response_model=TransactionObservationListResponse)
 async def list_transaction_observations(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
     source_payload_id: int | None = Query(None, gt=0, le=MAX_RECORD_ID),
     account_id: int | None = Query(None, gt=0, le=MAX_RECORD_ID),
     card_id: int | None = Query(None, gt=0, le=MAX_RECORD_ID),
@@ -55,6 +55,7 @@ async def list_transaction_observations(
     offset: int = Query(0, ge=0),
 ):
     observations, total = await source_processing_service.list_transaction_observations(
+        context,
         db,
         source_payload_id=source_payload_id,
         account_id=account_id,
@@ -74,9 +75,9 @@ async def list_transaction_observations(
 async def get_transaction_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
 ):
-    observation = await source_processing_service.get_transaction_observation(db, observation_id)
+    observation = await source_processing_service.get_transaction_observation(context, db, observation_id)
     if observation is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -94,10 +95,11 @@ async def link_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     link_data: TransactionLinkCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
 ):
     try:
         return await source_processing_service.link_observation_to_transaction(
+            context,
             db, observation_id, link_data.transaction_id
         )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
@@ -112,10 +114,11 @@ async def move_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     link_data: TransactionMoveCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
 ):
     try:
         return await source_processing_service.move_observation_to_transaction(
+            context,
             db,
             observation_id,
             link_data.transaction_id,
@@ -134,10 +137,11 @@ async def create_transaction_from_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     transaction_data: TransactionCreateFromObservation,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
 ):
     try:
         return await source_processing_service.create_transaction_from_observation(
+            context,
             db, observation_id, transaction_data
         )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
@@ -148,8 +152,8 @@ async def create_transaction_from_observation(
 async def unlink_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
 ):
-    if not await source_processing_service.unlink_observation(db, observation_id):
+    if not await source_processing_service.unlink_observation(context, db, observation_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
     return None

@@ -13,6 +13,15 @@ engine = create_async_engine(
     future=True,
 )
 
+# SQLite must enforce ownership and existing parent relationships at runtime.
+if settings.DATABASE_URL.startswith("sqlite"):
+    from sqlalchemy import event
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys=ON")
+
+
 # Create async session factory
 async_session_maker = async_sessionmaker(
     engine,

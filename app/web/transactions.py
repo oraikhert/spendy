@@ -12,6 +12,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.workspace_context import WorkspaceContext
+from app.core.workspace_deps import get_web_workspace, WorkspaceRoute
 from app.core.deps import get_current_user_from_cookie_required
 from app.database import get_db
 from app.models.user import User
@@ -27,7 +29,7 @@ from app.web.transaction_helpers import (
     display_date, money, parse_filters, safe_return_url, valid_csrf, validation_errors,
 )
 
-class TransactionRoute(APIRoute):
+class TransactionRoute(WorkspaceRoute):
     """Provide recovery even when a lookup or reference query fails before a form."""
     def get_route_handler(self):
         original = super().get_route_handler()
@@ -148,25 +150,25 @@ def record_id(raw):
 
 
 @router.get("", response_class=HTMLResponse)
-async def transaction_list(request: Request, db: DB, user: ActiveUser):
+async def transaction_list(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, db: DB, user: ActiveUser):
     values = ListFilters().values()
     values.update(dict(request.query_params))
     errors = {}
     parsed = None
     records, total, counts = [], 0, {}
     try:
-        refs = await transaction_service.get_transaction_references(db)
+        refs = await transaction_service.get_transaction_references(context, db)
         try:
             parsed = parse_filters(request.query_params.multi_items())
             values = parsed.values()
-            records, total = await transaction_service.get_transactions(db, **parsed.service_args(), limit=50, offset=(parsed.page - 1) * 50)
+            records, total = await transaction_service.get_transactions(context, db, **parsed.service_args(), limit=50, offset=(parsed.page - 1) * 50)
             last_page = max(1, (total + 49) // 50)
             if parsed.page > last_page:
                 parsed.page = last_page
-                records, total = await transaction_service.get_transactions(db, **parsed.service_args(), limit=50, offset=(parsed.page - 1) * 50)
+                records, total = await transaction_service.get_transactions(context, db, **parsed.service_args(), limit=50, offset=(parsed.page - 1) * 50)
                 if not is_htmx(request):
                     return navigate(request, parsed.url())
-            counts = await transaction_service.get_source_counts(db, [record.id for record in records])
+            counts = await transaction_service.get_source_counts(context, db, [record.id for record in records])
             if request.query_params.get("period") == "month" and not is_htmx(request):
                 return navigate(request, parsed.url())
         except (ValidationError, ValueError) as exc:
@@ -181,13 +183,13 @@ async def transaction_list(request: Request, db: DB, user: ActiveUser):
             + bool(values.get("min_abs_amount") or values.get("max_abs_amount"))
             + bool(values.get("excluded_from_summary"))
         )
-        context = {**refs, "filters": values, "transactions": records, "total": total, "source_counts": counts,
+        view_context = {**refs, "filters": values, "transactions": records, "total": total, "source_counts": counts,
                    "page": current_page, "pages": max(1, (total + 49) // 50), "start": (current_page - 1) * 50 + 1 if total else 0,
                    "end": min(current_page * 50, total), "previous_url": parsed.url(current_page - 1) if parsed and current_page > 1 else None,
                    "next_url": parsed.url(current_page + 1) if parsed and current_page * 50 < total else None,
                    "errors": errors, "advanced_count": advanced, "has_filters": any(values.get(k) for k in values if k not in {"page", "period"}) or values.get("period") != "all",
                    "can_create": bool(refs["cards"]), "return_url": return_url, "create_url": "/transactions/new?" + urlencode(create_params)}
-        response = render(request, user, "_browser" if is_htmx(request) else "list", context, 422 if errors else 200)
+        response = render(request, user, "_browser" if is_htmx(request) else "list", view_context, 422 if errors else 200)
         if is_htmx(request) and not errors:
             response.headers["HX-Push-Url"] = return_url
         return response
@@ -206,8 +208,8 @@ def form_values(transaction=None):
     return values
 
 
-async def form_response(request, db, user, transaction=None, values=None, errors=None, status=200, return_url=None):
-    refs = await transaction_service.get_transaction_references(db)
+async def form_response(context: WorkspaceContext, request, db, user, transaction=None, values=None, errors=None, status=200, return_url=None):
+    refs = await transaction_service.get_transaction_references(context, db)
     return_url = safe_return_url(return_url or request.query_params.get("return_url"))
     if values is None:
         values = form_values(transaction)
@@ -221,29 +223,29 @@ async def form_response(request, db, user, transaction=None, values=None, errors
             if chosen:
                 values.update(card_id=str(chosen["id"]), currency=chosen["currency"])
     title = "Edit transaction" if transaction else "Add transaction"
-    context = {**refs, "values": values, "errors": errors or {}, "transaction": transaction, "return_url": return_url,
+    view_context = {**refs, "values": values, "errors": errors or {}, "transaction": transaction, "return_url": return_url,
                "cancel_url": detail_url(transaction.id, return_url) if transaction else return_url,
                "form_action": f"/transactions/{transaction.id}/edit" if transaction else "/transactions/new",
                "submit_label": "Save changes" if transaction else "Create transaction", "can_create": bool(refs["cards"]), "title": title,
                "blocked": status in {403, 503},
                "currency_manually_edited": getattr(request.state, "currency_manually_edited", False),
                "more_details": bool(any(values.get(key) for key in ("posting_datetime", "location", "original_amount", "original_currency", "fx_rate")) or errors)}
-    return render(request, user, "_form" if is_htmx(request) and request.method == "POST" else "form", context, status)
+    return render(request, user, "_form" if is_htmx(request) and request.method == "POST" else "form", view_context, status)
 
 
 @router.get("/new", response_class=HTMLResponse)
-async def new_page(request: Request, db: DB, user: ActiveUser):
-    return await form_response(request, db, user)
+async def new_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, db: DB, user: ActiveUser):
+    return await form_response(context, request, db, user)
 
 
-async def save_form(request, db, user, transaction=None):
+async def save_form(context: WorkspaceContext, request, db, user, transaction=None):
     posted = await request.form()
     request.state.currency_manually_edited = posted.get("currency_manually_edited") == "yes"
     values = {key: str(posted.get(key, "")) for key in FORM_FIELDS}
     return_url = safe_return_url(posted.get("return_url"))
     transaction_id = transaction.id if transaction is not None else None
     if not valid_csrf(request, posted.get("csrf_token")):
-        return await form_response(request, db, user, transaction, values, {"form": "Security token is invalid. Refresh the page before saving again."}, 403, return_url)
+        return await form_response(context, request, db, user, transaction, values, {"form": "Security token is invalid. Refresh the page before saving again."}, 403, return_url)
     payload = {}
     previous = form_values(transaction)
     for key in FORM_FIELDS:
@@ -262,35 +264,35 @@ async def save_form(request, db, user, transaction=None):
             payload.update(original_amount=None, original_currency=None, fx_rate=None)
     # Web fee editing is outside this feature. Never accept hidden changes to it.
     if "fx_fee" in posted:
-        return await form_response(request, db, user, transaction, values, {"form": "Recorded FX fee cannot be edited here."}, 422, return_url)
+        return await form_response(context, request, db, user, transaction, values, {"form": "Recorded FX fee cannot be edited here."}, 422, return_url)
     try:
         if transaction:
-            result = await transaction_service.update_transaction(db, transaction.id, TransactionUpdate.model_validate(payload))
+            result = await transaction_service.update_transaction(context, db, transaction.id, TransactionUpdate.model_validate(payload))
             if result is None:
                 return error_page(request, user, "This transaction no longer exists.", back_url=return_url)
         else:
-            result = await transaction_service.create_transaction(db, TransactionCreate.model_validate(payload))
+            result = await transaction_service.create_transaction(context, db, TransactionCreate.model_validate(payload))
     except (ValidationError, ValueError) as exc:
-        return await form_response(request, db, user, transaction, values, validation_errors(exc), 422, return_url)
+        return await form_response(context, request, db, user, transaction, values, validation_errors(exc), 422, return_url)
     except SQLAlchemyError:
         await db.rollback()
         if transaction_id is not None:
-            transaction = await transaction_service.get_transaction(db, transaction_id)
-        return await form_response(request, db, user, transaction, values,
+            transaction = await transaction_service.get_transaction(context, db, transaction_id)
+        return await form_response(context, request, db, user, transaction, values,
                                    {"form": "The save could not be confirmed. Refresh and check the transaction before trying again."}, 503, return_url)
     return navigate(request, detail_url(result.id, return_url) + "&saved=1")
 
 
 @router.post("/new", response_class=HTMLResponse)
-async def create_page(request: Request, db: DB, user: ActiveUser):
-    return await save_form(request, db, user)
+async def create_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, db: DB, user: ActiveUser):
+    return await save_form(context, request, db, user)
 
 
-async def lookup(db, transaction_id):
+async def lookup(context: WorkspaceContext, db, transaction_id):
     identifier = record_id(transaction_id)
     if identifier is None:
         return None
-    return await transaction_service.get_transaction(db, identifier)
+    return await transaction_service.get_transaction(context, db, identifier)
 
 
 SOURCE_KINDS = {
@@ -409,19 +411,21 @@ def source_view(link, accounts, cards):
     )
 
 
-async def sources_context(request, db, transaction, return_url, page=None, message=None, move_state=None):
+async def sources_context(context: WorkspaceContext, request, db, transaction, return_url, page=None, message=None, move_state=None):
     page = page or page_number(request.query_params.get("source_page"))
     links, total = await transaction_service.get_transaction_observations_page(
+        context,
         db, transaction.id, limit=20, offset=(page - 1) * 20
     )
     pages = max(1, (total + 19) // 20)
     if page > pages:
         page = pages
         links, total = await transaction_service.get_transaction_observations_page(
+            context,
             db, transaction.id, limit=20, offset=(page - 1) * 20
         )
-    refs = await transaction_service.get_transaction_references(db)
-    candidates, candidate_total = await transaction_service.get_transactions(db, limit=1000)
+    refs = await transaction_service.get_transaction_references(context, db)
+    candidates, candidate_total = await transaction_service.get_transactions(context, db, limit=1000)
     accounts = {value["id"]: value["label"] for value in refs["accounts"]}
     cards = {value["id"]: value["label"] for value in refs["cards"]}
     sources = [source_view(link, accounts, cards) for link in links]
@@ -453,6 +457,7 @@ async def sources_context(request, db, transaction, return_url, page=None, messa
 
 
 async def detail_response(
+    context: WorkspaceContext,
     request, db, user, transaction, return_url=None, page=None, message=None,
     sources_only=False, move_state=None, detail_message=None,
 ):
@@ -475,39 +480,40 @@ async def detail_response(
             if summary_state == "excluded"
             else "Transaction included in the summary."
         )
-    context = await sources_context(request, db, transaction, return_url, page, message, move_state)
-    context.update(transaction=transaction, return_url=return_url, back_url=return_url,
+    view_context = await sources_context(context, request, db, transaction, return_url, page, message, move_state)
+    view_context.update(transaction=transaction, return_url=return_url, back_url=return_url,
                    edit_url=f"/transactions/{transaction.id}/edit?" + urlencode({"return_url": return_url}),
                    message=detail_message or ("Transaction saved." if request.query_params.get("saved") == "1" else None))
     if is_htmx(request):
-        return render(request, user, "_sources" if sources_only else "_detail", context)
-    return render(request, user, "detail", context)
+        return render(request, user, "_sources" if sources_only else "_detail", view_context)
+    return render(request, user, "detail", view_context)
 
 
 @router.get("/{transaction_id}/edit", response_class=HTMLResponse)
-async def edit_page(request: Request, transaction_id: str, db: DB, user: ActiveUser):
-    transaction = await lookup(db, transaction_id)
+async def edit_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
+    transaction = await lookup(context, db, transaction_id)
     if transaction is None:
         return error_page(request, user, "This transaction no longer exists.", back_url=safe_return_url(request.query_params.get("return_url")))
-    return await form_response(request, db, user, transaction)
+    return await form_response(context, request, db, user, transaction)
 
 
 @router.post("/{transaction_id}/edit", response_class=HTMLResponse)
-async def update_page(request: Request, transaction_id: str, db: DB, user: ActiveUser):
-    transaction = await lookup(db, transaction_id)
+async def update_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
+    transaction = await lookup(context, db, transaction_id)
     if transaction is None:
         return error_page(request, user, "This transaction no longer exists.")
-    return await save_form(request, db, user, transaction)
+    return await save_form(context, request, db, user, transaction)
 
 
 @router.get("/{transaction_id}/sources", response_class=HTMLResponse)
 @router.get("/{transaction_id}", response_class=HTMLResponse)
-async def transaction_detail(request: Request, transaction_id: str, db: DB, user: ActiveUser):
+async def transaction_detail(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
     try:
-        transaction = await lookup(db, transaction_id)
+        transaction = await lookup(context, db, transaction_id)
         if transaction is None:
             return error_page(request, user, "This transaction no longer exists.", back_url=safe_return_url(request.query_params.get("return_url")))
         return await detail_response(
+            context,
             request,
             db,
             user,
@@ -536,9 +542,9 @@ async def confirm_mutation(request, user, posted, transaction, observation_id=No
     })
 
 
-async def move_context(db, transaction, observation_id):
+async def move_context(context: WorkspaceContext, db, transaction, observation_id):
     """Confirm that the observation still belongs to this page's transaction."""
-    observation = await source_processing_service.get_transaction_observation(db, observation_id)
+    observation = await source_processing_service.get_transaction_observation(context, db, observation_id)
     if (
         observation is None
         or observation.transaction_link is None
@@ -549,10 +555,12 @@ async def move_context(db, transaction, observation_id):
 
 
 async def move_error_response(
+    context: WorkspaceContext,
     request, db, user, transaction, return_url, page, observation_id,
     transaction_id, message, status, allow_date_mismatch=False,
 ):
     response = await detail_response(
+        context,
         request,
         db,
         user,
@@ -573,6 +581,7 @@ async def move_error_response(
 
 @router.post("/{transaction_id}/sources/move", response_class=HTMLResponse)
 async def move_observation_page(
+    context: Annotated[WorkspaceContext, Depends(get_web_workspace)],
     request: Request, transaction_id: str, db: DB, user: ActiveUser
 ):
     posted = await request.form()
@@ -585,7 +594,7 @@ async def move_observation_page(
     }
     return_url = safe_return_url(values["return_url"])
     page = page_number(values["source_page"])
-    transaction = await lookup(db, transaction_id)
+    transaction = await lookup(context, db, transaction_id)
     if transaction is None:
         return error_page(request, user, "This transaction or observation no longer exists.", back_url=return_url)
     if not valid_csrf(request, posted.get("csrf_token")):
@@ -599,7 +608,7 @@ async def move_observation_page(
     identifier = record_id(values["observation_id"])
     if identifier is None:
         return error_page(request, user, "This transaction or observation no longer exists.", back_url=return_url)
-    if await move_context(db, transaction, identifier) is None:
+    if await move_context(context, db, transaction, identifier) is None:
         return error_page(
             request,
             user,
@@ -609,24 +618,28 @@ async def move_observation_page(
     target_id = record_id(values["transaction_id"])
     if target_id is None:
         return await move_error_response(
+            context,
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"], "Choose a destination transaction.", 422,
             values["allow_date_mismatch"],
         )
     if target_id == transaction.id:
         return await move_error_response(
+            context,
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"], "Choose a different destination transaction.", 422,
             values["allow_date_mismatch"],
         )
-    if await transaction_service.get_transaction(db, target_id) is None:
+    if await transaction_service.get_transaction(context, db, target_id) is None:
         return await move_error_response(
+            context,
             request, db, user, transaction, return_url, page, identifier,
-            values["transaction_id"], "Destination transaction not found.", 422,
+            values["transaction_id"], "Destination transaction not found.", 404,
             values["allow_date_mismatch"],
         )
     try:
         await source_processing_service.move_observation_to_transaction(
+            context,
             db,
             identifier,
             target_id,
@@ -635,6 +648,7 @@ async def move_observation_page(
         )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
         return await move_error_response(
+            context,
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"], str(exc), 422,
             values["allow_date_mismatch"],
@@ -642,6 +656,7 @@ async def move_observation_page(
     except SQLAlchemyError:
         await db.rollback()
         return await move_error_response(
+            context,
             request, db, user, transaction, return_url, page, identifier,
             values["transaction_id"],
             "The move could not be confirmed. Refresh and check both transactions.", 503,
@@ -649,7 +664,7 @@ async def move_observation_page(
         )
     message = f"Observation moved to transaction #{target_id}. Both transactions were recanonicalized."
     if is_htmx(request):
-        return await detail_response(request, db, user, transaction, return_url, page, message)
+        return await detail_response(context, request, db, user, transaction, return_url, page, message)
     return navigate(
         request,
         detail_url(transaction.id, return_url)
@@ -660,17 +675,17 @@ async def move_observation_page(
 
 
 @router.post("/{transaction_id}/delete", response_class=HTMLResponse)
-async def delete_page(request: Request, transaction_id: str, db: DB, user: ActiveUser):
+async def delete_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
     posted = await request.form()
     return_url = safe_return_url(posted.get("return_url"))
-    transaction = await lookup(db, transaction_id)
+    transaction = await lookup(context, db, transaction_id)
     if transaction is None:
         return error_page(request, user, "This transaction no longer exists.", back_url=return_url)
     confirmation = await confirm_mutation(request, user, posted, transaction)
     if confirmation is not None:
         return confirmation
     try:
-        await transaction_service.delete_transaction(db, transaction.id)
+        await transaction_service.delete_transaction(context, db, transaction.id)
     except SQLAlchemyError:
         await db.rollback()
         return error_page(request, user, "Deletion could not be confirmed. Refresh the list before trying again.", 503, return_url)
@@ -679,11 +694,12 @@ async def delete_page(request: Request, transaction_id: str, db: DB, user: Activ
 
 @router.post("/{transaction_id}/summary-exclusion", response_class=HTMLResponse)
 async def set_summary_exclusion_page(
+    context: Annotated[WorkspaceContext, Depends(get_web_workspace)],
     request: Request, transaction_id: str, db: DB, user: ActiveUser
 ):
     posted = await request.form()
     return_url = safe_return_url(posted.get("return_url"))
-    transaction = await lookup(db, transaction_id)
+    transaction = await lookup(context, db, transaction_id)
     if transaction is None:
         return error_page(
             request, user, "This transaction no longer exists.", back_url=return_url
@@ -708,6 +724,7 @@ async def set_summary_exclusion_page(
     excluded = raw_state == "true"
     try:
         updated = await transaction_service.set_transaction_summary_exclusion(
+            context,
             db, transaction.id, excluded
         )
     except SQLAlchemyError:
@@ -728,6 +745,7 @@ async def set_summary_exclusion_page(
     )
     if is_htmx(request):
         return await detail_response(
+            context,
             request,
             db,
             user,
@@ -744,10 +762,10 @@ async def set_summary_exclusion_page(
 
 
 @router.post("/{transaction_id}/sources/{observation_id}/unlink", response_class=HTMLResponse)
-async def unlink_page(request: Request, transaction_id: str, observation_id: str, db: DB, user: ActiveUser):
+async def unlink_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, observation_id: str, db: DB, user: ActiveUser):
     posted = await request.form()
     return_url = safe_return_url(posted.get("return_url"))
-    transaction = await lookup(db, transaction_id)
+    transaction = await lookup(context, db, transaction_id)
     if transaction is None:
         return error_page(request, user, "This transaction no longer exists.", back_url=return_url)
     confirmation = await confirm_mutation(request, user, posted, transaction, observation_id)
@@ -756,6 +774,7 @@ async def unlink_page(request: Request, transaction_id: str, observation_id: str
     try:
         identifier = record_id(observation_id)
         changed = await source_processing_service.unlink_observation(
+            context,
             db, identifier, transaction.id
         ) if identifier is not None else False
         page = page_number(posted.get("source_page"))
@@ -766,7 +785,7 @@ async def unlink_page(request: Request, transaction_id: str, observation_id: str
         if changed:
             await db.refresh(transaction)
         if is_htmx(request):
-            return await detail_response(request, db, user, transaction, return_url, page, message)
+            return await detail_response(context, request, db, user, transaction, return_url, page, message)
         # A GET renders the refreshed count and clamps the source page after ordinary POST.
         return navigate(request, detail_url(transaction.id, return_url) + "&" + urlencode({"source_page": page, "unlinked": "1" if changed else "missing"}) + "#sources")
     except SQLAlchemyError:

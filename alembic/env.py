@@ -55,10 +55,25 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
-
-    with context.begin_transaction():
-        context.run_migrations()
+    sqlite = connection.dialect.name == "sqlite"
+    if sqlite:
+        # Batch table replacement requires FK enforcement off before BEGIN.
+        # Validate the complete rebuilt graph before committing and restore it after.
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.commit()
+        connection.exec_driver_sql("BEGIN")
+    try:
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+            if sqlite and connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall():
+                raise RuntimeError("Migration produced invalid foreign keys")
+        connection.commit()
+    finally:
+        if sqlite:
+            connection.rollback()
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
 
 
 async def run_async_migrations() -> None:

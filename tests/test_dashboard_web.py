@@ -24,6 +24,9 @@ from app.models import Transaction
 from app.web.presentation import money
 
 
+from tests.workspace_fixtures import CONTEXT, seed_workspace, add_fixture_memberships, WorkspaceAccessError
+
+
 class DashboardWebTests(DashboardDatabase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
@@ -33,16 +36,16 @@ class DashboardWebTests(DashboardDatabase):
                 User(id=2, username="inactive-user", email="inactive@example.test", hashed_password="unused", is_active=False),
                 User(id=3, username="other-user", email="other@example.test", hashed_password="unused", is_active=True),
             ])
-            await db.commit()
+            await add_fixture_memberships(db)
         async def override_db():
             async with self.sessions() as db:
                 yield db
         app.dependency_overrides[get_db] = override_db
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
-        async def fixed_overview(db):
-            return await get_dashboard_overview(db, today=TODAY)
-        async def fixed_year(db, *, year):
-            return await get_dashboard_year(db, year=year, today=TODAY)
+        async def fixed_overview(context, db):
+            return await get_dashboard_overview(CONTEXT, db, today=TODAY)
+        async def fixed_year(context, db, *, year):
+            return await get_dashboard_year(CONTEXT, db, year=year, today=TODAY)
         self.summary_patch = patch("app.web.dashboard.get_dashboard_overview", side_effect=fixed_overview)
         self.summary_patch.start()
         self.year_patch = patch("app.web.dashboard.get_dashboard_year", side_effect=fixed_year)
@@ -78,7 +81,7 @@ class DashboardWebTests(DashboardDatabase):
         body = response.text.split("<main", 1)[1].split("</main>", 1)[0]
         for text in ("90.00 AED", "290.00 AED", "50.00 CAD", "−25.00 EUR", "0.00 USD", "12.86 AED", "Not available", "+125%", "Net refund", "No comparable spending", "100.00 AED", "6.00 AED", "4.00 AED", "10.00 USD", "66.00 AED", "30.00 AED"):
             self.assertIn(text, body)
-        self.assertIn("Turnover", body)
+        self.assertIn("in turnover", body)
         self.assertNotIn("Net spending ·", body)
         self.assertIn("Transactions", body)
         self.assertEqual(body.count("Largest expenses"), 2)

@@ -38,7 +38,8 @@ app = FastAPI(
 
 @app.middleware("http")
 async def private_transaction_responses(request, call_next):
-    private = request.url.path == "/transactions" or request.url.path.startswith("/transactions/")
+    private = any(request.url.path == prefix or request.url.path.startswith(prefix + "/") for prefix in ("/transactions", "/workspaces", "/dashboard"))
+    private_api = request.url.path.startswith(settings.API_V1_PREFIX + "/") and any(segment in request.url.path.split("/") for segment in ("accounts", "cards", "transactions", "source-payloads", "transaction-observations", "dashboard", "workspaces"))
     origin = request.headers.get("origin")
     if private and origin and origin != browser_origin(request):
         # The legacy API CORS policy must not expose cookie-authenticated HTML/CSRF.
@@ -50,6 +51,10 @@ async def private_transaction_responses(request, call_next):
         response.headers["Pragma"] = "no-cache"
         response.headers["Vary"] = "Cookie, HX-Request, HX-History-Restore-Request"
         response.headers["X-Content-Type-Options"] = "nosniff"
+    if private_api:
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Vary"] = "Authorization, X-Workspace-ID"
     web_session = getattr(request.state, "web_session", None)
     if web_session is not None and not getattr(request.state, "suppress_session_refresh", False):
         renew_auth_cookie(response, request, web_session)

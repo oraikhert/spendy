@@ -132,6 +132,7 @@ async def get_current_user_from_cookie(
         user_id=user.id,
         username=user.username,
         session_id=session_id,
+        workspace_id=payload.get("workspace_id"),
     )
     
     return user

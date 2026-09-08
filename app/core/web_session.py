@@ -20,6 +20,7 @@ class WebSession:
     user_id: int
     username: str
     session_id: str
+    workspace_id: int | str | None = None
 
 
 def new_session_id() -> str:
@@ -61,5 +62,6 @@ def renew_auth_cookie(response: Response, request: Request, session: WebSession)
         "sub": str(session.user_id),
         "username": session.username,
         "sid": session.session_id,
+        "workspace_id": session.workspace_id,
     })
     set_auth_cookie(response, token, request)

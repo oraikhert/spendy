@@ -1,17 +1,18 @@
 """Card model"""
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import String, DateTime, ForeignKey, Integer, UniqueConstraint, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
 
 from app.database import Base
+from app.models.workspace import WorkspaceOwned
 
 if TYPE_CHECKING:
     from app.models.account import Account
     from app.models.transaction import Transaction
 
 
-class Card(Base):
+class Card(WorkspaceOwned, Base):
     """Card model - ties transactions to a specific card"""
     
     __tablename__ = "cards"
@@ -31,14 +32,16 @@ class Card(Base):
     )
     
     # Relationships
-    account: Mapped["Account"] = relationship("Account", back_populates="cards")
-    transactions: Mapped[list["Transaction"]] = relationship(
-        "Transaction",
+    account: Mapped["Account"] = relationship("Account", foreign_keys="Card.account_id", back_populates="cards")
+    transactions: Mapped[list["Transaction"]] = relationship("Transaction", foreign_keys="Transaction.card_id",
         back_populates="card",
         cascade="all, delete-orphan"
     )
     
     __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="uq_cards_id_workspace"),
+        ForeignKeyConstraint(["account_id", "workspace_id"], ["accounts.id", "accounts.workspace_id"], name="fk_cards_account_id_workspace"),
+
         UniqueConstraint("account_id", "card_masked_number", name="uq_account_card_number"),
     )
     

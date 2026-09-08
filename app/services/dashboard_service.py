@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import and_, case, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.workspace_context import WorkspaceContext
 from app.models.account import Account
 from app.models.card import Card
 from app.models.transaction import Transaction
@@ -63,6 +64,7 @@ class DashboardYearUnavailable(ValueError):
 
 
 async def get_dashboard_overview(
+    context: WorkspaceContext,
     db: AsyncSession, *, today: date | None = None,
 ) -> DashboardOverview:
     """Aggregate the Dashboard periods without loading transaction ORM rows.
@@ -93,6 +95,7 @@ async def get_dashboard_overview(
         ),
     )
     populated, earliest_year = await _aggregate_periods(
+        context,
         db,
         (current, *previous),
         SpendingPeriod(comparison.date_from, comparison.date_to),
@@ -105,6 +108,7 @@ async def get_dashboard_overview(
 
 
 async def get_dashboard_year(
+    context: WorkspaceContext,
     db: AsyncSession, *, year: int, today: date | None = None,
 ) -> DashboardYear:
     """Return every month in an available completed calendar year."""
@@ -112,7 +116,7 @@ async def get_dashboard_year(
     if year >= today.year:
         raise DashboardYearUnavailable("A historical year is required")
     months = tuple(_month_period(year, month) for month in range(12, 0, -1))
-    populated, earliest_year = await _aggregate_periods(db, months)
+    populated, earliest_year = await _aggregate_periods(context, db, months)
     if earliest_year is None or year < earliest_year:
         raise DashboardYearUnavailable("No dashboard data exists for this year")
     return DashboardYear(
@@ -133,6 +137,7 @@ def _previous_available_year(year: int, earliest_year: int | None) -> int | None
 
 
 async def _aggregate_periods(
+    context: WorkspaceContext,
     db: AsyncSession,
     periods: tuple[SpendingPeriod, ...],
     comparison: SpendingPeriod | None = None,
@@ -143,14 +148,14 @@ async def _aggregate_periods(
 
     zone = func.coalesce(Card.timezone, Account.timezone, "UTC")
     timezones = (await db.execute(
-        select(zone).select_from(Card).join(Account).distinct()
+        select(zone).select_from(Card).where(Card.workspace_id == context.workspace_id).join(Account, Account.id == Card.account_id).distinct()
     )).scalars().all()
     effective_date = func.coalesce(
         Transaction.transaction_datetime, Transaction.posting_datetime,
     )
     earliest_rows = (await db.execute(
         select(zone, func.min(effective_date))
-        .select_from(Transaction).join(Card).join(Account)
+        .select_from(Transaction).where(Transaction.workspace_id == context.workspace_id).join(Card, Card.id == Transaction.card_id).join(Account, Account.id == Card.account_id)
         .where(
             Transaction.transaction_kind.in_(("purchase", "refund")),
             effective_date.is_not(None),
@@ -184,7 +189,7 @@ async def _aggregate_periods(
                     (Transaction.excluded_from_summary.is_(False), 1), else_=0,
                 )).label("count"),
             )
-            .select_from(Transaction).join(Card).join(Account)
+            .select_from(Transaction).where(Transaction.workspace_id == context.workspace_id).join(Card, Card.id == Transaction.card_id).join(Account, Account.id == Card.account_id)
             .where(Transaction.transaction_kind.in_(("purchase", "refund")),
                    or_(False, *conditions))
             .group_by(Transaction.currency)
@@ -219,7 +224,7 @@ async def _aggregate_periods(
                     ),
                 ).label("expense_rank"),
             )
-            .select_from(Transaction).join(Card).join(Account)
+            .select_from(Transaction).where(Transaction.workspace_id == context.workspace_id).join(Card, Card.id == Transaction.card_id).join(Account, Account.id == Card.account_id)
             .where(
                 Transaction.transaction_kind == "purchase",
                 Transaction.amount < 0,

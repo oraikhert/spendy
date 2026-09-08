@@ -6,10 +6,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Path, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_active_user
+from app.core.workspace_context import WorkspaceContext
+from app.core.workspace_deps import get_api_workspace, WorkspaceRoute
 from app.database import get_db
 from app.models.source_payload import IngestionMethod, ProcessingStatus, SourceKind
-from app.models.user import User
 from app.schemas.source_payload import (
     SourcePayloadCreateText,
     SourcePayloadDetail,
@@ -25,7 +25,7 @@ from app.services.source_processing_service import (
 )
 
 
-router = APIRouter(prefix="/source-payloads", tags=["source-payloads"])
+router = APIRouter(route_class=WorkspaceRoute, prefix="/source-payloads", tags=["source-payloads"])
 
 
 def _raise_source_error(exc: Exception) -> None:
@@ -59,13 +59,14 @@ async def create_text_payload(
     source_data: SourcePayloadCreateText,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
     idempotency_key: Annotated[
         str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
     ] = None,
 ):
     try:
         payload, replayed = await source_processing_service.create_text_payload(
+            context,
             db, source_data, _normalize_idempotency_key(idempotency_key)
         )
     except (SourceConflictError, SourceNotFoundError, SourceValidationError) as exc:
@@ -81,7 +82,7 @@ async def create_upload_payload(
     file: Annotated[UploadFile, File()],
     source_kind: Annotated[SourceKind, Form()],
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
     account_id: Annotated[int | None, Form(gt=0, le=MAX_RECORD_ID)] = None,
     card_id: Annotated[int | None, Form(gt=0, le=MAX_RECORD_ID)] = None,
     source_timezone: Annotated[str | None, Form(min_length=1, max_length=64)] = None,
@@ -92,6 +93,7 @@ async def create_upload_payload(
 ):
     try:
         payload, replayed = await source_processing_service.create_upload_payload(
+            context,
             db,
             file=file,
             source_kind=source_kind,
@@ -111,7 +113,7 @@ async def create_upload_payload(
 @router.get("", response_model=SourcePayloadListResponse)
 async def list_source_payloads(
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
     source_kind: SourceKind | None = None,
     media_type: str | None = Query(None, min_length=1, max_length=255),
     ingestion_method: IngestionMethod | None = None,
@@ -123,6 +125,7 @@ async def list_source_payloads(
     offset: int = Query(0, ge=0),
 ):
     payloads, total = await source_processing_service.list_source_payloads(
+        context,
         db,
         source_kind=source_kind.value if source_kind else None,
         media_type=media_type,
@@ -141,9 +144,9 @@ async def list_source_payloads(
 async def get_source_payload(
     payload_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
 ):
-    payload = await source_processing_service.get_source_payload(db, payload_id)
+    payload = await source_processing_service.get_source_payload(context, db, payload_id)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source payload not found")
     return payload
@@ -153,7 +156,7 @@ async def get_source_payload(
 async def reprocess_source_payload(
     payload_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
     force_manual_links: bool = Query(
         False,
         description="Explicitly allow replacement of manually linked observations",
@@ -162,6 +165,7 @@ async def reprocess_source_payload(
 ):
     try:
         return await source_processing_service.reprocess_source_payload(
+            context,
             db,
             payload_id,
             password=password,

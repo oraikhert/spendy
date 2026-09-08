@@ -9,6 +9,7 @@ from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.models.workspace import WorkspaceOwned
 
 if TYPE_CHECKING:
     from app.models.bank_statement_detail import BankStatementDetail
@@ -38,7 +39,7 @@ class ProcessingStatus(StrEnum):
     FAILED = "failed"
 
 
-class SourcePayload(Base):
+class SourcePayload(WorkspaceOwned, Base):
     """An immutable text or file exactly as it entered the system."""
 
     __tablename__ = "source_payloads"
@@ -77,15 +78,13 @@ class SourcePayload(Base):
         nullable=False,
     )
 
-    observations: Mapped[list["TransactionObservation"]] = relationship(
-        "TransactionObservation",
+    observations: Mapped[list["TransactionObservation"]] = relationship("TransactionObservation", foreign_keys="TransactionObservation.source_payload_id",
         back_populates="payload",
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="TransactionObservation.source_item_key",
     )
-    bank_statement_details: Mapped["BankStatementDetail | None"] = relationship(
-        "BankStatementDetail",
+    bank_statement_details: Mapped["BankStatementDetail | None"] = relationship("BankStatementDetail", foreign_keys="BankStatementDetail.source_payload_id",
         back_populates="payload",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -93,8 +92,10 @@ class SourcePayload(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="uq_source_payloads_id_workspace"),
+
         UniqueConstraint(
-            "ingestion_method", "idempotency_key", name="uq_payload_ingestion_idempotency"
+            "workspace_id", "ingestion_method", "idempotency_key", name="uq_payload_ingestion_idempotency"
         ),
         Index("ix_source_payloads_content_hash", "content_hash"),
         Index(

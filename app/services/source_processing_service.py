@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
+from app.core.workspace_context import WorkspaceContext, WorkspaceAccessError, workspace_get
 from app.config import settings
 from app.models.account import Account
 from app.models.bank_statement_detail import BankStatementDetail
@@ -104,32 +105,35 @@ def _compact_metadata(**values: Any) -> dict[str, Any]:
 
 
 async def _validate_context(
+    context: WorkspaceContext,
     db: AsyncSession, account_id: int | None, card_id: int | None
 ) -> None:
-    account = await db.get(Account, account_id) if account_id is not None else None
+    account = await workspace_get(db, Account, account_id, context=context) if account_id is not None else None
     if account_id is not None and account is None:
-        raise SourceValidationError("account_id: Account not found")
-    card = await db.get(Card, card_id) if card_id is not None else None
+        raise WorkspaceAccessError(404, "Not Found")
+    card = await workspace_get(db, Card, card_id, context=context) if card_id is not None else None
     if card_id is not None and card is None:
-        raise SourceValidationError("card_id: Card not found")
+        raise WorkspaceAccessError(404, "Not Found")
     if card is not None and account_id is not None and card.account_id != account_id:
         raise SourceValidationError("card_id: Choose a card belonging to the selected account")
 
 
 async def _card_business_timezone(
+    context: WorkspaceContext,
     db: AsyncSession, card_id: int | None
 ) -> str:
     if card_id is None:
         return DEFAULT_TIMEZONE
     card = await db.scalar(
-        select(Card).where(Card.id == card_id).options(selectinload(Card.account))
+        select(Card).where(Card.workspace_id == context.workspace_id).where(Card.id == card_id).options(selectinload(Card.account))
     )
     if card is None:
-        raise SourceValidationError("card_id: Card not found")
+        raise WorkspaceAccessError(404, "Not Found")
     return effective_card_timezone(card)
 
 
 async def _resolve_upload_timezone(
+    context: WorkspaceContext,
     db: AsyncSession,
     *,
     requested: str | None,
@@ -142,11 +146,11 @@ async def _resolve_upload_timezone(
         except ValueError as exc:
             raise SourceValidationError(f"source_timezone: {exc}") from exc
     if card_id is not None:
-        return await _card_business_timezone(db, card_id)
+        return await _card_business_timezone(context, db, card_id)
     if account_id is not None:
-        account = await db.get(Account, account_id)
+        account = await workspace_get(db, Account, account_id, context=context)
         if account is None:
-            raise SourceValidationError("account_id: Account not found")
+            raise WorkspaceAccessError(404, "Not Found")
         return normalize_timezone_name(account.timezone)
     return DEFAULT_TIMEZONE
 
@@ -173,17 +177,19 @@ def _card_last_four(card: Card) -> str | None:
 
 
 async def _resolve_statement_context(
+    context: WorkspaceContext,
     db: AsyncSession,
     payload: SourcePayload,
     result: SourceParseResult,
 ) -> tuple[int | None, int | None]:
+    context.require_record(payload)
     statement = result.bank_statement
     if statement is None:
         return None, None
 
     details = payload.bank_statement_details
     if details is None:
-        details = BankStatementDetail()
+        details = BankStatementDetail(workspace_id=context.workspace_id)
         payload.bank_statement_details = details
     details.bank = statement.bank
     details.statement_period_start = statement.statement_period_start
@@ -202,12 +208,12 @@ async def _resolve_statement_context(
     card: Card | None
     if requested_card_id is not None:
         card = await db.scalar(
-            select(Card)
+            select(Card).where(Card.workspace_id == context.workspace_id)
             .where(Card.id == requested_card_id)
             .options(selectinload(Card.account))
         )
         if card is None:
-            raise SourceValidationError("card_id: Card not found")
+            raise WorkspaceAccessError(404, "Not Found")
         if requested_account_id is not None and card.account_id != requested_account_id:
             raise SourceValidationError(
                 "card_id: Choose a card belonging to the selected account"
@@ -218,6 +224,7 @@ async def _resolve_statement_context(
             )
     else:
         matches = await find_cards_by_last_four(
+            context,
             db,
             statement.card_last_four,
             requested_account_id,
@@ -231,12 +238,12 @@ async def _resolve_statement_context(
                 "Multiple cards match the statement's last four digits; provide card_id"
             )
         card = await db.scalar(
-            select(Card)
+            select(Card).where(Card.workspace_id == context.workspace_id)
             .where(Card.id == matches[0].id)
             .options(selectinload(Card.account))
         )
         if card is None:
-            raise SourceValidationError("card_id: Card not found")
+            raise WorkspaceAccessError(404, "Not Found")
 
     if card.account.account_currency.upper() != statement.statement_currency.upper():
         raise SourceValidationError(
@@ -266,6 +273,7 @@ def _same_creation_request(
 
 
 async def _idempotent_payload(
+    context: WorkspaceContext,
     db: AsyncSession,
     *,
     ingestion_method: str,
@@ -279,7 +287,7 @@ async def _idempotent_payload(
     if idempotency_key is None:
         return None
     existing = await db.scalar(
-        select(SourcePayload).where(
+        select(SourcePayload).where(SourcePayload.workspace_id == context.workspace_id).where(
             SourcePayload.ingestion_method == ingestion_method,
             SourcePayload.idempotency_key == idempotency_key,
         )
@@ -295,19 +303,21 @@ async def _idempotent_payload(
         ingestion_metadata=ingestion_metadata,
     ):
         raise SourceConflictError("Idempotency-Key was already used for a different payload")
-    return await get_source_payload(db, existing.id)
+    return await get_source_payload(context, db, existing.id)
 
 
 async def _possible_duplicate_payload_ids(
+    context: WorkspaceContext,
     db: AsyncSession, payload: SourcePayload
 ) -> list[int]:
+    context.require_record(payload)
     if (
         payload.source_kind != SourceKind.SMS.value
         or payload.media_type != "text/plain"
     ):
         return []
     rows = await db.execute(
-        select(SourcePayload.id, SourcePayload.idempotency_key)
+        select(SourcePayload.id, SourcePayload.idempotency_key).where(SourcePayload.workspace_id == context.workspace_id)
         .where(
             SourcePayload.id != payload.id,
             SourcePayload.ingestion_method == payload.ingestion_method,
@@ -330,9 +340,9 @@ async def _possible_duplicate_payload_ids(
     return [payload_id for payload_id, _key in peers]
 
 
-async def get_source_payload(db: AsyncSession, payload_id: int) -> SourcePayload | None:
+async def get_source_payload(context: WorkspaceContext, db: AsyncSession, payload_id: int) -> SourcePayload | None:
     result = await db.execute(
-        select(SourcePayload)
+        select(SourcePayload).where(SourcePayload.workspace_id == context.workspace_id)
         .where(SourcePayload.id == payload_id)
         .options(
             selectinload(SourcePayload.observations),
@@ -344,6 +354,7 @@ async def get_source_payload(db: AsyncSession, payload_id: int) -> SourcePayload
 
 
 async def list_source_payloads(
+    context: WorkspaceContext,
     db: AsyncSession,
     *,
     source_kind: str | None = None,
@@ -377,9 +388,9 @@ async def list_source_payloads(
     elif has_observations is False:
         filters.append(~observation_exists)
 
-    total = await db.scalar(select(func.count(SourcePayload.id)).where(*filters))
+    total = await db.scalar(select(func.count(SourcePayload.id)).where(SourcePayload.workspace_id == context.workspace_id).where(*filters))
     result = await db.execute(
-        select(SourcePayload)
+        select(SourcePayload).where(SourcePayload.workspace_id == context.workspace_id)
         .where(*filters)
         .order_by(SourcePayload.received_at.desc(), SourcePayload.id.desc())
         .limit(limit)
@@ -389,10 +400,11 @@ async def list_source_payloads(
 
 
 async def get_transaction_observation(
+    context: WorkspaceContext,
     db: AsyncSession, observation_id: int
 ) -> TransactionObservation | None:
     result = await db.execute(
-        select(TransactionObservation)
+        select(TransactionObservation).where(TransactionObservation.workspace_id == context.workspace_id)
         .where(TransactionObservation.id == observation_id)
         .options(
             selectinload(TransactionObservation.payload),
@@ -403,6 +415,7 @@ async def get_transaction_observation(
 
 
 async def list_transaction_observations(
+    context: WorkspaceContext,
     db: AsyncSession,
     *,
     source_payload_id: int | None = None,
@@ -414,6 +427,9 @@ async def list_transaction_observations(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[TransactionObservation], int]:
+    await _validate_context(context, db, account_id, card_id)
+    if source_payload_id is not None and await get_source_payload(context, db, source_payload_id) is None:
+        raise WorkspaceAccessError(404, "Not Found")
     filters = []
     if source_payload_id is not None:
         filters.append(TransactionObservation.source_payload_id == source_payload_id)
@@ -437,9 +453,9 @@ async def list_transaction_observations(
     elif has_transaction is False:
         filters.append(~link_exists)
 
-    total = await db.scalar(select(func.count(TransactionObservation.id)).where(*filters))
+    total = await db.scalar(select(func.count(TransactionObservation.id)).where(TransactionObservation.workspace_id == context.workspace_id).where(*filters))
     result = await db.execute(
-        select(TransactionObservation)
+        select(TransactionObservation).where(TransactionObservation.workspace_id == context.workspace_id)
         .where(*filters)
         .options(
             selectinload(TransactionObservation.payload),
@@ -453,12 +469,15 @@ async def list_transaction_observations(
 
 
 async def _resolve_observation_card(
+    context: WorkspaceContext,
     db: AsyncSession, observation: TransactionObservation
 ) -> None:
+    context.require_record(observation)
     if observation.card_id is not None:
         return
     if observation.card_last_four:
         card = await find_card_by_last_four(
+            context,
             db, observation.card_last_four, observation.account_id
         )
         if card is not None:
@@ -467,16 +486,17 @@ async def _resolve_observation_card(
 
 
 async def _resolved_money(
+    context: WorkspaceContext,
     db: AsyncSession,
     card_id: int,
     amount: Decimal,
     currency: str,
 ) -> tuple[Decimal, str, Decimal | None, str | None, Decimal | None]:
     card = await db.scalar(
-        select(Card).where(Card.id == card_id).options(selectinload(Card.account))
+        select(Card).where(Card.workspace_id == context.workspace_id).where(Card.id == card_id).options(selectinload(Card.account))
     )
     if card is None:
-        raise SourceValidationError("card_id: Card not found")
+        raise WorkspaceAccessError(404, "Not Found")
     account_currency = card.account.account_currency
     if currency.upper() == account_currency.upper():
         return amount, currency.upper(), None, None, None
@@ -505,15 +525,17 @@ def _observation_business_dates(
 
 
 async def _date_consistency_conflicts(
+    context: WorkspaceContext,
     db: AsyncSession,
     observation: TransactionObservation,
     transaction_ids: set[int],
 ) -> dict[int, list[int]]:
+    context.require_record(observation)
     if not transaction_ids:
         return {}
-    fallback_timezone = await _card_business_timezone(db, observation.card_id)
+    fallback_timezone = await _card_business_timezone(context, db, observation.card_id)
     rows = await db.execute(
-        select(TransactionSourceLink.transaction_id, TransactionObservation)
+        select(TransactionSourceLink.transaction_id, TransactionObservation).where(TransactionSourceLink.workspace_id == context.workspace_id)
         .join(
             TransactionSourceLink,
             TransactionSourceLink.observation_id == TransactionObservation.id,
@@ -540,11 +562,13 @@ async def _date_consistency_conflicts(
 
 
 async def _require_date_consistency(
+    context: WorkspaceContext,
     db: AsyncSession,
     observation: TransactionObservation,
     transaction_id: int,
 ) -> None:
-    conflicts = await _date_consistency_conflicts(db, observation, {transaction_id})
+    context.require_record(observation)
+    conflicts = await _date_consistency_conflicts(context, db, observation, {transaction_id})
     if transaction_id in conflicts:
         conflicting_ids = ", ".join(str(value) for value in conflicts[transaction_id])
         raise SourceValidationError(
@@ -554,14 +578,16 @@ async def _require_date_consistency(
 
 
 async def _transactions_with_sms_from_other_payload(
+    context: WorkspaceContext,
     db: AsyncSession,
     observation: TransactionObservation,
     transaction_ids: set[int],
 ) -> set[int]:
+    context.require_record(observation)
     if not transaction_ids:
         return set()
     result = await db.scalars(
-        select(TransactionSourceLink.transaction_id)
+        select(TransactionSourceLink.transaction_id).where(TransactionSourceLink.workspace_id == context.workspace_id)
         .join(
             TransactionObservation,
             TransactionObservation.id == TransactionSourceLink.observation_id,
@@ -608,10 +634,12 @@ def _installment_identity_from_description(
 
 
 async def _matching_installment_transactions(
+    context: WorkspaceContext,
     db: AsyncSession,
     observation: TransactionObservation,
     candidates: list[Transaction],
 ) -> list[Transaction]:
+    context.require_record(observation)
     identity = _installment_identity_from_metadata(observation.extraction_metadata)
     if identity is None or not candidates:
         return candidates
@@ -620,7 +648,7 @@ async def _matching_installment_transactions(
         select(
             TransactionSourceLink.transaction_id,
             TransactionObservation.extraction_metadata,
-        )
+        ).where(TransactionSourceLink.workspace_id == context.workspace_id)
         .join(
             TransactionObservation,
             TransactionObservation.id == TransactionSourceLink.observation_id,
@@ -646,13 +674,17 @@ async def _matching_installment_transactions(
 
 
 async def _link_automatically(
+    context: WorkspaceContext,
     db: AsyncSession,
     observation: TransactionObservation,
     claimed_transaction_ids: set[int] | None = None,
 ) -> int | None:
+    context.require_record(observation)
+    context.require_write()
     if observation.amount is None or observation.currency is None or observation.card_id is None:
         return None
     amount, currency, original_amount, original_currency, fx_rate = await _resolved_money(
+        context,
         db, observation.card_id, observation.amount, observation.currency
     )
     if observation.original_amount is not None and observation.original_currency is not None:
@@ -666,10 +698,11 @@ async def _link_automatically(
             )
 
     is_statement = observation.payload.source_kind == SourceKind.BANK_STATEMENT.value
-    card_timezone = await _card_business_timezone(db, observation.card_id)
+    card_timezone = await _card_business_timezone(context, db, observation.card_id)
     business_timezone = _payload_timezone(observation.payload, card_timezone)
     merchant_norm = normalize_merchant(observation.description or "")
     matches = await find_matching_transactions(
+        context,
         db=db,
         card_id=observation.card_id,
         amount=amount,
@@ -685,8 +718,9 @@ async def _link_automatically(
         business_timezone=business_timezone,
     )
     if is_statement:
-        matches = await _matching_installment_transactions(db, observation, matches)
+        matches = await _matching_installment_transactions(context, db, observation, matches)
     date_conflicts = await _date_consistency_conflicts(
+        context,
         db, observation, {transaction.id for transaction in matches}
     )
     if date_conflicts:
@@ -700,6 +734,7 @@ async def _link_automatically(
         ]
     if observation.payload.source_kind == SourceKind.SMS.value:
         same_source_candidates = await _transactions_with_sms_from_other_payload(
+            context,
             db, observation, {transaction.id for transaction in matches}
         )
         if same_source_candidates:
@@ -737,6 +772,7 @@ async def _link_automatically(
     if transaction is None:
         confidence = Decimal("1.0000")
         transaction = Transaction(
+            workspace_id=context.workspace_id,
             card_id=observation.card_id,
             amount=amount,
             currency=currency,
@@ -770,6 +806,7 @@ async def _link_automatically(
 
     db.add(
         TransactionSourceLink(
+            workspace_id=context.workspace_id,
             observation_id=observation.id,
             transaction_id=transaction.id,
             match_confidence=confidence,
@@ -781,18 +818,20 @@ async def _link_automatically(
         )
     )
     await db.flush()
-    await canonicalize_transaction(db, transaction)
+    await canonicalize_transaction(context, db, transaction)
     return transaction.id
 
 
-async def _recalculate_transactions(db: AsyncSession, transaction_ids: set[int]) -> None:
+async def _recalculate_transactions(context: WorkspaceContext, db: AsyncSession, transaction_ids: set[int]) -> None:
+    context.require_write()
     for transaction_id in sorted(transaction_ids):
-        transaction = await db.get(Transaction, transaction_id)
+        transaction = await workspace_get(db, Transaction, transaction_id, context=context)
         if transaction is not None:
-            await canonicalize_transaction(db, transaction)
+            await canonicalize_transaction(context, db, transaction)
 
 
 def _observation_from_input(
+    context: WorkspaceContext,
     payload_id: int,
     value: ObservationInput,
     *,
@@ -807,7 +846,7 @@ def _observation_from_input(
         default_card_last_four,
     ):
         fields["card_id"] = default_card_id
-    return TransactionObservation(source_payload_id=payload_id, **fields)
+    return TransactionObservation(workspace_id=context.workspace_id, source_payload_id=payload_id, **fields)
 
 
 async def _run_payload_parser(
@@ -836,6 +875,7 @@ async def _run_payload_parser(
 
 
 async def _process_payload(
+    context: WorkspaceContext,
     db: AsyncSession,
     payload: SourcePayload,
     *,
@@ -843,6 +883,8 @@ async def _process_payload(
     file_content: bytes | None = None,
     password: str | None = None,
 ) -> None:
+    context.require_record(payload)
+    context.require_write()
     if not get_parsers(payload.source_kind, payload.media_type):
         if replace_existing:
             raise SourceConflictError("No parser is registered for this source kind and media type")
@@ -859,6 +901,7 @@ async def _process_payload(
         raise RuntimeError("Parser returned duplicate source_item_key values")
 
     default_account_id, default_card_id = await _resolve_statement_context(
+        context,
         db, payload, result
     )
 
@@ -866,7 +909,7 @@ async def _process_payload(
     if replace_existing:
         affected_transactions.update(
             await db.scalars(
-                select(TransactionSourceLink.transaction_id)
+                select(TransactionSourceLink.transaction_id).where(TransactionSourceLink.workspace_id == context.workspace_id)
                 .join(
                     TransactionObservation,
                     TransactionObservation.id == TransactionSourceLink.observation_id,
@@ -874,16 +917,16 @@ async def _process_payload(
                 .where(TransactionObservation.source_payload_id == payload.id)
             )
         )
-        observation_ids = select(TransactionObservation.id).where(
+        observation_ids = select(TransactionObservation.id).where(TransactionObservation.workspace_id == context.workspace_id).where(
             TransactionObservation.source_payload_id == payload.id
         )
         await db.execute(
-            delete(TransactionSourceLink).where(
+            delete(TransactionSourceLink).where(TransactionSourceLink.workspace_id == context.workspace_id).where(
                 TransactionSourceLink.observation_id.in_(observation_ids)
             )
         )
         await db.execute(
-            delete(TransactionObservation).where(
+            delete(TransactionObservation).where(TransactionObservation.workspace_id == context.workspace_id).where(
                 TransactionObservation.source_payload_id == payload.id
             )
         )
@@ -896,6 +939,7 @@ async def _process_payload(
 
     observations = [
         _observation_from_input(
+            context,
             payload.id,
             value,
             default_account_id=default_account_id,
@@ -910,11 +954,11 @@ async def _process_payload(
     ]
     db.add_all(observations)
     await db.flush()
-    possible_duplicate_ids = await _possible_duplicate_payload_ids(db, payload)
+    possible_duplicate_ids = await _possible_duplicate_payload_ids(context, db, payload)
     claimed_transaction_ids: set[int] = set()
     for observation in observations:
         observation.payload = payload
-        await _resolve_observation_card(db, observation)
+        await _resolve_observation_card(context, db, observation)
         if possible_duplicate_ids:
             observation.extraction_metadata["matching_status"] = "possible_duplicate"
             observation.extraction_metadata["duplicate_payload_id"] = possible_duplicate_ids[0]
@@ -924,6 +968,7 @@ async def _process_payload(
             continue
         try:
             transaction_id = await _link_automatically(
+                context,
                 db,
                 observation,
                 claimed_transaction_ids,
@@ -939,15 +984,17 @@ async def _process_payload(
 
     if payload.processing_status != ProcessingStatus.FAILED.value:
         payload.processing_status = result.status.value
-    await _recalculate_transactions(db, affected_transactions)
+    await _recalculate_transactions(context, db, affected_transactions)
 
 
 async def create_text_payload(
+    context: WorkspaceContext,
     db: AsyncSession,
     source_data: SourcePayloadCreateText,
     idempotency_key: str | None,
 ) -> tuple[SourcePayload, bool]:
-    await _validate_context(db, source_data.account_id, source_data.card_id)
+    context.require_write()
+    await _validate_context(context, db, source_data.account_id, source_data.card_id)
     metadata = _compact_metadata(
         transaction_datetime=source_data.transaction_datetime,
         account_id=source_data.account_id,
@@ -958,6 +1005,7 @@ async def create_text_payload(
     content_hash = hashlib.sha256(source_data.text.encode("utf-8")).hexdigest()
     source_kind = source_data.source_kind.value
     existing = await _idempotent_payload(
+        context,
         db,
         ingestion_method=IngestionMethod.PHONE_API.value,
         idempotency_key=idempotency_key,
@@ -971,6 +1019,7 @@ async def create_text_payload(
         return existing, True
 
     payload = SourcePayload(
+        workspace_id=context.workspace_id,
         source_kind=source_kind,
         media_type="text/plain",
         ingestion_method=IngestionMethod.PHONE_API.value,
@@ -982,11 +1031,12 @@ async def create_text_payload(
     db.add(payload)
     try:
         await db.flush()
-        await _process_payload(db, payload, replace_existing=False)
+        await _process_payload(context, db, payload, replace_existing=False)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         existing = await _idempotent_payload(
+            context,
             db,
             ingestion_method=IngestionMethod.PHONE_API.value,
             idempotency_key=idempotency_key,
@@ -1002,7 +1052,7 @@ async def create_text_payload(
     except Exception:
         await db.rollback()
         raise
-    return await get_source_payload(db, payload.id), False
+    return await get_source_payload(context, db, payload.id), False
 
 
 async def _write_upload(
@@ -1036,6 +1086,7 @@ async def _write_upload(
 
 
 async def create_upload_payload(
+    context: WorkspaceContext,
     db: AsyncSession,
     *,
     file: UploadFile,
@@ -1046,8 +1097,10 @@ async def create_upload_payload(
     idempotency_key: str | None,
     password: str | None = None,
 ) -> tuple[SourcePayload, bool]:
-    await _validate_context(db, account_id, card_id)
+    context.require_write()
+    await _validate_context(context, db, account_id, card_id)
     source_timezone = await _resolve_upload_timezone(
+        context,
         db,
         requested=source_timezone,
         account_id=account_id,
@@ -1084,6 +1137,7 @@ async def create_upload_payload(
 
     try:
         existing = await _idempotent_payload(
+            context,
             db,
             ingestion_method=IngestionMethod.MANUAL_UPLOAD.value,
             idempotency_key=idempotency_key,
@@ -1108,6 +1162,7 @@ async def create_upload_payload(
         raise
     try:
         payload = SourcePayload(
+            workspace_id=context.workspace_id,
             source_kind=source_kind.value,
             media_type=media_type,
             ingestion_method=IngestionMethod.MANUAL_UPLOAD.value,
@@ -1121,10 +1176,12 @@ async def create_upload_payload(
         db.add(payload)
         if source_kind is SourceKind.BANK_STATEMENT:
             payload.bank_statement_details = BankStatementDetail(
+                workspace_id=context.workspace_id,
                 account_id=account_id, card_id=card_id
             )
         await db.flush()
         await _process_payload(
+            context,
             db,
             payload,
             replace_existing=False,
@@ -1136,6 +1193,7 @@ async def create_upload_payload(
         await db.rollback()
         await run_in_threadpool(stored_path.unlink, missing_ok=True)
         existing = await _idempotent_payload(
+            context,
             db,
             ingestion_method=IngestionMethod.MANUAL_UPLOAD.value,
             idempotency_key=idempotency_key,
@@ -1152,21 +1210,23 @@ async def create_upload_payload(
         await db.rollback()
         await run_in_threadpool(stored_path.unlink, missing_ok=True)
         raise
-    return await get_source_payload(db, payload.id), False
+    return await get_source_payload(context, db, payload.id), False
 
 
 async def reprocess_source_payload(
+    context: WorkspaceContext,
     db: AsyncSession,
     payload_id: int,
     password: str | None = None,
     force_manual_links: bool = False,
 ) -> SourcePayload:
-    payload = await get_source_payload(db, payload_id)
+    context.require_write()
+    payload = await get_source_payload(context, db, payload_id)
     if payload is None:
         raise SourceNotFoundError("Source payload not found")
     manual_link_count = await db.scalar(
         select(func.count())
-        .select_from(TransactionSourceLink)
+        .select_from(TransactionSourceLink).where(TransactionSourceLink.workspace_id == context.workspace_id)
         .join(
             TransactionObservation,
             TransactionObservation.id == TransactionSourceLink.observation_id,
@@ -1183,6 +1243,7 @@ async def reprocess_source_payload(
         )
     try:
         await _process_payload(
+            context,
             db,
             payload,
             replace_existing=True,
@@ -1192,22 +1253,25 @@ async def reprocess_source_payload(
     except Exception:
         await db.rollback()
         raise
-    return await get_source_payload(db, payload_id)
+    return await get_source_payload(context, db, payload_id)
 
 
 async def link_observation_to_transaction(
+    context: WorkspaceContext,
     db: AsyncSession, observation_id: int, transaction_id: int
 ) -> TransactionSourceLink:
-    observation = await get_transaction_observation(db, observation_id)
+    context.require_write()
+    observation = await get_transaction_observation(context, db, observation_id)
     if observation is None:
         raise SourceNotFoundError("Transaction observation not found")
-    if observation.transaction_link is not None:
-        raise SourceConflictError("Transaction observation is already linked")
-    transaction = await db.get(Transaction, transaction_id)
+    transaction = await workspace_get(db, Transaction, transaction_id, context=context)
     if transaction is None:
         raise SourceNotFoundError("Transaction not found")
-    await _require_date_consistency(db, observation, transaction_id)
+    if observation.transaction_link is not None:
+        raise SourceConflictError("Transaction observation is already linked")
+    await _require_date_consistency(context, db, observation, transaction_id)
     link = TransactionSourceLink(
+        workspace_id=context.workspace_id,
         observation_id=observation_id,
         transaction_id=transaction_id,
         match_method=MatchMethod.MANUAL.value,
@@ -1215,7 +1279,7 @@ async def link_observation_to_transaction(
     db.add(link)
     try:
         await db.flush()
-        await canonicalize_transaction(db, transaction)
+        await canonicalize_transaction(context, db, transaction)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -1223,10 +1287,11 @@ async def link_observation_to_transaction(
     except Exception:
         await db.rollback()
         raise
-    return await get_transaction_link(db, observation_id)
+    return await get_transaction_link(context, db, observation_id)
 
 
 async def move_observation_to_transaction(
+    context: WorkspaceContext,
     db: AsyncSession,
     observation_id: int,
     transaction_id: int,
@@ -1234,7 +1299,8 @@ async def move_observation_to_transaction(
     expected_transaction_id: int | None = None,
     allow_date_mismatch: bool = False,
 ) -> TransactionSourceLink:
-    observation = await get_transaction_observation(db, observation_id)
+    context.require_write()
+    observation = await get_transaction_observation(context, db, observation_id)
     if observation is None:
         raise SourceNotFoundError("Transaction observation not found")
     link = observation.transaction_link
@@ -1244,13 +1310,13 @@ async def move_observation_to_transaction(
         raise SourceConflictError("Transaction observation is no longer linked to this transaction")
     if link.transaction_id == transaction_id:
         raise SourceConflictError("Transaction observation is already linked to this transaction")
-    target = await db.get(Transaction, transaction_id)
+    target = await workspace_get(db, Transaction, transaction_id, context=context)
     if target is None:
         raise SourceNotFoundError("Transaction not found")
     if not allow_date_mismatch:
-        await _require_date_consistency(db, observation, transaction_id)
+        await _require_date_consistency(context, db, observation, transaction_id)
 
-    old_transaction = await db.get(Transaction, link.transaction_id)
+    old_transaction = await workspace_get(db, Transaction, link.transaction_id, context=context)
     link.transaction_id = transaction_id
     link.match_method = MatchMethod.MANUAL.value
     link.match_confidence = None
@@ -1260,8 +1326,8 @@ async def move_observation_to_transaction(
     try:
         await db.flush()
         if old_transaction is not None:
-            await canonicalize_transaction(db, old_transaction)
-        await canonicalize_transaction(db, target)
+            await canonicalize_transaction(context, db, old_transaction)
+        await canonicalize_transaction(context, db, target)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -1269,15 +1335,17 @@ async def move_observation_to_transaction(
     except Exception:
         await db.rollback()
         raise
-    return await get_transaction_link(db, observation_id)
+    return await get_transaction_link(context, db, observation_id)
 
 
 async def create_transaction_from_observation(
+    context: WorkspaceContext,
     db: AsyncSession,
     observation_id: int,
     data: TransactionCreateFromObservation,
 ) -> Transaction:
-    observation = await get_transaction_observation(db, observation_id)
+    context.require_write()
+    observation = await get_transaction_observation(context, db, observation_id)
     if observation is None:
         raise SourceNotFoundError("Transaction observation not found")
     if observation.transaction_link is not None:
@@ -1292,9 +1360,9 @@ async def create_transaction_from_observation(
         raise SourceValidationError("amount is required")
     if currency is None:
         raise SourceValidationError("currency is required")
-    await _validate_context(db, None, card_id)
+    await _validate_context(context, db, None, card_id)
     canonical_amount, canonical_currency, original_amount, original_currency, fx_rate = (
-        await _resolved_money(db, card_id, amount, currency)
+        await _resolved_money(context, db, card_id, amount, currency)
     )
     if observation.original_amount is not None and observation.original_currency is not None:
         original_amount = observation.original_amount
@@ -1308,9 +1376,10 @@ async def create_transaction_from_observation(
         fx_rate = data.fx_rate
 
     description = observation.description or data.description or observation.raw_fragment or "No description"
-    card_timezone = await _card_business_timezone(db, card_id)
+    card_timezone = await _card_business_timezone(context, db, card_id)
     business_timezone = _payload_timezone(observation.payload, card_timezone)
     transaction = Transaction(
+        workspace_id=context.workspace_id,
         card_id=card_id,
         amount=canonical_amount,
         currency=canonical_currency,
@@ -1341,13 +1410,14 @@ async def create_transaction_from_observation(
         await db.flush()
         db.add(
             TransactionSourceLink(
+                workspace_id=context.workspace_id,
                 observation_id=observation_id,
                 transaction_id=transaction.id,
                 match_method=MatchMethod.MANUAL.value,
             )
         )
         await db.flush()
-        await canonicalize_transaction(db, transaction)
+        await canonicalize_transaction(context, db, transaction)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -1359,22 +1429,24 @@ async def create_transaction_from_observation(
 
 
 async def unlink_observation(
+    context: WorkspaceContext,
     db: AsyncSession,
     observation_id: int,
     transaction_id: int | None = None,
 ) -> bool:
     """Unlink an observation, optionally only from the expected transaction."""
-    link = await db.get(TransactionSourceLink, observation_id)
+    context.require_write()
+    link = await workspace_get(db, TransactionSourceLink, observation_id, context=context)
     if link is None or (
         transaction_id is not None and link.transaction_id != transaction_id
     ):
         return False
     try:
-        transaction = await db.get(Transaction, link.transaction_id)
+        transaction = await workspace_get(db, Transaction, link.transaction_id, context=context)
         await db.delete(link)
         await db.flush()
         if transaction is not None:
-            await canonicalize_transaction(db, transaction)
+            await canonicalize_transaction(context, db, transaction)
         await db.commit()
     except Exception:
         await db.rollback()
@@ -1383,10 +1455,11 @@ async def unlink_observation(
 
 
 async def get_transaction_link(
+    context: WorkspaceContext,
     db: AsyncSession, observation_id: int
 ) -> TransactionSourceLink | None:
     result = await db.execute(
-        select(TransactionSourceLink)
+        select(TransactionSourceLink).where(TransactionSourceLink.workspace_id == context.workspace_id)
         .where(TransactionSourceLink.observation_id == observation_id)
         .options(
             selectinload(TransactionSourceLink.observation).selectinload(

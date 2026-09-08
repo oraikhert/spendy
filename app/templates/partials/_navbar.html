@@ -1,13 +1,14 @@
 {# app/templates/partials/_navbar.html #}
 {% set initial = (user.username[:1] if user and user.username else "U")|upper %}
 
-<div class="navbar bg-base-100 shadow">
+<div class="navbar flex-wrap bg-base-100 shadow">
   <div class="flex-1">
     <a href="/dashboard" class="btn btn-ghost text-xl">💰 Spendy</a>
   </div>
 
   <div class="flex-none gap-2">
     {% if user %}
+      <a href="/workspaces" class="btn btn-ghost btn-sm max-w-32 truncate" aria-label="Choose workspace">{{ request.state.workspace_context.workspace_name if request.state.workspace_context is defined else 'Workspaces' }}</a>
       <a href="/transactions" class="btn btn-ghost btn-sm" {% if request.url.path.startswith('/transactions') %}aria-current="page"{% endif %}>Transactions</a>
       <div class="dropdown dropdown-end">
         <button
@@ -27,6 +28,7 @@
         >
           <li class="menu-title"><span>{{ user.username }}</span></li>
           <li><a href="/dashboard">Home</a></li>
+          <li><a href="/workspaces">Workspaces</a></li>
           <li><a href="/transactions">Transactions</a></li>
           <li><a href="/auth/logout">Log out</a></li>
         </ul>

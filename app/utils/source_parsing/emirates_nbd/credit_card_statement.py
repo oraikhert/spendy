@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 
@@ -77,7 +77,22 @@ _MASKED_CARD_RE = re.compile(
 _CARD_SECTION_RE = re.compile(
     r"\b(?:Primary|Supplementary)\s+Card\s+Number\b", re.IGNORECASE
 )
+_EMIRATES_NBD_TRN_RE = re.compile(
+    r"\bBank\s+TRN\s+100035307600003\b", re.IGNORECASE
+)
+_STATEMENT_DATE_HEADER_RE = re.compile(
+    rf"^\s*\d[\d,]*(?:\.\d{{2}})?\s+\d[\d,]*\.\d{{2}}\s+"
+    rf"(?P<statement_date>{_DATE})\s+{_DATE}\s+\d[\d,]*\.\d{{2}}\s*$"
+)
 _MONEY_RE = re.compile(r"\d[\d,]*\.\d{2}")
+_SUMMARY_TOTALS_RE = re.compile(
+    r"^\s*(?P<previous>\d[\d,]*\.\d{2})\s+"
+    r"(?P<purchases>\d[\d,]*\.\d{2})\s+"
+    r"(?P<charges>\d[\d,]*\.\d{2})\s+"
+    r"(?P<credits>\d[\d,]*\.\d{2})\s+"
+    r"(?P<due>\d[\d,]*\.\d{2})\s+"
+    r"(?P<balance>\d[\d,]*\.\d{2})\s*$"
+)
 _MONTHS = {
     "jan": 1,
     "feb": 2,
@@ -113,6 +128,14 @@ def _short_date(value: str) -> date:
         raise _StatementExtractionError("Invalid statement period") from exc
 
 
+def _statement_date_header(full_text: str) -> re.Match[str] | None:
+    for line in full_text.splitlines():
+        match = _STATEMENT_DATE_HEADER_RE.fullmatch(" ".join(line.split()))
+        if match is not None:
+            return match
+    return None
+
+
 def _statement_metadata(full_text: str, page_count: int) -> ParsedBankStatement:
     card_last_four = None
     card_type = None
@@ -137,7 +160,10 @@ def _statement_metadata(full_text: str, page_count: int) -> ParsedBankStatement:
         if (
             card_type is None
             and index + 2 < len(lines)
-            and _PERIOD_VALUE_RE.fullmatch(lines[index + 2]) is not None
+            and (
+                _PERIOD_VALUE_RE.fullmatch(lines[index + 2]) is not None
+                or _STATEMENT_DATE_HEADER_RE.fullmatch(lines[index + 2]) is not None
+            )
         ):
             card_type = lines[index + 1] or None
         if card_last_four is not None and card_type is not None:
@@ -147,10 +173,17 @@ def _statement_metadata(full_text: str, page_count: int) -> ParsedBankStatement:
         raise _StatementExtractionError("Card number was not found in the statement")
 
     period_match = _PERIOD_RE.search(full_text) or _PERIOD_VALUE_RE.search(full_text)
-    if period_match is None:
-        raise _StatementExtractionError("Statement period was not found")
-    period_start = _short_date(period_match.group("start"))
-    period_end = _short_date(period_match.group("end"))
+    if period_match is not None:
+        period_start = _short_date(period_match.group("start"))
+        period_end = _short_date(period_match.group("end"))
+    else:
+        statement_date_match = _statement_date_header(full_text)
+        if statement_date_match is None:
+            raise _StatementExtractionError("Statement period was not found")
+        period_end = datetime.strptime(
+            statement_date_match.group("statement_date"), "%d/%m/%Y"
+        ).date()
+        period_start = _add_months_clamped(period_end, -1) + timedelta(days=1)
     if period_start > period_end:
         raise _StatementExtractionError("Statement period start is after its end")
 
@@ -194,21 +227,44 @@ def _add_months_clamped(value: date, months: int) -> date:
     return date(year, month, day)
 
 
-def _statement_summary_totals(full_text: str) -> tuple[Decimal, Decimal]:
+def _statement_summary_totals(
+    full_text: str, *, allow_unlabeled_summary: bool = False
+) -> tuple[Decimal, Decimal]:
     marker = full_text.find("STATEMENT SUMMARY")
-    if marker < 0:
+    if marker >= 0:
+        values = _MONEY_RE.findall(full_text[marker : marker + 3500])
+        if len(values) < 6:
+            raise _StatementExtractionError("Statement summary totals were not found")
+        purchases = _decimal(values[1], "purchase summary total")
+        charges = _decimal(values[2], "charge summary total")
+        credits = _decimal(values[3], "credit summary total")
+        return purchases + charges, credits
+
+    if not allow_unlabeled_summary:
         raise _StatementExtractionError("Statement summary was not found")
-    values = _MONEY_RE.findall(full_text[marker : marker + 3500])
-    if len(values) < 6:
+    summary_matches = [
+        match
+        for line in full_text.splitlines()
+        if (
+            match := _SUMMARY_TOTALS_RE.fullmatch(" ".join(line.split()))
+        )
+        is not None
+    ]
+    if not summary_matches:
         raise _StatementExtractionError("Statement summary totals were not found")
-    purchases = _decimal(values[1], "purchase summary total")
-    charges = _decimal(values[2], "charge summary total")
-    credits = _decimal(values[3], "credit summary total")
+    summary_match = summary_matches[-1]
+    purchases = _decimal(summary_match.group("purchases"), "purchase summary total")
+    charges = _decimal(summary_match.group("charges"), "charge summary total")
+    credits = _decimal(summary_match.group("credits"), "credit summary total")
     return purchases + charges, credits
 
 
 def _parse_observations(
-    pages: list[str], statement: ParsedBankStatement, source_timezone: str
+    pages: list[str],
+    statement: ParsedBankStatement,
+    source_timezone: str,
+    *,
+    infer_inline_fx: bool = False,
 ) -> tuple[ParsedObservation, ...]:
     rows: list[dict[str, object]] = []
     currency = statement.statement_currency
@@ -255,6 +311,32 @@ def _parse_observations(
                 is_credit = bool(row_match.group("credit"))
                 signed_amount = abs(value) if is_credit else -abs(value)
                 description = " ".join(row_match.group("description").split())
+                original_amount = None
+                original_currency = None
+                fx_rate = None
+                if infer_inline_fx:
+                    original_match = _ORIGINAL_RE.fullmatch(description)
+                    if (
+                        original_match is not None
+                        and original_match.group("currency").upper() != currency
+                    ):
+                        original_value = _decimal(
+                            original_match.group("amount"), "original amount"
+                        )
+                        if original_value == 0:
+                            raise _StatementExtractionError(
+                                "Original FX amount cannot be zero"
+                            )
+                        sign = Decimal("1") if signed_amount >= 0 else Decimal("-1")
+                        original_amount = abs(original_value) * sign
+                        original_currency = original_match.group("currency").upper()
+                        description = " ".join(
+                            original_match.group("description").split()
+                        )
+                        fx_rate = (
+                            abs(signed_amount / original_amount)
+                            .quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+                        )
                 installment_match = _INSTALLMENT_RE.fullmatch(description)
                 current_row = {
                     "item_index": len(rows) + 1,
@@ -278,9 +360,9 @@ def _parse_observations(
                     "installment_principal": None,
                     "remaining_principal": None,
                     "excluded_from_statement_totals": False,
-                    "original_amount": None,
-                    "original_currency": None,
-                    "fx_rate": None,
+                    "original_amount": original_amount,
+                    "original_currency": original_currency,
+                    "fx_rate": fx_rate,
                     "raw_lines": [stripped],
                 }
                 if installment_match is not None:
@@ -490,16 +572,31 @@ def parse_emirates_nbd_statement_text(
     document_text = "\n".join(document_pages)
     if not re.search(r"Credit\s+Card\s+Statement", document_text, re.IGNORECASE):
         raise UnsupportedSourceError("The PDF is not a supported credit-card statement")
-    if not re.search(r"Emirates\s+NBD", document_text, re.IGNORECASE):
+    if not (
+        re.search(r"Emirates\s+NBD", document_text, re.IGNORECASE)
+        or _EMIRATES_NBD_TRN_RE.search(document_text)
+    ):
         raise UnsupportedSourceError("The PDF is not an Emirates NBD statement")
+
+    uses_statement_date_format = (
+        _PERIOD_RE.search(document_text) is None
+        and _PERIOD_VALUE_RE.search(document_text) is None
+        and _statement_date_header(document_text) is not None
+    )
 
     statement = ParsedBankStatement(bank="Emirates NBD", page_count=len(layout_pages))
     try:
         statement = _statement_metadata(document_text, len(layout_pages))
         observations = _parse_observations(
-            layout_pages, statement, source_timezone
+            layout_pages,
+            statement,
+            source_timezone,
+            infer_inline_fx=uses_statement_date_format,
         )
-        expected_debits, expected_credits = _statement_summary_totals(document_text)
+        expected_debits, expected_credits = _statement_summary_totals(
+            document_text,
+            allow_unlabeled_summary=uses_statement_date_format,
+        )
         parsed_debits = -sum(
             (
                 value.amount

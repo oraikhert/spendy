@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 import sys
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
@@ -114,6 +114,30 @@ Remaining Principle Balance 0.00
 STATEMENT SUMMARY
 Previous Statement Purchase / Cash Advance Interest/Other Charges Payments/Credits Total Payment Due Current Balance
 0.00 355.00 0.00 0.00 355.00 355.00
+"""
+
+STATEMENT_DATE_FORMAT = """
+Credit Card Statement
+Bank TRN 100035307600003
+Card Number
+Card Type
+Available Credit Limit (AED)
+Statement Date
+Transaction Date Posting Date Description Amount (AED)
+9999 XXXX XXXX 1111
+Synthetic Rewards
+50000 40,000.00 06/02/2023 03/03/2023 100.00
+Primary Card Number
+SYNTHETIC HOLDER: 9999 XXXX XXXX 1111
+18/01/2023 19/01/2023 LOCAL PURCHASE 10.00
+04/02/2023 05/02/2023 FOREIGN PURCHASE 14.95 USD 56.64
+Previous Statement Due (AED)
+Purchase/Cash Advance (AED)
+Interest/Other Charges (AED)
+Payments/Credits (AED)
+Total Payment Due (AED)
+Current Balance (AED)
+0.00 66.64 0.00 0.00 66.64 66.64
 """
 
 MULTI_CARD_PAGE_ONE = """
@@ -253,6 +277,20 @@ class StatementParserTests(unittest.TestCase):
         self.assertEqual(
             installment.extraction_metadata["remaining_principal"], "0.00"
         )
+
+    def test_statement_date_format_derives_period_summary_and_inline_fx(self):
+        result = parse_emirates_nbd_statement_text([STATEMENT_DATE_FORMAT])
+
+        self.assertEqual(result.status.value, "processed")
+        self.assertEqual(result.bank_statement.card_last_four, "1111")
+        self.assertEqual(result.bank_statement.card_type, "Synthetic Rewards")
+        self.assertEqual(result.bank_statement.statement_period_start, date(2023, 1, 7))
+        self.assertEqual(result.bank_statement.statement_period_end, date(2023, 2, 6))
+        self.assertEqual(len(result.observations), 2)
+        foreign = result.observations[1]
+        self.assertEqual(foreign.description, "FOREIGN PURCHASE")
+        self.assertEqual(str(foreign.original_amount), "-14.95")
+        self.assertEqual(foreign.original_currency, "USD")
 
     def test_wrong_pdf_password_is_rejected(self):
         stream = BytesIO()

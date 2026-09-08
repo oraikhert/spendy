@@ -126,7 +126,11 @@ is creation metadata, participates in idempotency comparison and is persisted in
 statement metadata, multi-page rows, continuation text and FX originals. When a
 statement contains consecutive primary or supplementary card sections, each row is
 assigned to that section's card while the payload retains the statement's main card.
-The parser validates parsed debit and credit totals against the statement summary. Invalid,
+The statement-period format is primary. Earlier statements that expose only a statement
+date are recognized by Emirates NBD's Bank TRN; their monthly period is derived from the
+statement date, their unlabeled summary row is reconciled, and inline foreign amounts are
+preserved even though no separate exchange-rate line is printed. The parser validates
+parsed debit and credit totals against the statement summary. Invalid,
 encrypted-with-the-wrong-password and unsupported PDFs are rejected before persistence.
 A recognized statement whose rows cannot be extracted consistently is kept as a failed
 payload/detail without observations. The configured upload limit defaults to 20 MiB,

@@ -1,0 +1,17 @@
+{% from "macros/ui.html" import alert %}
+<form id="login-form" method="post" action="/auth/login" hx-post="/auth/login" hx-target="#login-form" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']" class="auth-form space-y-4" data-auth-form{% if errors %} data-has-errors="true"{% endif %}>
+  <input type="hidden" name="next" value="{{ next or '/dashboard' }}">
+  {% if errors %}{{ alert('error', errors.get('form') or 'Review the highlighted fields and try again.', 'auth-error-summary') }}{% endif %}
+  <div class="auth-field">
+    <label for="login-username" class="label font-medium">Username or email <span class="text-error" aria-hidden="true">*</span></label>
+    <input id="login-username" type="text" name="username" placeholder="Enter username or email" class="input w-full" required autocomplete="username" value="{{ values.get('username', '') }}"{% if errors.get('username') %} aria-invalid="true" aria-describedby="login-username-error"{% endif %}>
+    {% if errors.get('username') %}<p id="login-username-error" class="mt-1 text-sm text-error">{{ errors.username }}</p>{% endif %}
+  </div>
+  <div class="auth-field">
+    <label for="login-password" class="label font-medium">Password <span class="text-error" aria-hidden="true">*</span></label>
+    <input id="login-password" type="password" name="password" placeholder="Enter password" class="input w-full" required minlength="8" autocomplete="current-password" aria-describedby="login-password-hint{% if errors.get('password') %} login-password-error{% endif %}"{% if errors.get('password') %} aria-invalid="true"{% endif %}>
+    <p id="login-password-hint" class="mt-1 text-sm text-base-content/65">Use at least 8 characters.</p>
+    {% if errors.get('password') %}<p id="login-password-error" class="mt-1 text-sm text-error">{{ errors.password }}</p>{% endif %}
+  </div>
+  <button type="submit" class="btn btn-primary btn-block mt-2"><span class="htmx-indicator loading loading-spinner loading-sm" aria-hidden="true"></span><span>Log in</span></button>
+</form>

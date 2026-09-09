@@ -58,3 +58,19 @@
   max-height: min(80vh, 40rem);
   overflow-y: auto;
 }
+
+/* Public authentication forms share the transaction form accessibility treatment. */
+.auth-form,
+.auth-form .auth-field,
+.auth-form .auth-field > * {
+  min-width: 0;
+}
+
+.auth-form :is(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+.auth-form [aria-invalid="true"] {
+  border-color: var(--color-error);
+}

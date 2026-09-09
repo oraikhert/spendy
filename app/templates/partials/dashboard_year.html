@@ -17,7 +17,7 @@
   <h2 id="dashboard-year-heading-{{ year_summary.year }}" class="text-lg font-semibold">{{ year_summary.year }}</h2>
   <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
     {% for period in year_summary.months %}
-      <section class="card min-w-0 border border-base-300 bg-base-100" aria-labelledby="month-{{ year_summary.year }}-{{ period.date_from.month }}">
+      <section class="card min-w-0 border border-base-300 bg-base-100 shadow-sm" aria-labelledby="month-{{ year_summary.year }}-{{ period.date_from.month }}">
         <div class="card-body gap-5 p-5 sm:p-6">
           <header class="space-y-1">
             <h3 id="month-{{ year_summary.year }}-{{ period.date_from.month }}" class="text-lg font-semibold">{{ period.date_from.strftime('%B %Y') }}</h3>

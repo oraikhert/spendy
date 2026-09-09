@@ -7,7 +7,7 @@
   <form method="post" action="{{ form_action }}" data-transaction-mutation>
     {% for name, value in fields.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
     {% if 'confirmed' not in fields %}<input type="hidden" name="confirmed" value="yes">{% endif %}
-    <div class="flex flex-wrap gap-3"><a href="{{ cancel_url }}" class="btn">Cancel</a><button type="submit" class="btn btn-error">{{ submit_label }}</button></div>
+    <div class="flex flex-wrap gap-3"><a href="{{ cancel_url }}" class="btn btn-ghost">Cancel</a><button type="submit" class="btn btn-error">{{ submit_label }}</button></div>
     <p data-mutation-status class="text-sm mt-3" role="status" aria-live="polite"></p>
   </form>
 </div></section>

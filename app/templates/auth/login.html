@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 
 {% block title %}Login - Spendy{% endblock %}
+{% block extra_head %}<script src="/static/js/auth_forms.js" defer></script>{% endblock %}
 
 {% block content %}
 <div class="hero min-h-[calc(100vh-180px)] py-6 sm:py-10">
@@ -15,49 +16,7 @@
             Continue where you left off and keep your spending under control.
           </p>
 
-          {% include "partials/_messages.html" %}
-
-          <form
-            method="post"
-            action="/auth/login"
-            hx-post="/auth/login"
-            hx-target="#messages"
-            hx-swap="innerHTML"
-            hx-disabled-elt="find button[type='submit']"
-            class="space-y-4"
-          >
-            <input type="hidden" name="next" value="{{ next or '/dashboard' }}">
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Username or Email</legend>
-              <input
-                type="text"
-                name="username"
-                placeholder="Enter username or email"
-                class="input input-bordered w-full"
-                required
-                autocomplete="username"
-              />
-            </fieldset>
-
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Password</legend>
-              <input
-                type="password"
-                name="password"
-                placeholder="Enter password"
-                class="input input-bordered w-full"
-                required
-                minlength="8"
-                autocomplete="current-password"
-              />
-              <label class="label">Minimum 8 characters</label>
-            </fieldset>
-
-            <button type="submit" class="btn btn-primary btn-block mt-2">
-              <span class="htmx-indicator loading loading-spinner loading-sm"></span>
-              <span>Log in</span>
-            </button>
-          </form>
+          {% include "auth/_login_form.html" %}
 
           {% if registration_enabled|default(true) %}
           <div class="divider text-xs text-base-content/60">or</div>

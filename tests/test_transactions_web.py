@@ -328,9 +328,12 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn('hx-history="false"', response.text)
                 if path == "/transactions":
                     self.assertIn('id="apply-transaction-filters">Apply<', response.text)
+                    self.assertIn('transactions-shell mx-auto my-6 max-w-6xl space-y-8 sm:my-10', response.text)
+                    self.assertIn('text-3xl font-bold tracking-tight">Transactions</h1>', response.text)
                 elif path == "/transactions/new":
                     self.assertIn('type="submit" class="btn btn-primary"', response.text)
                     self.assertIn(">Add</button>", response.text)
+                    self.assertIn('transaction-form-wrap mx-auto space-y-3', response.text)
                 elif path.endswith("/edit"):
                     self.assertIn(">Save</button>", response.text)
         fragment = await self.client.get("/transactions", headers={"HX-Request": "true", "HX-Target": "transactions-results"})
@@ -1107,6 +1110,7 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("&lt;script&gt;", joined)
         self.assertNotIn("<script>alert('unsafe')</script>", joined)
         self.assertNotIn("<img src=x onerror=alert(1)>", joined)
+        self.assertIn('class="btn btn-outline btn-error btn-sm">Unlink observation</button>', joined)
         self.assertNotIn("a" * 64, joined)
         self.assertNotIn(str(self.upload_dir), joined)
         self.assertNotIn("hidden metadata", joined)

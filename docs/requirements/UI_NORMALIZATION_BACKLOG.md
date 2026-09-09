@@ -6,26 +6,7 @@ change templates as part of the documentation delivery. Preserve feature behavio
 access control, CSRF protection, HTMX targets/swaps, and responsive behavior when
 completing any item.
 
-## Priority 1 — shared page structure
-
-| Area | Current divergence | Target standard | Candidate paths |
-|---|---|---|---|
-| Transaction list | The shell uses `my-6 space-y-6`; its header uses an ungrouped title and a `/65` description. | Use the ordinary Dashboard shell and `space-y-2` Dashboard header with a `/70` description. | `app/templates/transactions/layout.html`, `app/templates/transactions/_browser.html` |
-| Transaction create/edit | The back link and header use `space-y-5`. | Keep the compact form width, but use `space-y-3` between the back link and Dashboard-style header. | `app/templates/transactions/form.html` |
-
-## Priority 2 — forms and small actions
-
-| Area | Current divergence | Target standard | Candidate paths |
-|---|---|---|---|
-| Button variants | A few controls use a neutral `btn` despite a clear intent; the source-unlink action simulates destructive intent with `btn-ghost text-error`. | Use the canonical semantic recipe: ghost for Cancel, primary for Retry, and `btn-outline btn-error` for a pre-confirmation destructive action. | `app/templates/transactions/layout.html`, `app/templates/transactions/confirmation.html`, `app/templates/dashboard.html`, `app/templates/transactions/_sources.html` |
-
-## Priority 3 — reusable feedback and surfaces
-
-| Area | Current divergence | Target standard | Candidate paths |
-|---|---|---|---|
-| Empty and recovery pages | Transaction confirmation/error pages use compact specialized action cards. | Preserve them as intentional compact confirmation/recovery variants; align only shared controls, focus behavior, and typography when touched. | `app/templates/transactions/error.html`, `app/templates/transactions/confirmation.html` |
-
-## Reference implementations and exceptions
+## Remaining intentional exceptions
 
 - `app/templates/transactions/_form.html` is the reference for complex page-form
   controls, validation, grouped fields, and action rows.

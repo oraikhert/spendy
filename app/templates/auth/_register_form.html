@@ -1,0 +1,31 @@
+{% from "macros/ui.html" import alert %}
+<form id="register-form" method="post" action="/auth/register" hx-post="/auth/register" hx-target="#register-form" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']" class="auth-form space-y-4" data-auth-form{% if errors %} data-has-errors="true"{% endif %}>
+  {% if errors %}{{ alert('error', errors.get('form') or 'Review the highlighted fields and try again.', 'auth-error-summary') }}{% endif %}
+  <div class="auth-field">
+    <label for="register-email" class="label font-medium">Email <span class="text-error" aria-hidden="true">*</span></label>
+    <input id="register-email" type="email" name="email" placeholder="example@mail.com" class="input w-full" required autocomplete="email" value="{{ values.get('email', '') }}"{% if errors.get('email') %} aria-invalid="true" aria-describedby="register-email-error"{% endif %}>
+    {% if errors.get('email') %}<p id="register-email-error" class="mt-1 text-sm text-error">{{ errors.email }}</p>{% endif %}
+  </div>
+  <div class="auth-field">
+    <label for="register-username" class="label font-medium">Username <span class="text-error" aria-hidden="true">*</span></label>
+    <input id="register-username" type="text" name="username" placeholder="Enter username" class="input w-full" required minlength="3" maxlength="100" autocomplete="username" value="{{ values.get('username', '') }}" aria-describedby="register-username-hint{% if errors.get('username') %} register-username-error{% endif %}"{% if errors.get('username') %} aria-invalid="true"{% endif %}>
+    <p id="register-username-hint" class="mt-1 text-sm text-base-content/65">Use 3–100 characters.</p>
+    {% if errors.get('username') %}<p id="register-username-error" class="mt-1 text-sm text-error">{{ errors.username }}</p>{% endif %}
+  </div>
+  <div class="auth-field">
+    <label for="register-full-name" class="label font-medium">Full name</label>
+    <input id="register-full-name" type="text" name="full_name" placeholder="John Doe" class="input w-full" autocomplete="name" value="{{ values.get('full_name', '') }}">
+  </div>
+  <div class="auth-field">
+    <label for="register-password" class="label font-medium">Password <span class="text-error" aria-hidden="true">*</span></label>
+    <input id="register-password" type="password" name="password" placeholder="Enter password" class="input w-full" required minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="register-password-hint{% if errors.get('password') %} register-password-error{% endif %}"{% if errors.get('password') %} aria-invalid="true"{% endif %}>
+    <p id="register-password-hint" class="mt-1 text-sm text-base-content/65">Use 8–72 characters.</p>
+    {% if errors.get('password') %}<p id="register-password-error" class="mt-1 text-sm text-error">{{ errors.password }}</p>{% endif %}
+  </div>
+  <div class="auth-field">
+    <label for="register-password-confirm" class="label font-medium">Confirm password <span class="text-error" aria-hidden="true">*</span></label>
+    <input id="register-password-confirm" type="password" name="password_confirm" placeholder="Repeat password" class="input w-full" required minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="register-password-confirm-error"{% if errors.get('password_confirm') %} aria-invalid="true" data-server-error="true"{% endif %}>
+    <p id="register-password-confirm-error" class="mt-1 text-sm text-error" data-password-match-error{% if not errors.get('password_confirm') %} hidden{% endif %}>{{ errors.get('password_confirm', '') }}</p>
+  </div>
+  <button type="submit" class="btn btn-primary btn-block mt-2"><span class="htmx-indicator loading loading-spinner loading-sm" aria-hidden="true"></span><span>Sign up</span></button>
+</form>

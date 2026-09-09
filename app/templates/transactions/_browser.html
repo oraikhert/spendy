@@ -1,7 +1,7 @@
 {% from "transactions/_macros.html" import field_error, field_attrs with context %}
 <section id="transaction-browser" class="space-y-6" hx-history="false">
   <header class="flex flex-wrap items-center justify-between gap-4">
-    <div><h1 class="text-3xl font-bold">Transactions</h1><p class="text-base-content/65 mt-1">Your money, one transaction at a time.</p></div>
+    <div class="min-w-0 space-y-2"><h1 class="text-3xl font-bold tracking-tight">Transactions</h1><p class="text-base-content/70">Your money, one transaction at a time.</p></div>
     {% if can_create %}<a href="{{ create_url }}" class="btn btn-primary">Add</a>
     {% elif can_write %}<div><button class="btn btn-primary" disabled>Add</button><p class="text-sm text-base-content/65 mt-2">Add a card before creating a transaction</p></div>{% endif %}
   </header>

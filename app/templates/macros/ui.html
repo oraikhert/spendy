@@ -1,8 +1,9 @@
 {# app/templates/macros/ui.html #}
 
-{% macro alert(kind="info", text="", extra_classes="") -%}
+{% macro alert(kind="info", text="", extra_classes="", role=None) -%}
   {# kind: info | success | warning | error #}
-  <div class="alert alert-{{ kind }} sp-fade-in {{ extra_classes|e }}">
+  {% set announcement_role = role if role is not none else ('alert' if kind == 'error' else 'status') %}
+  <div class="alert alert-{{ kind }} sp-fade-in {{ extra_classes|e }}" role="{{ announcement_role }}"{% if announcement_role == 'alert' %} tabindex="-1"{% endif %}>
     <span>{{ text }}</span>
   </div>
 {%- endmacro %}

@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 
 {% block title %}Register - Spendy{% endblock %}
+{% block extra_head %}<script src="/static/js/auth_forms.js" defer></script>{% endblock %}
 
 {% block content %}
 <div class="hero min-h-[calc(100vh-180px)] py-6 sm:py-10">
@@ -15,92 +16,7 @@
             Create your account in under a minute and get a cleaner view of your spending.
           </p>
 
-          {% include "partials/_messages.html" %}
-
-          <form
-            id="registerForm"
-            method="post"
-            action="/auth/register"
-            hx-post="/auth/register"
-            hx-target="#messages"
-            hx-swap="innerHTML"
-            hx-disabled-elt="find button[type='submit']"
-            class="space-y-4"
-          >
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Email</legend>
-              <input
-                type="email"
-                name="email"
-                placeholder="example@mail.com"
-                class="input input-bordered w-full"
-                required
-                autocomplete="email"
-              />
-            </fieldset>
-
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Username</legend>
-              <input
-                type="text"
-                name="username"
-                placeholder="Enter username"
-                class="input input-bordered w-full"
-                required
-                minlength="3"
-                maxlength="100"
-                autocomplete="username"
-              />
-              <label class="label">3 to 100 characters</label>
-            </fieldset>
-
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Full name (optional)</legend>
-              <input
-                type="text"
-                name="full_name"
-                placeholder="John Doe"
-                class="input input-bordered w-full"
-                autocomplete="name"
-              />
-            </fieldset>
-
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Password</legend>
-              <input
-                type="password"
-                name="password"
-                id="password"
-                placeholder="Enter password"
-                class="input input-bordered w-full"
-                required
-                minlength="8"
-                maxlength="72"
-                autocomplete="new-password"
-              />
-              <label class="label">8 to 72 characters</label>
-            </fieldset>
-
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">Confirm password</legend>
-              <input
-                type="password"
-                name="password_confirm"
-                id="password_confirm"
-                placeholder="Repeat password"
-                class="input input-bordered w-full"
-                required
-                minlength="8"
-                maxlength="72"
-                autocomplete="new-password"
-              />
-            </fieldset>
-
-            <button type="submit" class="btn btn-primary btn-block mt-2">
-              <span class="htmx-indicator loading loading-spinner loading-sm"></span>
-              <span>Sign up</span>
-            </button>
-          </form>
+          {% include "auth/_register_form.html" %}
 
           <div class="divider text-xs text-base-content/60">or</div>
 
@@ -136,31 +52,4 @@
     </div>
   </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-  (function () {
-    const form = document.getElementById("registerForm");
-    const pwd = document.getElementById("password");
-    const pwd2 = document.getElementById("password_confirm");
-
-    function validateMatch() {
-      const ok = pwd.value === pwd2.value;
-      pwd2.setCustomValidity(ok ? "" : "Passwords do not match");
-      return ok;
-    }
-
-    pwd.addEventListener("input", validateMatch);
-    pwd2.addEventListener("input", validateMatch);
-
-    form.addEventListener("submit", function (e) {
-      if (!validateMatch()) {
-        e.preventDefault();
-        document.getElementById("messages").innerHTML =
-          '<div class="alert alert-error sp-fade-in"><span>Passwords do not match</span></div>';
-      }
-    });
-  })();
-</script>
 {% endblock %}

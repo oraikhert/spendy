@@ -105,6 +105,7 @@ class DashboardWebTests(DashboardDatabase):
         self.assertEqual(historical.headers["cache-control"], "private, no-store")
         self.assertIn('<h2 id="dashboard-year-heading-2025"', historical.text)
         self.assertEqual(historical.text.count('aria-labelledby="month-2025-'), 12)
+        self.assertIn('card min-w-0 border border-base-300 bg-base-100 shadow-sm', historical.text)
         self.assertIn('<button type="button" class="btn btn-outline btn-sm" disabled>Show more</button>', historical.text)
         self.login(3)
         other = await self.client.get("/dashboard")
@@ -123,7 +124,7 @@ class DashboardWebTests(DashboardDatabase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.headers["cache-control"], "private, no-store")
         self.assertIn('role="alert"', response.text)
-        self.assertRegex(response.text, r'href="/dashboard"[^>]*>Retry</a>')
+        self.assertIn('href="/dashboard" class="btn btn-primary">Retry</a>', response.text)
         self.assertNotIn("private database detail", response.text)
         self.assertNotIn("dashboard-year-heading", response.text)
 

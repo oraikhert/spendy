@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ workspace.name }} · Spendy{% endblock %}
+{% block extra_head %}
+  <script src="/static/js/workspace_detail.js" defer></script>
+{% endblock %}
 {% block content %}
 <div class="max-w-4xl mx-auto space-y-6 min-w-0" hx-history="false">
   <header class="flex flex-wrap items-start justify-between gap-3"><div class="min-w-0"><a class="link link-hover" href="/workspaces">← Workspaces</a><h1 class="text-xl sm:text-2xl font-semibold transaction-text mt-2">{{ workspace.name }}</h1><p class="text-base-content/65 mt-1">{{ workspace.role.value|capitalize }}</p></div></header>
@@ -15,6 +18,16 @@
     <form method="post" action="/workspaces/{{ workspace.id }}/invitations" class="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3 items-end"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Email<input name="recipient_email" type="email" required value="{{ invite_email }}" class="input w-full" autocomplete="email"></label><label>Role<select name="role" class="select"><option value="viewer" {% if invite_role == 'viewer' %}selected{% endif %}>Viewer</option><option value="editor" {% if invite_role == 'editor' %}selected{% endif %}>Editor</option></select></label><button class="btn btn-primary" type="submit">Send invitation</button></form>
     <div class="space-y-3 mt-5">{% for invitation in invitations %}<article class="border border-base-300 rounded-box p-3 min-w-0"><p class="break-all font-medium">{{ invitation.recipient_email }}</p><p class="text-sm">{{ invitation.role.value|capitalize }} · Delivery: {{ invitation.delivery_state }}{% if invitation.accepted_at %} · Accepted{% elif invitation.revoked_at %} · Revoked{% endif %}</p>{% if not invitation.accepted_at and not invitation.revoked_at %}<div class="flex flex-wrap gap-2 mt-2"><form method="post" action="/workspaces/{{ workspace.id }}/invitations/{{ invitation.id }}/resend"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-outline btn-sm" type="submit">Resend</button></form><form method="post" action="/workspaces/{{ workspace.id }}/invitations/{{ invitation.id }}/revoke"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-error btn-outline btn-sm" type="submit">Revoke</button></form></div>{% endif %}</article>{% else %}<p class="text-sm text-base-content/70">No invitations yet.</p>{% endfor %}</div>
   </div></section>{% endif %}
-  <section><form method="post" action="/workspaces/{{ workspace.id }}/leave"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-error btn-outline" type="submit">Leave workspace</button></form></section>
+  <section><form method="post" action="/workspaces/{{ workspace.id }}/leave" data-leave-workspace-form><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-error btn-outline" type="submit">Leave workspace</button></form></section>
+  <dialog id="leave-workspace-confirmation" class="modal" aria-labelledby="leave-workspace-title" aria-describedby="leave-workspace-message">
+    <div class="modal-box">
+      <h2 id="leave-workspace-title" class="text-xl font-bold">Leave workspace?</h2>
+      <p id="leave-workspace-message" class="mt-3">Leave {{ workspace.name }}? You will lose access to its financial data until an owner invites you again.</p>
+      <div class="modal-action flex-wrap">
+        <button type="button" class="btn" data-leave-workspace-cancel>Cancel</button>
+        <button type="button" class="btn btn-error" data-leave-workspace-confirm>Leave workspace</button>
+      </div>
+    </div>
+  </dialog>
 </div>
 {% endblock %}

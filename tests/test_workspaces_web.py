@@ -168,6 +168,9 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
         self.sign_in(1, workspace)
         detail = await self.client.get(f"/workspaces/{workspace}")
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', detail.text)[1]
+        self.assertIn('id="leave-workspace-confirmation"', detail.text)
+        self.assertIn('data-leave-workspace-form', detail.text)
+        self.assertIn('src="/static/js/workspace_detail.js"', detail.text)
 
         response = await self.client.post(
             f"/workspaces/{workspace}/leave",

@@ -111,11 +111,15 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('max-w-6xl space-y-8', selection.text)
         self.assertIn('grid grid-cols-1 gap-4 md:grid-cols-3', selection.text)
         self.assertIn('class="card bg-base-100 shadow-sm', selection.text)
+        self.assertIn('data-create-workspace-trigger', selection.text)
+        self.assertIn('id="create-workspace-dialog"', selection.text)
+        self.assertIn('src="/static/js/workspaces.js"', selection.text)
         self.assertIn('for="workspace-name"', selection.text)
         self.assertIn('id="workspace-name-hint"', selection.text)
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', selection.text)[1]
         invalid_create = await self.client.post("/workspaces", data={"csrf_token": csrf, "name": " "})
         self.assertEqual(invalid_create.status_code, 422, invalid_create.text)
+        self.assertIn('data-open-on-load="true"', invalid_create.text)
         self.assertIn('aria-invalid="true"', invalid_create.text)
         self.assertIn('id="workspace-name-error"', invalid_create.text)
 

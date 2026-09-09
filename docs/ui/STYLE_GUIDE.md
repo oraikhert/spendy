@@ -141,6 +141,24 @@ responsive alternative where it cannot fit at 360 px. Keep long text readable wi
 horizontal page scrolling through `min-w-0`, `break-words`, `truncate` only when the
 full value remains available, and `[overflow-wrap:anywhere]` where needed.
 
+### Date and time
+
+Use the Transaction local date-time pattern for every timestamp that includes a time.
+Render a semantic `<time>` element with an ISO-8601 `datetime` value, the `block` class,
+and `data-local-datetime`; give it the server-side `display_date()` output as a fallback.
+The shared [`local_datetime.js`](../../app/static/js/local_datetime.js) formatter then
+shows the value in the viewer's local timezone as `Tue, 09 Sep 2026 15:44:43`.
+
+```html
+<time class="block" datetime="{{ value.isoformat() }}" data-local-datetime>
+  {{ display_date(value) }}
+</time>
+```
+
+Add a visible label only when the surrounding context does not make the timestamp's
+meaning clear. Do not hand-format a second date-time style or show an unlabeled
+timezone-specific value.
+
 Pagination uses `flex flex-wrap items-center justify-between gap-3`, a compact count,
 and `btn btn-outline btn-sm` previous/next controls. Empty states use a centered
 standard card with a concise heading, explanation, and one relevant action. Dialogs use

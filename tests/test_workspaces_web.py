@@ -130,6 +130,10 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="workspace-rename-dialog"', detail.text)
         self.assertIn('data-workspace-rename-trigger', detail.text)
         self.assertIn('data-workspace-header-actions', detail.text)
+        self.assertIn(
+            'grid grid-cols-1 gap-3 border-t border-base-300 pt-5 md:grid-cols-3',
+            detail.text,
+        )
         self.assertNotIn('Workspace settings', detail.text)
         invalid_rename = await self.client.post(
             f"/workspaces/{workspace}/rename", data={"csrf_token": csrf, "name": " "},
@@ -155,6 +159,9 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
                 data={"csrf_token": csrf, "recipient_email": "validation@example.com", "role": "viewer"},
             )
         self.assertEqual(created.status_code, 303, created.text)
+        invitation_list = await self.client.get(f"/workspaces/{workspace}")
+        self.assertIn('class="block"', invitation_list.text)
+        self.assertIn("data-local-datetime", invitation_list.text)
         self.client.cookies.clear()
         page = await self.client.get(f"/workspace-invitations/{captured[-1]}/register")
         self.assertIn('for="invitation-username"', page.text)

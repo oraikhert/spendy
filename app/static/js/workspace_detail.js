@@ -2,6 +2,7 @@
   "use strict";
 
   document.querySelector("[data-workspace-alert]")?.focus();
+  window.Spendy.localizeDateTimes();
 
   document.querySelectorAll("[data-workspace-confirm-form]").forEach((form) => {
     const dialog = document.getElementById(form.dataset.workspaceConfirmForm);

@@ -16,9 +16,11 @@ from app.models.workspace import WorkspaceRole
 from app.schemas.workspace import WorkspaceCreate, WorkspaceDelete, WorkspaceInvitationCreate, WorkspaceUpdate
 from app.services import workspace_service
 from app.web.security import csrf_token, protected_form
+from app.web.transaction_helpers import display_date
 
 router = APIRouter(prefix="/workspaces", tags=["web-workspaces"], route_class=WorkspaceRoute)
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals.update(display_date=display_date)
 DB = Annotated[AsyncSession, Depends(get_db)]
 ActiveUser = Annotated[User, Depends(get_current_user_from_cookie_required)]
 

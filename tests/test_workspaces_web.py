@@ -202,13 +202,17 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
         self.client.cookies.clear()
         landing = await self.client.get(f"/workspace-invitations/{token}")
         self.assertEqual(landing.headers["cache-control"], "private, no-store")
-        self.assertEqual(landing.headers["referrer-policy"], "no-referrer")
+        self.assertEqual(landing.headers["referrer-policy"], "same-origin")
         self.assertIn("Log in to accept", landing.text)
         returned = await self.client.post("/auth/login", data={"username":"viewer", "password":"synthetic-password", "next":f"/workspace-invitations/{token}"})
         self.assertEqual((returned.status_code, returned.headers["location"]), (303, f"/workspace-invitations/{token}"))
         landing = await self.client.get(returned.headers["location"])
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', landing.text)[1]
-        accepted = await self.client.post(f"/workspace-invitations/{token}/accept", data={"csrf_token":csrf})
+        accepted = await self.client.post(
+            f"/workspace-invitations/{token}/accept",
+            data={"csrf_token": csrf},
+            headers={"Origin": "http://test"},
+        )
         self.assertEqual((accepted.status_code, accepted.headers["location"]), (303, "/dashboard"))
         self.assertEqual(decode_access_token(accepted.cookies["access_token"])["workspace_id"], workspace)
         self.assertEqual((await self.client.post(f"/workspace-invitations/{token}/accept", data={"csrf_token":csrf})).status_code, 409)

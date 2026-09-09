@@ -40,7 +40,9 @@ app = FastAPI(
 @app.middleware("http")
 async def private_transaction_responses(request, call_next):
     private = any(request.url.path == prefix or request.url.path.startswith(prefix + "/") for prefix in ("/transactions", "/workspaces", "/workspace-invitations", "/dashboard"))
-    invitation_private = request.url.path.startswith("/workspace-invitations/") or request.url.path.startswith(settings.API_V1_PREFIX + "/workspace-invitations/")
+    web_invitation_private = request.url.path.startswith("/workspace-invitations/")
+    api_invitation_private = request.url.path.startswith(settings.API_V1_PREFIX + "/workspace-invitations/")
+    invitation_private = web_invitation_private or api_invitation_private
     private_api = request.url.path.startswith(settings.API_V1_PREFIX + "/") and any(segment in request.url.path.split("/") for segment in ("accounts", "cards", "transactions", "source-payloads", "transaction-observations", "dashboard", "workspaces", "workspace-invitations"))
     origin = request.headers.get("origin")
     if private and origin and not same_browser_origin(request, origin):
@@ -50,7 +52,11 @@ async def private_transaction_responses(request, call_next):
         response = await call_next(request)
     if private:
         response.headers.update(PRIVATE_HEADERS)
-        response.headers["Referrer-Policy"] = "no-referrer" if invitation_private else "same-origin"
+        # Browser invitation pages contain a token in the path, so do not send
+        # their URL to another origin.  `same-origin` also preserves a concrete
+        # Origin header for their POST forms; Chrome serializes it as `null`
+        # under `no-referrer`, which the cross-origin guard must reject.
+        response.headers["Referrer-Policy"] = "no-referrer" if api_invitation_private else "same-origin"
         response.headers["Vary"] = "Cookie, HX-Request, HX-History-Restore-Request"
         response.headers["X-Content-Type-Options"] = "nosniff"
     if private_api:

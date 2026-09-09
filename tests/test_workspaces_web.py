@@ -109,6 +109,7 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
         selection = await self.client.get("/workspaces/onboarding")
         self.assertEqual(selection.status_code, 200, selection.text)
         self.assertIn('max-w-6xl space-y-8', selection.text)
+        self.assertIn('grid grid-cols-1 gap-4 md:grid-cols-3', selection.text)
         self.assertIn('class="card bg-base-100 shadow-sm', selection.text)
         self.assertIn('for="workspace-name"', selection.text)
         self.assertIn('id="workspace-name-hint"', selection.text)

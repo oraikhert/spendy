@@ -28,6 +28,8 @@ Read the document for your task; there is no need to load the entire documentati
 | Implement the dashboard summary, iteration 1 | [Dashboard UI task v1](docs/requirements/DASHBOARD_UI_v1.md) |
 | Understand transaction screens and behavior | [Transactions UI](docs/ui/TRANSACTIONS.md) |
 | Implement transaction screens, iteration 1 | [Transactions UI task v1](docs/requirements/TRANSACTIONS_UI_v1.md) |
+| Build or update a page with the shared visual language | [UI Style Guide](docs/ui/STYLE_GUIDE.md) |
+| Plan existing UI consistency work | [UI normalization backlog](docs/requirements/UI_NORMALIZATION_BACKLOG.md) |
 | Adapt the Sources UI to payloads and observations | [Source payload UI follow-up](docs/requirements/SOURCE_PAYLOADS_UI_FOLLOWUP.md) |
 | Change ingestion, matching, money handling or service behavior | [Service contracts](docs/SERVICE_LAYER.md) |
 | Audit observation-to-transaction links | [Source-link audit](docs/SOURCE_LINK_AUDIT.md) |

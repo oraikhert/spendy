@@ -31,7 +31,7 @@
       <h3 class="text-xl font-semibold">{% if has_filters %}No matching transactions{% else %}No transactions yet{% endif %}</h3>
       <p class="text-base-content/65">{% if has_filters %}Try changing your filters or reset to see all transactions.{% else %}Add your first transaction to start keeping track.{% endif %}</p>
       {% if has_filters %}<a href="/transactions" hx-get="/transactions" hx-target="#transaction-browser" hx-swap="outerHTML" class="btn btn-outline mt-3">Reset filters</a>
-      {% elif can_create %}<a href="{{ create_url }}" class="btn btn-primary mt-3">Add transaction</a>
+      {% elif can_create %}<a href="{{ create_url }}" class="btn btn-primary mt-3">Add</a>
       {% elif can_write %}<p class="text-sm mt-3">Add a card before creating a transaction</p>{% endif %}
     </div></div>
   {% endif %}

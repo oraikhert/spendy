@@ -226,7 +226,7 @@ async def form_response(context: WorkspaceContext, request, db, user, transactio
     view_context = {**refs, "values": values, "errors": errors or {}, "transaction": transaction, "return_url": return_url,
                "cancel_url": detail_url(transaction.id, return_url) if transaction else return_url,
                "form_action": f"/transactions/{transaction.id}/edit" if transaction else "/transactions/new",
-               "submit_label": "Save changes" if transaction else "Create transaction", "can_write": True, "can_create": bool(refs["cards"]), "title": title,
+               "submit_label": "Save" if transaction else "Add", "can_write": True, "can_create": bool(refs["cards"]), "title": title,
                "blocked": status in {403, 503},
                "currency_manually_edited": getattr(request.state, "currency_manually_edited", False),
                "more_details": bool(any(values.get(key) for key in ("posting_datetime", "location", "original_amount", "original_currency", "fx_rate")) or errors)}

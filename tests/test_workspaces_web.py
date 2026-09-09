@@ -188,7 +188,7 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
         self.sign_in(1, workspace)
         owner_page = await self.client.get(f"/workspaces/{workspace}")
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', owner_page.text)[1]
-        self.assertIn("Send invitation", owner_page.text)
+        self.assertIn(">Send<", owner_page.text)
         self.assertEqual((await self.client.post(f"/workspaces/{workspace}/members/3/role", data={"csrf_token":"bad", "role":"editor"})).status_code, 403)
         self.assertEqual((await self.client.post(f"/workspaces/{workspace}/members/3/role", data={"csrf_token":csrf, "role":"editor"}, headers={"Origin":"https://foreign.example"})).status_code, 403)
         same_origin = await self.client.post(
@@ -226,7 +226,7 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
 
         self.sign_in(2, workspace)
         editor_transactions = await self.client.get("/transactions")
-        self.assertIn("Add transaction", editor_transactions.text)
+        self.assertIn(">Add<", editor_transactions.text)
         editor_workspace = await self.client.get(f"/workspaces/{workspace}")
         self.assertNotIn("Send invitation", editor_workspace.text)
 

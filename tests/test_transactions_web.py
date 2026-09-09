@@ -326,6 +326,13 @@ class TransactionsWebTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("<html", response.text.lower())
                 self.assertIn("no-store", response.headers.get("cache-control", ""))
                 self.assertIn('hx-history="false"', response.text)
+                if path == "/transactions":
+                    self.assertIn('id="apply-transaction-filters">Apply<', response.text)
+                elif path == "/transactions/new":
+                    self.assertIn('type="submit" class="btn btn-primary"', response.text)
+                    self.assertIn(">Add</button>", response.text)
+                elif path.endswith("/edit"):
+                    self.assertIn(">Save</button>", response.text)
         fragment = await self.client.get("/transactions", headers={"HX-Request": "true", "HX-Target": "transactions-results"})
         self.assertEqual(fragment.status_code, 200)
         self.assertNotIn("<html", fragment.text.lower())

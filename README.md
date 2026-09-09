@@ -170,6 +170,9 @@ the configured personal database or external services. They do not verify Postgr
 or browser JavaScript. For UI changes, also verify ordinary and HTMX flows in a
 browser at desktop and 360 px widths, including validation, history, and source actions.
 
+To test workspace invitation email locally without a real mail provider, follow the
+[Mailpit setup](docs/DEPLOYMENT.md#local-invitation-email-testing-with-mailpit).
+
 For [API checks](tests/test_api.py), reserve port 8000 for an isolated test server.
 In one terminal, use a fresh temporary SQLite database and enable registration:
 

@@ -10,6 +10,7 @@ Return to the [documentation index](../README.md#documentation).
 - [Prerequisites](#prerequisites)
 - [Server preparation](#server-preparation)
 - [Configuration](#configuration)
+- [Local invitation email testing](#local-invitation-email-testing-with-mailpit)
 - [First deployment](#first-deployment)
 - [Users](#users)
 - [HTTPS proxy](#https-proxy)
@@ -104,6 +105,39 @@ not create or expose a token.
 Do not place SMTP credentials in logs or commit them. Test delivery in the deployed
 network before inviting users; local mocked checks do not verify provider policy,
 DNS, certificates, firewall access or sender reputation.
+
+### Local invitation email testing with Mailpit
+
+Mailpit is a local, in-memory SMTP sink and web inbox for testing workspace
+invitation delivery without contacting a real provider. Start it with loopback-only
+ports:
+
+```bash
+docker run --rm \
+  -p 127.0.0.1:1025:1025 \
+  -p 127.0.0.1:8025:8025 \
+  axllent/mailpit
+```
+
+For Spendy running directly on the host, use these local settings in `.env`:
+
+```dotenv
+PUBLIC_BASE_URL=http://localhost:8000
+SMTP_HOST=localhost
+SMTP_PORT=1025
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_SENDER=noreply@spendy.test
+SMTP_STARTTLS=false
+SMTP_TIMEOUT_SECONDS=10
+WORKSPACE_INVITATION_LIFETIME_DAYS=7
+```
+
+Open the Mailpit inbox at `http://localhost:8025`, open the delivered message and
+copy the invitation link from its plain-text or source view. If Spendy itself runs
+inside Docker, set `SMTP_HOST=mailpit` and put Mailpit on the same Compose network
+instead of using `localhost`. This setup is for local testing only; it does not
+verify an external provider's authentication, TLS, DNS or delivery policy.
 
 `UPLOAD_DIR` defaults to `data/uploads`; the Compose mount already makes that path
 persistent. Keep it on one filesystem so permanent workspace deletion can atomically

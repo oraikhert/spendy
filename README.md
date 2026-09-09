@@ -170,6 +170,25 @@ the configured personal database or external services. They do not verify Postgr
 or browser JavaScript. For UI changes, also verify ordinary and HTMX flows in a
 browser at desktop and 360 px widths, including validation, history, and source actions.
 
+For a Codex in-app browser smoke check, run the application with a disposable database
+in a local terminal, wait for `Application startup complete`, and use `/health` only as
+an HTTP readiness probe. Open an HTML route such as `/auth/login` in the browser:
+
+```bash
+source venv/bin/activate
+spendy_browser_dir=$(mktemp -d)
+export DATABASE_URL="sqlite+aiosqlite:///$spendy_browser_dir/browser.sqlite3"
+export SECRET_KEY="synthetic-browser-smoke-secret"
+export REGISTRATION_ENABLED=true
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8139
+```
+
+In another local terminal, verify `curl http://127.0.0.1:8139/health`, then open
+`http://127.0.0.1:8139/auth/login`. The exact scheme, host and port must be allowed in
+Codex under **Settings > Browser**. If Codex reports `ERR_BLOCKED_BY_CLIENT`, follow
+the [browser troubleshooting procedure](docs/TROUBLESHOOTING.md#codex-browser-reports-err_blocked_by_client)
+before changing macOS firewall settings.
+
 To test workspace invitation email locally without a real mail provider, follow the
 [Mailpit setup](docs/DEPLOYMENT.md#local-invitation-email-testing-with-mailpit).
 

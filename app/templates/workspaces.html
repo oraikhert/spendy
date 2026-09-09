@@ -1,34 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Workspaces · Spendy{% endblock %}
 {% block content %}
-<div class="max-w-xl mx-auto p-4 space-y-6" hx-history="false">
-  <header>
-    <h1 class="text-3xl font-bold">Your workspaces</h1>
-    <p class="text-base-content/65 mt-1">Choose a workspace for your finances or create one to get started.</p>
+<div class="workspace-shell mx-auto my-6 max-w-6xl space-y-8 sm:my-10" hx-history="false">
+  <header class="space-y-2">
+    <h1 class="text-3xl font-bold tracking-tight">Your workspaces</h1>
+    <p class="text-base-content/70">Choose a workspace for your finances or create one to get started.</p>
   </header>
-  {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
-  {% if message %}<div class="alert alert-success" role="status" tabindex="-1" autofocus>{{ message }}</div>{% endif %}
-  {% for workspace in workspaces %}
-  <div class="card bg-base-100 shadow p-4 gap-3">
-    <h2 class="font-semibold break-words">{{ workspace.name }}</h2>
-    <p>{{ workspace.role.value|capitalize }} · {{ workspace.status|capitalize }}</p>
-    {% if workspace.status == 'active' %}
-    <div class="flex flex-wrap gap-2"><form method="post" action="/workspaces/{{ workspace.id }}/select">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn btn-primary" type="submit">Select <span class="sr-only">{{ workspace.name }}</span></button>
-    </form><a class="btn btn-outline" href="/workspaces/{{ workspace.id }}">Manage <span class="sr-only">{{ workspace.name }}</span></a></div>
+  {% if error %}<div class="alert alert-error" role="alert" tabindex="-1" data-workspace-page-alert>{{ error }}</div>{% endif %}
+  {% if message %}<div class="alert alert-success" role="status" tabindex="-1" data-workspace-page-alert>{{ message }}</div>{% endif %}
+
+  <section class="space-y-6" aria-labelledby="workspace-list-heading">
+    <h2 id="workspace-list-heading" class="sr-only">Available workspaces</h2>
+    {% for workspace in workspaces %}
+    <article class="card bg-base-100 shadow-sm min-w-0"><div class="card-body gap-4 p-4 sm:p-6"><div class="min-w-0 space-y-1"><h3 class="font-semibold break-words">{{ workspace.name }}</h3><p class="text-sm text-base-content/65">{{ workspace.role.value|capitalize }} · {{ workspace.status|capitalize }}</p></div>{% if workspace.status == 'active' %}<div class="flex flex-wrap items-center gap-3"><form method="post" action="/workspaces/{{ workspace.id }}/select"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-primary" type="submit">Select <span class="sr-only">{{ workspace.name }}</span></button></form><a class="btn btn-outline" href="/workspaces/{{ workspace.id }}">Manage <span class="sr-only">{{ workspace.name }}</span></a></div>{% else %}<a class="btn btn-outline w-fit" href="/workspaces/{{ workspace.id }}">View archived workspace <span class="sr-only">{{ workspace.name }}</span></a>{% endif %}</div></article>
     {% else %}
-    <a class="btn btn-outline w-fit" href="/workspaces/{{ workspace.id }}">View archived workspace <span class="sr-only">{{ workspace.name }}</span></a>
-    {% endif %}
-  </div>
-  {% endfor %}
-  {% if next_offset is not none %}<a class="link" href="/workspaces?offset={{ next_offset }}">More workspaces</a>{% endif %}
-  <form method="post" action="/workspaces" class="card bg-base-100 shadow p-4 gap-3">
-    <h2 class="text-lg font-semibold">Create a workspace</h2>
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label for="workspace-name">Workspace name</label>
-    <input id="workspace-name" name="name" class="input w-full" required maxlength="100" value="{{ name }}" {% if error %}aria-invalid="true" autofocus{% endif %}>
-    <button class="btn btn-primary" type="submit">Create workspace</button>
-  </form>
+    <section class="card bg-base-100 shadow-sm text-center"><div class="card-body items-center gap-2 p-5 sm:p-8"><h3 class="card-title">No workspaces yet</h3><p class="text-base-content/70">Create a workspace to start organizing your finances, or open an invitation you received.</p></div></section>
+    {% endfor %}
+    {% if next_offset is not none %}<a class="btn btn-outline btn-sm" href="/workspaces?offset={{ next_offset }}">More workspaces</a>{% endif %}
+  </section>
+
+  <section class="card bg-base-100 shadow-sm" aria-labelledby="create-workspace-heading"><form method="post" action="/workspaces" class="card-body gap-5 p-4 sm:p-6"><header class="space-y-2"><h2 id="create-workspace-heading" class="card-title">Create a workspace</h2><p class="text-sm text-base-content/65">You will become its owner and it will be selected immediately.</p></header><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><div class="transaction-field"><label for="workspace-name" class="label font-medium">Workspace name <span class="text-error" aria-hidden="true">*</span></label><input id="workspace-name" name="name" class="input w-full" required maxlength="100" value="{{ name }}" aria-describedby="workspace-name-hint{% if error %} workspace-name-error{% endif %}" {% if error %}aria-invalid="true" autofocus{% endif %}><p id="workspace-name-hint" class="mt-1 text-sm text-base-content/65">Use 1–100 characters.</p>{% if error %}<p id="workspace-name-error" class="mt-1 text-sm text-error">{{ error }}</p>{% endif %}</div><div class="flex flex-wrap items-center gap-3 border-t border-base-300 pt-5"><button class="btn btn-primary" type="submit">Create workspace</button></div></form></section>
 </div>
 {% endblock %}

@@ -93,7 +93,11 @@ async def select_workspace_form(request: Request, db: DB, user: ActiveUser):
     return select_session(request, context.workspace_id, destination)
 
 
-async def collaboration_page(request, db, user, workspace_id, *, error=None, message=None, status=200, invite_email="", invite_role="viewer", confirmation_name=""):
+async def collaboration_page(
+    request, db, user, workspace_id, *, error=None, message=None, status=200,
+    invite_email="", invite_role="viewer", invite_error=None, confirmation_name="",
+    rename_name=None, rename_error=None,
+):
     # Workspace mutation services roll back before surfacing business-rule
     # conflicts. SQLAlchemy expires loaded ORM objects on rollback, so refresh
     # the request user explicitly before re-rendering an error response.
@@ -115,7 +119,8 @@ async def collaboration_page(request, db, user, workspace_id, *, error=None, mes
         "is_owner": is_owner, "is_archived": workspace.status == "archived",
         "csrf_token": csrf_token(request), "error": error, "message": message,
         "invite_email": invite_email, "invite_role": invite_role,
-        "confirmation_name": confirmation_name,
+        "invite_error": invite_error, "confirmation_name": confirmation_name,
+        "rename_name": rename_name, "rename_error": rename_error,
     }, status_code=status)
 
 
@@ -197,10 +202,14 @@ async def role_form(workspace_id: int, target_user_id: int, request: Request, db
 @router.post("/{workspace_id}/rename")
 async def rename_form(workspace_id: int, request: Request, db: DB, user: ActiveUser):
     posted = await protected_form(request)
+    name = str(posted.get("name", ""))
     try:
-        data = WorkspaceUpdate(name=str(posted.get("name", "")))
+        data = WorkspaceUpdate(name=name)
     except ValidationError:
-        return await collaboration_page(request, db, user, workspace_id, error="Enter a workspace name of 1–100 characters.", status=422)
+        return await collaboration_page(
+            request, db, user, workspace_id, status=422, rename_name=name,
+            rename_error="Enter a workspace name of 1–100 characters.",
+        )
     (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
     await workspace_service.rename_workspace(db, user, workspace_id, data)
     return RedirectResponse(f"/workspaces/{workspace_id}?message=renamed", status_code=303)
@@ -235,7 +244,10 @@ async def invite_form(workspace_id: int, request: Request, db: DB, user: ActiveU
     try:
         data = WorkspaceInvitationCreate(recipient_email=email, role=role)
     except ValidationError:
-        return await collaboration_page(request, db, user, workspace_id, error="Enter a valid email and choose editor or viewer.", status=422, invite_email=email, invite_role=role)
+        return await collaboration_page(
+            request, db, user, workspace_id, status=422, invite_email=email,
+            invite_role=role, invite_error="Enter a valid email and choose editor or viewer.",
+        )
     (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
     try:
         invitation = await workspace_service.create_invitation(db, user, workspace_id, data)

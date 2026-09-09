@@ -36,4 +36,28 @@
       trigger = null;
     });
   });
+
+  const renameDialog = document.getElementById("workspace-rename-dialog");
+  const renameTrigger = document.querySelector("[data-workspace-rename-trigger]");
+  if (renameDialog && renameTrigger && typeof renameDialog.showModal === "function") {
+    const renameInput = renameDialog.querySelector("#workspace-rename-name");
+    let renameReturnFocus = null;
+    const openRename = (trigger) => {
+      renameReturnFocus = trigger;
+      renameDialog.showModal();
+      renameInput?.focus();
+      renameInput?.select();
+    };
+
+    renameTrigger.addEventListener("click", () => openRename(renameTrigger));
+    renameDialog.querySelector("[data-workspace-rename-cancel]")?.addEventListener("click", () => renameDialog.close("cancel"));
+    renameDialog.addEventListener("click", (event) => {
+      if (event.target === renameDialog) renameDialog.close("cancel");
+    });
+    renameDialog.addEventListener("close", () => {
+      if (renameReturnFocus?.isConnected) renameReturnFocus.focus();
+      renameReturnFocus = null;
+    });
+    if (renameDialog.dataset.openOnLoad === "true" && !renameDialog.open) openRename(renameTrigger);
+  }
 })();

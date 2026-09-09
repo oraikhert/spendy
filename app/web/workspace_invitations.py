@@ -36,11 +36,11 @@ def unavailable_response(request: Request, error: WorkspaceAccessError):
     )
 
 
-async def landing_response(request, db, token, user=None, *, error=None, status=200, values=None):
+async def landing_response(request, db, token, user=None, *, error=None, errors=None, status=200, values=None):
     invitation = await workspace_service.inspect_invitation(db, token)
     return templates.TemplateResponse(request=request, name="workspace_invitation.html", context={
         "user": user, "invitation": invitation, "token": token, "csrf_token": csrf_token(request),
-        "error": error, "values": values or {},
+        "error": error, "errors": errors or {}, "values": values or {},
     }, status_code=status)
 
 
@@ -82,7 +82,10 @@ async def invitation_register(request: Request, token: str, db: DB):
     posted = await protected_form(request)
     values = {key: str(posted.get(key, "")) for key in ("username", "full_name")}
     if posted.get("password") != posted.get("password_confirm"):
-        return await landing_response(request, db, token, error="Passwords do not match.", status=422, values=values)
+        return await landing_response(
+            request, db, token, error="Review the highlighted fields.", status=422,
+            errors={"password_confirm": "Passwords do not match."}, values=values,
+        )
     try:
         data = WorkspaceInvitationRegister(
             username=posted.get("username", ""), password=posted.get("password", ""),
@@ -93,7 +96,13 @@ async def invitation_register(request: Request, token: str, db: DB):
         return unavailable_response(request, exc)
     except (ValidationError, ValueError) as exc:
         message = str(exc) if isinstance(exc, ValueError) else "Review the registration fields."
-        return await landing_response(request, db, token, error=message, status=422, values=values)
+        errors = {}
+        if isinstance(exc, ValidationError):
+            for item in exc.errors():
+                field = str(item["loc"][-1])
+                if field in {"username", "full_name", "password"}:
+                    errors[field] = item["msg"]
+        return await landing_response(request, db, token, error=message, errors=errors, status=422, values=values)
     token_response = await auth_service.create_user_access_token(user)
     response = RedirectResponse("/dashboard", status_code=303)
     set_auth_cookie(response, token_response.access_token, request)

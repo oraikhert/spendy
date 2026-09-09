@@ -38,3 +38,23 @@
     animation: none !important;
   }
 }
+
+/* Shared workspace controls follow the transaction form accessibility treatment. */
+.workspace-shell .transaction-field,
+.workspace-shell .transaction-field > * {
+  min-width: 0;
+}
+
+.workspace-shell :is(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-primary, #4f46e5);
+  outline-offset: 3px;
+}
+
+.workspace-shell [aria-invalid="true"] {
+  border-color: var(--color-error, #dc2626);
+}
+
+.workspace-shell .modal-box {
+  max-height: min(80vh, 40rem);
+  overflow-y: auto;
+}

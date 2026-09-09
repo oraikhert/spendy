@@ -104,6 +104,65 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SECOND DATASET", page.text)
         self.assertNotIn("FIRST DATASET", page.text)
 
+    async def test_workspace_selection_and_rename_validation_use_standard_controls(self):
+        self.sign_in(1, None)
+        selection = await self.client.get("/workspaces/onboarding")
+        self.assertEqual(selection.status_code, 200, selection.text)
+        self.assertIn('max-w-6xl space-y-8', selection.text)
+        self.assertIn('class="card bg-base-100 shadow-sm', selection.text)
+        self.assertIn('for="workspace-name"', selection.text)
+        self.assertIn('id="workspace-name-hint"', selection.text)
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', selection.text)[1]
+        invalid_create = await self.client.post("/workspaces", data={"csrf_token": csrf, "name": " "})
+        self.assertEqual(invalid_create.status_code, 422, invalid_create.text)
+        self.assertIn('aria-invalid="true"', invalid_create.text)
+        self.assertIn('id="workspace-name-error"', invalid_create.text)
+
+        workspace = await self.create_financial_workspace("Rename me", "RENAME DATA")
+        self.sign_in(1, workspace)
+        detail = await self.client.get(f"/workspaces/{workspace}")
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', detail.text)[1]
+        self.assertIn('id="workspace-rename-dialog"', detail.text)
+        self.assertIn('data-workspace-rename-trigger', detail.text)
+        invalid_rename = await self.client.post(
+            f"/workspaces/{workspace}/rename", data={"csrf_token": csrf, "name": " "},
+        )
+        self.assertEqual(invalid_rename.status_code, 422, invalid_rename.text)
+        self.assertIn('data-open-on-load="true"', invalid_rename.text)
+        self.assertIn('id="workspace-rename-name-error"', invalid_rename.text)
+        self.assertIn('value=" "', invalid_rename.text)
+
+    async def test_invitation_registration_validation_has_field_feedback(self):
+        workspace = await self.create_financial_workspace("Invite validation", "INVITE VALIDATION DATA")
+        self.sign_in(1, workspace)
+        detail = await self.client.get(f"/workspaces/{workspace}")
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', detail.text)[1]
+        captured = []
+
+        async def delivered(_recipient, _workspace, _role, token):
+            captured.append(token)
+
+        with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivered):
+            created = await self.client.post(
+                f"/workspaces/{workspace}/invitations",
+                data={"csrf_token": csrf, "recipient_email": "validation@example.com", "role": "viewer"},
+            )
+        self.assertEqual(created.status_code, 303, created.text)
+        self.client.cookies.clear()
+        page = await self.client.get(f"/workspace-invitations/{captured[-1]}/register")
+        self.assertIn('for="invitation-username"', page.text)
+        self.assertIn('for="invitation-password-confirm"', page.text)
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text)[1]
+        invalid = await self.client.post(
+            f"/workspace-invitations/{captured[-1]}/register",
+            data={"csrf_token": csrf, "username": "valid-name", "full_name": "Saved", "password": "one-password", "password_confirm": "other-password"},
+        )
+        self.assertEqual(invalid.status_code, 422, invalid.text)
+        self.assertIn('id="invitation-password-confirm-error"', invalid.text)
+        self.assertIn('aria-invalid="true"', invalid.text)
+        self.assertIn('value="valid-name"', invalid.text)
+        self.assertIn('value="Saved"', invalid.text)
+
     async def test_role_controls_security_and_immediate_access_loss(self):
         workspace = await self.create_financial_workspace("Shared", "SHARED DATASET")
         async with self.sessions() as db:

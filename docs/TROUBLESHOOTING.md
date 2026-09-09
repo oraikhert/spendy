@@ -12,6 +12,7 @@ from the repository root with `venv` active. Return to the
 - [Registration or login fails](#registration-or-login-fails)
 - [Workspace selection or deletion fails](#workspace-selection-or-deletion-fails)
 - [API checks fail](#api-checks-fail)
+- [Codex Browser reports ERR_BLOCKED_BY_CLIENT](#codex-browser-reports-err_blocked_by_client)
 - [Source processing or FX fails](#source-processing-or-fx-fails)
 - [Rebuild the Python environment](#rebuild-the-python-environment)
 - [Request help](#request-help)
@@ -123,6 +124,57 @@ with a fresh temporary database and registration enabled. Never reset your norma
 database to make tests pass.
 
 **Verify:** inspect every reported check, not just the final process status.
+
+## Codex Browser reports ERR_BLOCKED_BY_CLIENT
+
+**Symptom:** the Codex in-app browser reports `net::ERR_BLOCKED_BY_CLIENT` for an
+isolated local test server, even though the origin appears under **Settings > Browser**.
+
+This message does not by itself prove that macOS or the configured site permission
+blocked the request. Chromium can first replace an unreachable page with an internal
+`data:text/html` error page; Codex then rejects inspection of that internal page and
+surfaces the secondary policy error. Opening the JSON `/health` response as a browser
+page can produce the same misleading result even when Uvicorn logs `GET /health 200`.
+
+**Check:** use the following order so the first failed layer is visible:
+
+1. Start the disposable server from a local terminal using the
+   [browser-smoke setup](../README.md#development-checks), and wait for
+   `Application startup complete`. Keep that terminal and process running.
+2. From another local terminal, run `curl http://127.0.0.1:8139/health`. A JSON
+   response verifies HTTP readiness only; do not use `/health` as the browser's
+   first page.
+3. In **Settings > Browser**, allow the exact origin
+   `http://127.0.0.1:8139`. Scheme, host and non-default port are part of the
+   origin; an entry for `localhost`, HTTPS or another port does not replace it.
+4. Open `http://127.0.0.1:8139/auth/login` in the Codex browser and inspect the
+   Uvicorn access log.
+
+Interpret the result before changing settings:
+
+- No browser `GET` appears in the server log: the browser cannot reach that server
+  process or the exact origin is not allowed. Restart the server from a local terminal,
+  confirm the port, and review **Settings > Browser**. In a managed environment, an
+  administrator policy may be stricter than the visible user permission.
+- The server logs the HTML route with `200` and it renders: browser access works;
+  ignore an earlier `/health` navigation failure and continue the smoke test from
+  HTML routes.
+- The browser's generated error page reports `ERR_CONNECTION_REFUSED`, and no matching
+  request reaches Uvicorn: the server was stopped, still starting, or running in an
+  isolated execution environment. Restore reachability rather than adding more site
+  entries.
+- The server logs the HTML route with `200`, but that HTML route still fails: capture
+  the Codex desktop log and browser/server timestamps and report the issue; this is
+  distinct from the known readiness/error-page cases above.
+
+**Fix:** keep one disposable local server alive for the entire browser pass, probe
+readiness with `curl`, and begin automation at `/auth/login`, `/auth/register` or the
+target HTML page. Reuse the exact allowed origin throughout redirects and links.
+Stop the server and remove its disposable database after the test.
+
+**Verify:** register a synthetic user, reach `/workspaces/onboarding`, create a
+synthetic workspace, and open `/workspaces`. Confirm each request appears in the
+server access log and repeat the relevant page at desktop and 360 px widths.
 
 ## Source processing or FX fails
 

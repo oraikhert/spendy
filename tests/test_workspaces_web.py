@@ -129,6 +129,8 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', detail.text)[1]
         self.assertIn('id="workspace-rename-dialog"', detail.text)
         self.assertIn('data-workspace-rename-trigger', detail.text)
+        self.assertIn('data-workspace-header-actions', detail.text)
+        self.assertNotIn('Workspace settings', detail.text)
         invalid_rename = await self.client.post(
             f"/workspaces/{workspace}/rename", data={"csrf_token": csrf, "name": " "},
         )

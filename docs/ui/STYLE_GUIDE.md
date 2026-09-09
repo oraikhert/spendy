@@ -113,12 +113,42 @@ hint/error through `aria-describedby`, retain entered values, and receive focus 
 first invalid field. The transaction stylesheet's focus outline and invalid border are
 the required interaction treatment for equivalent forms outside transaction pages.
 
-Use `btn btn-primary` for one primary action, `btn btn-outline` for secondary or
-reversible actions, `btn btn-ghost` for cancellation, and `btn btn-error` or
-`btn btn-outline btn-error` for destructive actions. Use `btn-sm` only for compact
-controls such as pagination and row actions. Form action rows use
-`flex flex-wrap items-center gap-3`; separate a long form's actions with
-`border-t border-base-300 pt-5`.
+### Buttons
+
+Buttons communicate action priority before their label is read. Use DaisyUI button
+variants and semantic theme tokens only; do not add custom button colors or component
+CSS. Tailwind utilities may control layout, spacing, width, and responsive behavior.
+
+The workspace-card actions are the reference composition: `Select` is
+`btn btn-primary`, the card's single immediate outcome; `Manage` is
+`btn btn-ghost`, available without competing with that outcome.
+
+| Intent | Class recipe | Use for | Examples |
+|---|---|---|---|
+| Primary | `btn btn-primary` | The one most important positive outcome in a card, form footer, modal, or local action group. | Select, Create, Save, Add transaction, Accept invitation |
+| Secondary | `btn btn-outline` | A meaningful alternative, visible navigation, or reversible action. | Edit, Update, Back, View archived workspace |
+| Tertiary | `btn btn-ghost` | Quiet contextual navigation, cancellation, reset, or compact navigation. | Manage, Cancel, Reset, Switch workspace |
+| Warning | `btn btn-outline btn-warning` | A consequential but reversible action. | Archive workspace |
+| Destructive | `btn btn-outline btn-error` | A destructive action before its final confirmation, including dense list actions. | Remove member, Revoke invitation, Leave workspace |
+| Critical destructive | `btn btn-error` | The final confirmation of an irreversible action. | Permanently delete, Confirm deletion |
+
+Do not use an unmodified `btn` where the action has an intent. Allow at most one
+primary button in a local action group. A secondary choice that must remain readily
+discoverable uses `btn btn-outline`; a choice that may recede uses `btn btn-ghost`.
+Keep destructive intent semantic: do not simulate it with `text-error` on a neutral
+or ghost button.
+
+Use the default button size for page, card, form, and modal actions. Use `btn-sm`
+only for compact controls such as pagination, row actions, and navbar controls.
+`btn-block` is for intentionally full-width actions, such as authentication form
+submission; do not use it merely to fill incidental available space. Reserve
+`btn-circle` and icon-only buttons for universally recognizable compact controls;
+each needs an accessible name.
+
+Form action rows use `flex flex-wrap items-center gap-3`; separate a long form's
+actions with `border-t border-base-300 pt-5`. Preserve native `disabled` state,
+visible keyboard focus, and touch-friendly controls. Do not rely on color alone to
+communicate an unavailable, warning, or destructive action.
 
 ### Form placement
 

@@ -17,6 +17,7 @@ completing any item.
 
 | Area | Current divergence | Target standard | Candidate paths |
 |---|---|---|---|
+| Button variants | A few controls use a neutral `btn` despite a clear intent; the source-unlink action simulates destructive intent with `btn-ghost text-error`. | Use the canonical semantic recipe: ghost for Cancel, primary for Retry, and `btn-outline btn-error` for a pre-confirmation destructive action. | `app/templates/transactions/layout.html`, `app/templates/transactions/confirmation.html`, `app/templates/dashboard.html`, `app/templates/transactions/_sources.html` |
 
 ## Priority 3 — reusable feedback and surfaces
 

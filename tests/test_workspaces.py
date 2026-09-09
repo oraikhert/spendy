@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["DEBUG"] = "false"
@@ -25,7 +25,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import Account, BankStatementDetail, Card, SourcePayload, Transaction, TransactionObservation, TransactionSourceLink, Workspace, WorkspaceInvitation, WorkspaceMember, User
 from app.schemas.workspace import WorkspaceCreate, WorkspaceDelete
-from app.services import transaction_service, workspace_service
+from app.services import invitation_delivery, transaction_service, workspace_service
 from app.utils.canonicalization import canonicalize_transaction
 
 SMS = "Purchase of AED 12.34 with Credit Card ending 1111 at SYNTHETIC SHOP, DUBAI. Avl Cr. Limit is AED 100.00"
@@ -70,6 +70,16 @@ class WorkspaceTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post("/api/v1/workspaces", headers=self.headers(user), json={"name": name})
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["id"]
+
+    async def test_existing_user_notification_email_has_no_invitation_token(self):
+        send = AsyncMock()
+        with patch.object(invitation_delivery, "_send_message", send):
+            await invitation_delivery.send_workspace_added_notification(
+                "member@example.com", "Family", "editor")
+        message = send.await_args.args[0]
+        self.assertEqual(message["Subject"], "You were added to Family")
+        self.assertIn("You were added to Family as editor.", message.get_content())
+        self.assertNotIn("workspace-invitations", message.get_content())
 
     async def financial_fixture(self, user):
         workspace = await self.create(user)
@@ -321,34 +331,74 @@ class WorkspaceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invitation_delivery_rotation_validation_and_acceptance(self):
         workspace = await self.create(1)
+        notifications = []
+
+        async def notified(recipient, workspace_name, role):
+            notifications.append((recipient, workspace_name, role))
+
+        with patch.object(workspace_service, "send_workspace_added_notification", side_effect=notified):
+            existing = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"User2@Example.com", "role":"editor"})
+        self.assertEqual(existing.status_code, 201, existing.text)
+        self.assertIsNotNone(existing.json()["accepted_at"])
+        self.assertEqual(notifications, [("user2@example.com", "Family", "editor")])
+        async with self.sessions() as db:
+            member = await db.scalar(select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace, WorkspaceMember.user_id == 2))
+            self.assertEqual(member.role, "editor")
+
+        async def notification_failed(_recipient, _workspace, _role):
+            raise RuntimeError("synthetic smtp failure")
+
+        with patch.object(workspace_service, "send_workspace_added_notification", side_effect=notification_failed):
+            failed_notification = await self.client.post(
+                f"/api/v1/workspaces/{workspace}/invitations",
+                headers=self.headers(1),
+                json={"recipient_email": "user3@example.com", "role": "viewer"},
+            )
+        self.assertEqual(failed_notification.status_code, 502, failed_notification.text)
+        self.assertEqual(failed_notification.json()["detail"], "User added, but informational email delivery failed")
+        invitations = (await self.client.get(
+            f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1))).json()
+        notification_record = next(item for item in invitations if item["recipient_email"] == "user3@example.com")
+        self.assertIsNotNone(notification_record["accepted_at"])
+        self.assertEqual(notification_record["delivery_state"], "failed")
+        with patch.object(workspace_service, "send_workspace_added_notification", side_effect=notified):
+            retried = await self.client.post(
+                f"/api/v1/workspaces/{workspace}/invitations/{notification_record['id']}/resend",
+                headers=self.headers(1),
+            )
+        self.assertEqual((retried.status_code, retried.json()["delivery_state"]), (200, "sent"))
+
         sent_tokens = []
 
         async def delivered(_recipient, _workspace, _role, token):
             sent_tokens.append(token)
 
         with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivered):
-            response = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"User2@Example.com", "role":"editor"})
+            response = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"Future@Example.com", "role":"viewer"})
         self.assertEqual(response.status_code, 201, response.text)
         invitation_id = response.json()["id"]
         token = sent_tokens[-1]
         duplicate = await self.client.post(
             f"/api/v1/workspaces/{workspace}/invitations",
             headers=self.headers(1),
-            json={"recipient_email": "user2@example.com", "role": "viewer"},
+            json={"recipient_email": "future@example.com", "role": "editor"},
         )
         self.assertEqual(duplicate.status_code, 409, duplicate.text)
         async with self.sessions() as db:
             invitation = await db.get(WorkspaceInvitation, invitation_id)
             self.assertNotEqual(invitation.token_hash, token)
-            self.assertEqual(invitation.recipient_email, "user2@example.com")
+            self.assertEqual(invitation.recipient_email, "future@example.com")
+            db.add(User(id=4, email="future@example.com", username="future", hashed_password="unused", is_active=True))
+            await db.commit()
         public = await self.client.get(f"/api/v1/workspace-invitations/{token}")
         self.assertEqual(public.status_code, 200, public.text)
-        self.assertEqual(public.json()["masked_recipient_email"], "u***@example.com")
+        self.assertEqual(public.json()["masked_recipient_email"], "f***@example.com")
         mismatch = await self.client.post(f"/api/v1/workspace-invitations/{token}/accept", headers=self.headers(3))
         self.assertEqual(mismatch.status_code, 403, mismatch.text)
-        accepted = await self.client.post(f"/api/v1/workspace-invitations/{token}/accept", headers=self.headers(2))
-        self.assertEqual((accepted.status_code, accepted.json()["role"]), (201, "editor"))
-        self.assertEqual((await self.client.post(f"/api/v1/workspace-invitations/{token}/accept", headers=self.headers(2))).status_code, 409)
+        accepted = await self.client.post(f"/api/v1/workspace-invitations/{token}/accept", headers=self.headers(4))
+        self.assertEqual((accepted.status_code, accepted.json()["role"]), (201, "viewer"))
+        self.assertEqual((await self.client.post(f"/api/v1/workspace-invitations/{token}/accept", headers=self.headers(4))).status_code, 409)
 
         failed_tokens = []
 
@@ -357,10 +407,10 @@ class WorkspaceTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("synthetic smtp failure")
 
         with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivery_failed):
-            failed = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"user3@example.com", "role":"viewer"})
+            failed = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"failed@example.com", "role":"viewer"})
         self.assertEqual(failed.status_code, 502, failed.text)
         invitations = (await self.client.get(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1))).json()
-        failed_invitation = next(item for item in invitations if item["recipient_email"] == "user3@example.com")
+        failed_invitation = next(item for item in invitations if item["recipient_email"] == "failed@example.com")
         self.assertEqual(failed_invitation["delivery_state"], "failed")
         with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivered):
             resent = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations/{failed_invitation['id']}/resend", headers=self.headers(1))

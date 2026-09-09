@@ -121,7 +121,7 @@ async def collaboration_page(request, db, user, workspace_id, *, error=None, mes
 
 @router.get("/{workspace_id}")
 async def workspace_detail(workspace_id: int, request: Request, db: DB, user: ActiveUser):
-    messages = {"renamed": "Workspace renamed.", "restored": "Workspace restored.", "role": "Member role updated.", "removed": "Member removed.", "invited": "Invitation sent.", "resent": "Invitation resent.", "revoked": "Invitation revoked."}
+    messages = {"renamed": "Workspace renamed.", "restored": "Workspace restored.", "role": "Member role updated.", "removed": "Member removed.", "invited": "Invitation sent.", "added": "User added to the workspace.", "resent": "Email resent.", "revoked": "Invitation revoked."}
     return await collaboration_page(request, db, user, workspace_id, message=messages.get(request.query_params.get("message", "")))
 
 
@@ -238,10 +238,11 @@ async def invite_form(workspace_id: int, request: Request, db: DB, user: ActiveU
         return await collaboration_page(request, db, user, workspace_id, error="Enter a valid email and choose editor or viewer.", status=422, invite_email=email, invite_role=role)
     (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
     try:
-        await workspace_service.create_invitation(db, user, workspace_id, data)
-        return RedirectResponse(f"/workspaces/{workspace_id}?message=invited", status_code=303)
-    except workspace_service.InvitationDeliveryError:
-        return await collaboration_page(request, db, user, workspace_id, error="Invitation saved, but email delivery failed. You can retry it.", status=502, invite_email=email, invite_role=role)
+        invitation = await workspace_service.create_invitation(db, user, workspace_id, data)
+        message = "added" if invitation.accepted_at is not None else "invited"
+        return RedirectResponse(f"/workspaces/{workspace_id}?message={message}", status_code=303)
+    except workspace_service.InvitationDeliveryError as exc:
+        return await collaboration_page(request, db, user, workspace_id, error=f"{exc}. You can retry it.", status=502, invite_email=email, invite_role=role)
     except WorkspaceAccessError as exc:
         return await collaboration_page(request, db, user, workspace_id, error=exc.detail, status=exc.status_code, invite_email=email, invite_role=role)
 

@@ -98,7 +98,9 @@ internal Host to the app. It must match the real public scheme, host and port. S
 delivery runs inside the invitation request and is bounded by
 `SMTP_TIMEOUT_SECONDS`; there is no worker or automatic retry. Use the host, port,
 credentials, sender and STARTTLS policy required by the chosen SMTP service. A failed
-send remains recorded and an owner can resend, which rotates the invitation token.
+send remains recorded and an owner can resend. Registration-invitation retries rotate
+the invitation token; informational-email retries for users who were already added do
+not create or expose a token.
 Do not place SMTP credentials in logs or commit them. Test delivery in the deployed
 network before inviting users; local mocked checks do not verify provider policy,
 DNS, certificates, firewall access or sender reputation.

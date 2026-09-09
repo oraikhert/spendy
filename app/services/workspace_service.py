@@ -33,16 +33,19 @@ from app.schemas.workspace import (
     WorkspaceUpdate,
 )
 from app.services import user_service
-from app.services.invitation_delivery import send_workspace_invitation
+from app.services.invitation_delivery import (
+    send_workspace_added_notification,
+    send_workspace_invitation,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
 class InvitationDeliveryError(Exception):
-    def __init__(self, invitation: WorkspaceInvitationResponse):
+    def __init__(self, invitation: WorkspaceInvitationResponse, message="Invitation saved, but email delivery failed"):
         self.invitation = invitation
-        super().__init__("Invitation saved, but email delivery failed")
+        super().__init__(message)
 
 
 def _response(workspace, role):
@@ -499,17 +502,19 @@ async def list_invitations(db: AsyncSession, user: User, workspace_id: int, *, l
 
 async def _record_delivery(
     db: AsyncSession, invitation_id: int, expected_hash: str, *, recipient: str,
-    workspace_name: str, role: str, token: str,
+    workspace_name: str, role: str, token: str | None,
 ) -> WorkspaceInvitationResponse:
     try:
-        await send_workspace_invitation(recipient, workspace_name, role, token)
+        if token is None:
+            await send_workspace_added_notification(recipient, workspace_name, role)
+        else:
+            await send_workspace_invitation(recipient, workspace_name, role, token)
         state = "sent"
     except Exception:
         state = "failed"
     await db.execute(update(WorkspaceInvitation).where(
         WorkspaceInvitation.id == invitation_id,
         WorkspaceInvitation.token_hash == expected_hash,
-        WorkspaceInvitation.accepted_at.is_(None),
         WorkspaceInvitation.revoked_at.is_(None),
     ).values(delivery_state=state, updated_at=_now()))
     await db.commit()
@@ -517,7 +522,12 @@ async def _record_delivery(
     assert invitation is not None
     response = WorkspaceInvitationResponse.model_validate(invitation)
     if state == "failed":
-        raise InvitationDeliveryError(response)
+        message = (
+            "User added, but informational email delivery failed"
+            if response.accepted_at is not None
+            else "Invitation saved, but email delivery failed"
+        )
+        raise InvitationDeliveryError(response, message)
     return response
 
 
@@ -530,10 +540,10 @@ async def create_invitation(
     email = _normalize_email(str(data.recipient_email))
     try:
         workspace = await _owner_for_invitations(db, user, workspace_id, lock=True)
-        existing_user_id = await db.scalar(select(User.id).where(func.lower(User.email) == email))
-        if existing_user_id is not None and await db.scalar(select(WorkspaceMember.id).where(
+        existing_user = await db.scalar(select(User).where(func.lower(User.email) == email))
+        if existing_user is not None and await db.scalar(select(WorkspaceMember.id).where(
             WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.user_id == existing_user_id,
+            WorkspaceMember.user_id == existing_user.id,
         )) is not None:
             raise WorkspaceAccessError(409, "This user is already a member")
         await db.execute(update(WorkspaceInvitation).where(
@@ -561,6 +571,13 @@ async def create_invitation(
             delivery_state="pending",
         )
         db.add(invitation)
+        if existing_user is not None:
+            db.add(WorkspaceMember(
+                workspace_id=workspace_id,
+                user_id=existing_user.id,
+                role=data.role,
+            ))
+            invitation.accepted_at = now
         await db.commit()
         invitation_id = invitation.id
         workspace_name = workspace.name
@@ -572,7 +589,7 @@ async def create_invitation(
         raise
     return await _record_delivery(
         db, invitation_id, digest, recipient=email, workspace_name=workspace_name,
-        role=str(data.role), token=token,
+        role=str(data.role), token=None if existing_user is not None else token,
     )
 
 
@@ -590,8 +607,25 @@ async def resend_invitation(
         ).with_for_update())
         if invitation is None:
             raise WorkspaceAccessError(404, "Not Found")
-        if invitation.accepted_at is not None or invitation.revoked_at is not None:
+        if invitation.revoked_at is not None:
             raise WorkspaceAccessError(409, "Invitation is no longer actionable")
+        if invitation.accepted_at is not None:
+            existing_user_id = await db.scalar(
+                select(User.id).where(func.lower(User.email) == invitation.recipient_email)
+            )
+            membership_exists = existing_user_id is not None and await db.scalar(select(WorkspaceMember.id).where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id == existing_user_id,
+            )) is not None
+            if not membership_exists or invitation.delivery_state != "failed":
+                raise WorkspaceAccessError(409, "Invitation is no longer actionable")
+            invitation.delivery_state = "pending"
+            await db.commit()
+            recipient, role, workspace_name = invitation.recipient_email, invitation.role, workspace.name
+            return await _record_delivery(
+                db, invitation_id, invitation.token_hash, recipient=recipient,
+                workspace_name=workspace_name, role=role, token=None,
+            )
         invitation.token_hash = digest
         invitation.expires_at = now + timedelta(days=settings.WORKSPACE_INVITATION_LIFETIME_DAYS)
         invitation.delivery_state = "pending"

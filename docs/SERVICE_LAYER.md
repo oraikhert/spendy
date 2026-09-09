@@ -34,7 +34,7 @@ a database failure and continues using that session must roll it back first.
 | Membership role/removal/leave | Lock active workspace, revalidate final-owner invariant, then commit |
 | Workspace archive/restore | Lock workspace, revalidate current owner and lifecycle state, then commit |
 | Permanent workspace deletion | Lock and revalidate owner, archived state and exact name; quarantine uploads, delete the complete database graph in one commit, restore files on rollback, then clean quarantine |
-| Invitation create/resend | Commit token hash and pending state before bounded SMTP; commit sent/failed afterward |
+| Invitation create/resend | Existing user: commit membership plus accepted audit record before bounded informational SMTP. Unknown email: commit token hash and pending invitation before SMTP. Commit sent/failed afterward; retry uses the matching delivery type. |
 | Invitation acceptance/registration | Membership plus acceptance, and invited user when needed, in one atomic commit |
 | User/account/card/transaction writes | Commit inside the service |
 | Text ingestion | Commit payload, observations, transactions, links and canonical values together |
@@ -278,7 +278,8 @@ accept username or email, check password and active status, and create JWTs with
 DB writes. Registration policy belongs to routes; CLI creation bypasses it. All three normal registration entry points create only
 a user; [workspace creation](WORKSPACES.md#registration-and-onboarding) is explicit.
 Workspace collaboration services own role administration, final-owner locking,
-invitations, bounded SMTP state transitions and atomic acceptance.
+direct membership creation for existing invitees, token invitations for unknown
+emails, bounded SMTP state transitions and atomic registration/acceptance.
 
 [Dashboard overview](../app/services/dashboard_service.py) is the single business
 operation used by `GET /api/v1/dashboard`, its historical-year subresource, and the

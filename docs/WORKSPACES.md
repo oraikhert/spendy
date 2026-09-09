@@ -124,10 +124,13 @@ received by email. Any active user may create any number of workspaces. The crea
 becomes its owner in the same transaction, and web creation immediately selects it.
 
 Registration through a valid invitation is available even when public registration is
-disabled. It fixes the account email to the invited address, creates the user and
-target membership atomically, and does not create a personal workspace. A registered
-recipient signs in before accepting; an authenticated user whose email does not match
-the invitation cannot accept it.
+disabled. For an email address that is not registered yet, it fixes the account email
+to the invited address, creates the user and target membership atomically, and does not
+create a personal workspace. If the address already belongs to a user when the owner
+submits the invitation, that user is added immediately and receives an informational
+email instead of an invitation link. A user who registers separately while an older
+invitation is pending may still sign in and accept that token; an authenticated user
+whose email does not match the invitation cannot accept it.
 
 The ownership migration assigns all pre-workspace financial records to one `Legacy
 Workspace`. The existing user with the smallest ID becomes its owner and every other
@@ -177,8 +180,8 @@ workspace data.
 | Method and path | Behavior |
 |---|---|
 | `GET /api/v1/workspaces/{workspace_id}/invitations` | List invitation state as owner. |
-| `POST /api/v1/workspaces/{workspace_id}/invitations` | Create and send an editor/viewer invitation. |
-| `POST /api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/resend` | Rotate the token and retry delivery. |
+| `POST /api/v1/workspaces/{workspace_id}/invitations` | Add an existing user and notify them, or create and send an editor/viewer registration invitation for an unknown email. |
+| `POST /api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/resend` | Retry a failed existing-user notification, or rotate the registration token and retry invitation delivery. |
 | `DELETE /api/v1/workspaces/{workspace_id}/invitations/{invitation_id}` | Revoke a pending invitation. |
 | `GET /api/v1/workspace-invitations/{token}` | Read a safe invitation summary needed for login or registration. |
 | `POST /api/v1/workspace-invitations/{token}/accept` | Accept as the authenticated matching user. |
@@ -196,11 +199,14 @@ optional username/password, sender address, STARTTLS policy, public application 
 URL, network timeout and invite lifetime. The default lifetime is seven days. Secrets
 are loaded through settings and are never returned or logged.
 
-A newly created invitation is committed before delivery and records `pending`, `sent`
-or `failed` delivery state. A safe delivery failure is returned to the owner while the
-failed invitation remains available for retry. Resend creates a new random token,
-stores its hash and invalidates the earlier link before sending. Only one unexpired,
-unrevoked invitation for the same normalized email and workspace may remain actionable.
+A request for an existing user atomically creates the membership and an accepted audit
+record before sending an informational email without a token. For an unknown email, a
+new invitation is committed before delivery. Both paths record `pending`, `sent` or
+`failed` delivery state, and a safe delivery failure is returned to the owner while the
+database change remains committed. Failed existing-user notifications can be retried.
+Resending a registration invitation creates a new random token, stores its hash and
+invalidates the earlier link before sending. Only one unexpired, unrevoked invitation
+for the same normalized email and workspace may remain actionable.
 
 Token lookup compares hashes in constant time. Acceptance locks and revalidates the
 invitation, normalized email, workspace state and existing membership, then creates the
@@ -225,10 +231,12 @@ The workspace interface provides:
 - archive and restore confirmations; and
 - a separate permanent-deletion confirmation requiring the exact workspace name.
 
-Invitation links open a no-store landing page. Existing users are directed through
-login and returned to the invitation. New recipients use a registration form whose
-email is fixed from the token. Web registration signs the user in, accepts the
-invitation and selects the target workspace without creating another workspace.
+Invitation links open a no-store landing page. They are sent only when no account
+exists for the recipient email. New recipients use a registration form whose email is
+fixed from the token. Web registration signs the user in, accepts the invitation and
+selects the target workspace without creating another workspace. Existing users are
+added immediately and can select the new workspace after their next authenticated
+request; their email is informational and has no invitation token.
 
 Viewer pages omit financial mutation controls, but authorization never relies on
 hidden UI. All workspace forms work as ordinary POSTs; HTMX may enhance targeted

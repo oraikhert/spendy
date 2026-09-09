@@ -1,14 +1,12 @@
 """HTTP-only parsing and presentation for transaction pages."""
 from datetime import date, timedelta
 from decimal import Decimal
-import hashlib
-import hmac
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from app.config import settings
+from app.web.security import csrf_token, valid_csrf
 from app.web.presentation import money
 
 
@@ -120,13 +118,6 @@ def detail_url(transaction_id, return_url="/transactions", anchor=""):
     return f"/transactions/{transaction_id}?{urlencode({'return_url': safe_return_url(return_url)})}" + (f"#{anchor}" if anchor else "")
 
 
-def csrf_token(request):
-    session_id = getattr(request.state, "web_session_id", request.cookies.get("access_token", ""))
-    return hmac.new(settings.SECRET_KEY.encode(), ("transactions:" + session_id).encode(), hashlib.sha256).hexdigest()
-
-
-def valid_csrf(request, value):
-    return isinstance(value, str) and value.isascii() and hmac.compare_digest(csrf_token(request), value)
 
 
 def display_date(value, missing="Not specified"):

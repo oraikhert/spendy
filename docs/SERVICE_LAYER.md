@@ -31,6 +31,9 @@ a database failure and continues using that session must roll it back first.
 | Operation | Commit boundary |
 |-----------|-----------------|
 | Workspace plus creator membership | One atomic service commit; rollback on failure |
+| Membership role/removal/leave | Lock active workspace, revalidate final-owner invariant, then commit |
+| Invitation create/resend | Commit token hash and pending state before bounded SMTP; commit sent/failed afterward |
+| Invitation acceptance/registration | Membership plus acceptance, and invited user when needed, in one atomic commit |
 | User/account/card/transaction writes | Commit inside the service |
 | Text ingestion | Commit payload, observations, transactions, links and canonical values together |
 | Create transaction and link | Commit transaction/link/canonicalization together |
@@ -261,11 +264,15 @@ fingerprint and applicable FX rate are refreshed.
 
 ## Authentication and summaries
 
-[User services](../app/services/user_service.py) validate email/username uniqueness,
-hash passwords and commit writes. [Auth services](../app/services/auth_service.py)
+[User services](../app/services/user_service.py) validate email/username uniqueness
+and hash passwords. Ordinary creation commits, while invitation registration uses its
+flush-only preparation operation inside the user/membership/acceptance transaction.
+[Auth services](../app/services/auth_service.py)
 accept username or email, check password and active status, and create JWTs without
 DB writes. Registration policy belongs to routes; CLI creation bypasses it. All three normal registration entry points create only
 a user; [workspace creation](WORKSPACES.md#registration-and-onboarding) is explicit.
+Workspace collaboration services own role administration, final-owner locking,
+invitations, bounded SMTP state transitions and atomic acceptance.
 
 [Dashboard overview](../app/services/dashboard_service.py) is the single business
 operation used by `GET /api/v1/dashboard`, its historical-year subresource, and the

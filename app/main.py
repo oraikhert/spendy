@@ -7,11 +7,12 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, Response
 
 from app.config import settings
-from app.core.web_session import browser_origin, renew_auth_cookie
+from app.core.web_session import renew_auth_cookie, same_browser_origin
 from app.database import init_db
 from app.api.v1 import api_router
 from app.web import web_router
 from app.services.exchange_rate_service import exchange_rate_service
+from app.web.security import PRIVATE_HEADERS
 
 
 @asynccontextmanager
@@ -38,17 +39,18 @@ app = FastAPI(
 
 @app.middleware("http")
 async def private_transaction_responses(request, call_next):
-    private = any(request.url.path == prefix or request.url.path.startswith(prefix + "/") for prefix in ("/transactions", "/workspaces", "/dashboard"))
-    private_api = request.url.path.startswith(settings.API_V1_PREFIX + "/") and any(segment in request.url.path.split("/") for segment in ("accounts", "cards", "transactions", "source-payloads", "transaction-observations", "dashboard", "workspaces"))
+    private = any(request.url.path == prefix or request.url.path.startswith(prefix + "/") for prefix in ("/transactions", "/workspaces", "/workspace-invitations", "/dashboard"))
+    invitation_private = request.url.path.startswith("/workspace-invitations/") or request.url.path.startswith(settings.API_V1_PREFIX + "/workspace-invitations/")
+    private_api = request.url.path.startswith(settings.API_V1_PREFIX + "/") and any(segment in request.url.path.split("/") for segment in ("accounts", "cards", "transactions", "source-payloads", "transaction-observations", "dashboard", "workspaces", "workspace-invitations"))
     origin = request.headers.get("origin")
-    if private and origin and origin != browser_origin(request):
+    if private and origin and not same_browser_origin(request, origin):
         # The legacy API CORS policy must not expose cookie-authenticated HTML/CSRF.
         response = Response("Cross-origin transaction requests are not allowed.", status_code=403)
     else:
         response = await call_next(request)
     if private:
-        response.headers["Cache-Control"] = "private, no-store"
-        response.headers["Pragma"] = "no-cache"
+        response.headers.update(PRIVATE_HEADERS)
+        response.headers["Referrer-Policy"] = "no-referrer" if invitation_private else "same-origin"
         response.headers["Vary"] = "Cookie, HX-Request, HX-History-Restore-Request"
         response.headers["X-Content-Type-Options"] = "nosniff"
     if private_api:
@@ -58,6 +60,15 @@ async def private_transaction_responses(request, call_next):
     web_session = getattr(request.state, "web_session", None)
     if web_session is not None and not getattr(request.state, "suppress_session_refresh", False):
         renew_auth_cookie(response, request, web_session)
+    # Token-bearing paths are required by the public API contract. Redact the
+    # shared ASGI scope after routing so server access logs never receive tokens.
+    if invitation_private:
+        prefix = settings.API_V1_PREFIX if request.url.path.startswith(settings.API_V1_PREFIX) else ""
+        redacted = f"{prefix}/workspace-invitations/[redacted]"
+        request.scope["path"] = redacted
+        request.scope["raw_path"] = redacted.encode("ascii")
+    if b"workspace-invitations" in request.scope.get("query_string", b""):
+        request.scope["query_string"] = b"next=[redacted]"
     return response
 
 # Configure CORS

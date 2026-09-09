@@ -3,7 +3,7 @@
   <header class="flex flex-wrap items-center justify-between gap-4">
     <div><h1 class="text-3xl font-bold">Transactions</h1><p class="text-base-content/65 mt-1">Your money, one transaction at a time.</p></div>
     {% if can_create %}<a href="{{ create_url }}" class="btn btn-primary">Add transaction</a>
-    {% else %}<div><button class="btn btn-primary" disabled>Add transaction</button><p class="text-sm text-base-content/65 mt-2">Add a card before creating a transaction</p></div>{% endif %}
+    {% elif can_write %}<div><button class="btn btn-primary" disabled>Add transaction</button><p class="text-sm text-base-content/65 mt-2">Add a card before creating a transaction</p></div>{% endif %}
   </header>
   {% if message|default('') %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
   <form id="transaction-filters" method="get" action="/transactions" hx-get="/transactions" hx-target="#transaction-browser" hx-swap="outerHTML" hx-indicator="#transaction-loading" hx-sync="this:replace" class="card bg-base-100 shadow-sm" data-transaction-filters>

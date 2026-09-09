@@ -101,7 +101,7 @@ class WorkspaceMigrationTests(unittest.TestCase):
         failed = self.migrate("downgrade", "txn_summary_excl_001", success=False)
         self.assertIn("multiple workspace scopes", failed.stderr)
         with self.connect() as db:
-            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "workspace_ownership_001")
+            self.assertEqual(db.execute("SELECT version_num FROM alembic_version").fetchone()[0], "workspace_collaboration_002")
             self.assertEqual(db.execute("SELECT count(*) FROM workspaces").fetchone()[0], 2)
             self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
 
@@ -122,6 +122,28 @@ class WorkspaceMigrationTests(unittest.TestCase):
         self.migrate("upgrade", "head")
         with self.connect() as db:
             self.assertEqual(db.execute("SELECT user_id,role FROM workspace_members ORDER BY user_id").fetchall(), [(3,"owner"),(9,"editor")])
+
+    def test_invitation_constraints_and_downgrade(self):
+        self.seed(finances=False)
+        self.migrate("upgrade", "head")
+        with self.connect() as db:
+            workspace_id = db.execute("SELECT id FROM workspaces").fetchone()[0]
+            values = (workspace_id, "invitee@example.test", "viewer", "a" * 64, "2026-10-01", 3, "pending", "2026-09-08", "2026-09-08")
+            db.execute("""INSERT INTO workspace_invitations
+                (workspace_id,recipient_email,role,token_hash,expires_at,inviter_user_id,delivery_state,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""", values)
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute("""INSERT INTO workspace_invitations
+                    (workspace_id,recipient_email,role,token_hash,expires_at,inviter_user_id,delivery_state,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?)""", (*values[:3], "b" * 64, *values[4:]))
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute("UPDATE workspace_invitations SET role='owner'")
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute("UPDATE workspace_invitations SET delivery_state='unknown'")
+            self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
+        self.migrate("downgrade", "workspace_ownership_001")
+        with self.connect() as db:
+            self.assertIsNone(db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='workspace_invitations'").fetchone())
 
 
 if __name__ == "__main__":

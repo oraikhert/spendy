@@ -36,7 +36,7 @@
             {% if source.payload.context %}<details class="transaction-expander"><summary class="font-medium text-sm cursor-pointer">Ingestion context</summary><dl class="space-y-3 text-sm mt-3">{% for label, value in source.payload.context %}{{ detail_row(label, value) }}{% endfor %}</dl></details>{% endif %}
           </div>
         </details>
-        <div class="flex flex-wrap items-start justify-between gap-2 pt-1">
+        {% if can_write %}<div class="flex flex-wrap items-start justify-between gap-2 pt-1">
           <div class="ml-auto flex flex-wrap items-start gap-2">
             <button type="button" class="btn btn-ghost btn-sm" data-move-observation-trigger data-observation-id="{{ source.id }}">Move observation</button>
             <noscript><form method="post" action="/transactions/{{ transaction.id }}/sources/move" class="flex flex-wrap items-end gap-2"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}"><input type="hidden" name="source_page" value="{{ source_page }}"><input type="hidden" name="observation_id" value="{{ source.id }}"><label class="form-control"><span class="label-text">Destination transaction ID</span><input class="input input-bordered input-sm" name="transaction_id" type="number" min="1" max="2147483647" required></label><label class="label cursor-pointer gap-2"><input type="checkbox" name="allow_date_mismatch" value="true" class="checkbox checkbox-sm"><span class="label-text">Allow date mismatch</span></label><button type="submit" class="btn btn-ghost btn-sm">Move observation</button></form></noscript>
@@ -46,10 +46,10 @@
               <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
             </form>
           </div>
-        </div>
+        </div>{% endif %}
       </article>
     {% else %}<p class="text-base-content/65 py-4">No source observations linked</p>{% endfor %}
-    <dialog id="move-observation-dialog" class="modal" aria-labelledby="move-observation-title" aria-describedby="move-observation-description"{% if move_observation_id %} data-open-on-load="true"{% endif %}>
+    {% if can_write %}<dialog id="move-observation-dialog" class="modal" aria-labelledby="move-observation-title" aria-describedby="move-observation-description"{% if move_observation_id %} data-open-on-load="true"{% endif %}>
       <div class="modal-box">
         <header><h2 id="move-observation-title" class="text-2xl font-bold">Move observation{% if move_observation_id %} #{{ move_observation_id }}{% endif %}</h2><p id="move-observation-description" class="text-base-content/65 mt-2 transaction-text">Choose the destination transaction. The link will be reassigned atomically and both transactions will be recanonicalized.</p></header>
         <form method="post" action="/transactions/{{ transaction.id }}/sources/move" hx-post="/transactions/{{ transaction.id }}/sources/move" hx-target="#transaction-detail" hx-swap="outerHTML" class="mt-4" data-transaction-mutation>
@@ -74,7 +74,7 @@
           <p data-mutation-status class="text-sm mt-3" role="status" aria-live="polite"></p>
         </form>
       </div>
-    </dialog>
+    </dialog>{% endif %}
     {% if source_total %}
     <nav class="flex flex-wrap items-center justify-between gap-3 pt-2" aria-label="Source pages">
       <p class="text-sm text-base-content/65" role="status">{{ source_start }}–{{ source_end }} of {{ source_total }}</p>

@@ -29,3 +29,4 @@ class User(Base):
         return f"<User(id={self.id}, email={self.email}, username={self.username})>"
 
     workspace_memberships = relationship("WorkspaceMember", back_populates="user", cascade="all, delete-orphan")
+    workspace_invitations_sent = relationship("WorkspaceInvitation", foreign_keys="WorkspaceInvitation.inviter_user_id", back_populates="inviter")

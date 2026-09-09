@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from dataclasses import FrozenInstanceError
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
@@ -23,7 +23,7 @@ from app.core.security import create_access_token, decode_access_token
 from app.core.workspace_context import WorkspaceAccessError, WorkspaceContext
 from app.database import Base, get_db
 from app.main import app
-from app.models import Account, Card, SourcePayload, Transaction, Workspace, WorkspaceMember, User
+from app.models import Account, Card, SourcePayload, Transaction, Workspace, WorkspaceInvitation, WorkspaceMember, User
 from app.schemas.workspace import WorkspaceCreate
 from app.services import transaction_service, workspace_service
 from app.utils.canonicalization import canonicalize_transaction
@@ -265,6 +265,142 @@ class WorkspaceTests(unittest.IsolatedAsyncioTestCase):
         async with self.sessions() as db:
             self.assertEqual(await db.scalar(select(func.count(Workspace.id))),0)
             self.assertEqual(await db.scalar(select(func.count(WorkspaceMember.id))),0)
+
+    async def test_collaboration_roles_members_and_final_owner(self):
+        workspace, account, _card, _transaction = await self.financial_fixture(1)
+        async with self.sessions() as db:
+            db.add_all([
+                WorkspaceMember(user_id=2, workspace_id=workspace, role="editor"),
+                WorkspaceMember(user_id=3, workspace_id=workspace, role="viewer"),
+            ])
+            await db.commit()
+        for user in (1, 2, 3):
+            self.assertEqual((await self.client.get("/api/v1/accounts", headers=self.headers(user, workspace))).status_code, 200)
+        body = {"institution":"Synthetic", "name":"Role write", "account_currency":"AED", "timezone":"Asia/Dubai"}
+        self.assertEqual((await self.client.post("/api/v1/accounts", headers=self.headers(1, workspace), json=body)).status_code, 201)
+        self.assertEqual((await self.client.post("/api/v1/accounts", headers=self.headers(2, workspace), json=body)).status_code, 201)
+        self.assertEqual((await self.client.post("/api/v1/accounts", headers=self.headers(3, workspace), json=body)).status_code, 403)
+        self.assertEqual((await self.client.get(f"/api/v1/workspaces/{workspace}/members", headers=self.headers(3))).status_code, 200)
+        self.assertEqual((await self.client.patch(f"/api/v1/workspaces/{workspace}/members/3", headers=self.headers(2), json={"role":"editor"})).status_code, 403)
+        self.assertEqual((await self.client.patch(f"/api/v1/workspaces/{workspace}", headers=self.headers(2), json={"name":"Denied"})).status_code, 403)
+        self.assertEqual((await self.client.patch(f"/api/v1/workspaces/{workspace}", headers=self.headers(1), json={"name":"Renamed"})).status_code, 200)
+        self.assertEqual((await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(2), json={"recipient_email":"nobody@example.com","role":"viewer"})).status_code, 403)
+        for method, path, body in (
+            ("PATCH", f"/api/v1/workspaces/{workspace}/members/1", {"role":"editor"}),
+            ("DELETE", f"/api/v1/workspaces/{workspace}/members/1", None),
+            ("POST", f"/api/v1/workspaces/{workspace}/leave", None),
+        ):
+            response = await self.client.request(method, path, headers=self.headers(1), json=body)
+            self.assertEqual(response.status_code, 409, response.text)
+        response = await self.client.patch(f"/api/v1/workspaces/{workspace}/members/2", headers=self.headers(1), json={"role":"owner"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual((await self.client.patch(f"/api/v1/workspaces/{workspace}/members/1", headers=self.headers(1), json={"role":"viewer"})).status_code, 200)
+        async with self.sessions() as db:
+            owners = await db.scalar(select(func.count()).select_from(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace, WorkspaceMember.role == "owner"))
+            self.assertEqual(owners, 1)
+
+    async def test_concurrent_owner_changes_preserve_an_owner(self):
+        import asyncio
+        workspace = await self.create(1)
+        async with self.sessions() as db:
+            db.add(WorkspaceMember(user_id=2, workspace_id=workspace, role="owner"))
+            await db.commit()
+
+        async def demote(actor, target):
+            return await self.client.patch(
+                f"/api/v1/workspaces/{workspace}/members/{target}",
+                headers=self.headers(actor), json={"role":"editor"})
+
+        responses = await asyncio.gather(demote(1, 2), demote(2, 1))
+        self.assertIn(200, [response.status_code for response in responses])
+        self.assertTrue(any(response.status_code in {403, 409} for response in responses))
+        async with self.sessions() as db:
+            owners = await db.scalar(select(func.count()).select_from(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace, WorkspaceMember.role == "owner"))
+            self.assertEqual(owners, 1)
+
+    async def test_invitation_delivery_rotation_validation_and_acceptance(self):
+        workspace = await self.create(1)
+        sent_tokens = []
+
+        async def delivered(_recipient, _workspace, _role, token):
+            sent_tokens.append(token)
+
+        with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivered):
+            response = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"User2@Example.com", "role":"editor"})
+        self.assertEqual(response.status_code, 201, response.text)
+        invitation_id = response.json()["id"]
+        token = sent_tokens[-1]
+        duplicate = await self.client.post(
+            f"/api/v1/workspaces/{workspace}/invitations",
+            headers=self.headers(1),
+            json={"recipient_email": "user2@example.com", "role": "viewer"},
+        )
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+        async with self.sessions() as db:
+            invitation = await db.get(WorkspaceInvitation, invitation_id)
+            self.assertNotEqual(invitation.token_hash, token)
+            self.assertEqual(invitation.recipient_email, "user2@example.com")
+        public = await self.client.get(f"/api/v1/workspace-invitations/{token}")
+        self.assertEqual(public.status_code, 200, public.text)
+        self.assertEqual(public.json()["masked_recipient_email"], "u***@example.com")
+        mismatch = await self.client.post(f"/api/v1/workspace-invitations/{token}/accept", headers=self.headers(3))
+        self.assertEqual(mismatch.status_code, 403, mismatch.text)
+        accepted = await self.client.post(f"/api/v1/workspace-invitations/{token}/accept", headers=self.headers(2))
+        self.assertEqual((accepted.status_code, accepted.json()["role"]), (201, "editor"))
+        self.assertEqual((await self.client.post(f"/api/v1/workspace-invitations/{token}/accept", headers=self.headers(2))).status_code, 409)
+
+        failed_tokens = []
+
+        async def delivery_failed(_recipient, _workspace, _role, raw_token):
+            failed_tokens.append(raw_token)
+            raise RuntimeError("synthetic smtp failure")
+
+        with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivery_failed):
+            failed = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"user3@example.com", "role":"viewer"})
+        self.assertEqual(failed.status_code, 502, failed.text)
+        invitations = (await self.client.get(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1))).json()
+        failed_invitation = next(item for item in invitations if item["recipient_email"] == "user3@example.com")
+        self.assertEqual(failed_invitation["delivery_state"], "failed")
+        with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivered):
+            resent = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations/{failed_invitation['id']}/resend", headers=self.headers(1))
+        self.assertEqual(resent.status_code, 200, resent.text)
+        rotated = sent_tokens[-1]
+        self.assertNotEqual(rotated, failed_tokens[-1])
+        self.assertEqual((await self.client.get(f"/api/v1/workspace-invitations/{failed_tokens[-1]}")).status_code, 404)
+        self.assertEqual((await self.client.get(f"/api/v1/workspace-invitations/{rotated}")).status_code, 200)
+        await self.client.delete(f"/api/v1/workspaces/{workspace}/invitations/{failed_invitation['id']}", headers=self.headers(1))
+        self.assertEqual((await self.client.get(f"/api/v1/workspace-invitations/{rotated}")).status_code, 409)
+
+        with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivered):
+            expiring = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"expired@example.com", "role":"viewer"})
+        expiring_token = sent_tokens[-1]
+        async with self.sessions() as db:
+            invitation = await db.get(WorkspaceInvitation, expiring.json()["id"])
+            invitation.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            await db.commit()
+        self.assertEqual((await self.client.get(f"/api/v1/workspace-invitations/{expiring_token}")).status_code, 410)
+
+    async def test_invite_registration_bypasses_public_registration_atomically(self):
+        workspace = await self.create(1)
+        captured = []
+
+        async def delivered(_recipient, _workspace, _role, token):
+            captured.append(token)
+
+        with patch.object(workspace_service, "send_workspace_invitation", side_effect=delivered):
+            created = await self.client.post(f"/api/v1/workspaces/{workspace}/invitations", headers=self.headers(1), json={"recipient_email":"invited@example.com", "role":"viewer"})
+        self.assertEqual(created.status_code, 201, created.text)
+        with patch.object(settings, "REGISTRATION_ENABLED", False):
+            self.assertEqual((await self.client.post("/api/v1/auth/register", json={"email":"blocked@example.com","username":"blocked-user","password":"synthetic-password"})).status_code, 403)
+            registered = await self.client.post(f"/api/v1/workspace-invitations/{captured[-1]}/register", json={"username":"invited-user", "password":"synthetic-password", "full_name":"Invited User"})
+        self.assertEqual(registered.status_code, 201, registered.text)
+        self.assertEqual(registered.json()["email"], "invited@example.com")
+        async with self.sessions() as db:
+            self.assertEqual(await db.scalar(select(func.count(Workspace.id))), 1)
+            invited = await db.scalar(select(User).where(User.email == "invited@example.com"))
+            member = await db.scalar(select(WorkspaceMember).where(WorkspaceMember.user_id == invited.id))
+            self.assertEqual((member.workspace_id, member.role), (workspace, "viewer"))
 
 
 if __name__ == "__main__":

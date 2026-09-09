@@ -1,5 +1,6 @@
 """Web authentication routes for Jinja2 + HTMX."""
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -12,7 +13,7 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate
 from app.core.deps import get_current_user_from_cookie, get_current_user_from_cookie_required
-from app.core.web_session import ACCESS_TOKEN_COOKIE, browser_origin, set_auth_cookie
+from app.core.web_session import ACCESS_TOKEN_COOKIE, same_browser_origin, set_auth_cookie
 from app.services import auth_service, user_service
 
 router = APIRouter()
@@ -27,9 +28,20 @@ def _render_alert(request: Request, message: str, kind: str = "error") -> HTMLRe
     )
 
 
+def _safe_next(value: str | None) -> str:
+    if not value or len(value) > 512:
+        return "/dashboard"
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/workspace-invitations/"):
+        return "/dashboard"
+    return value
+
+
 def _htmx_redirect(url: str, token_value: str, request: Request) -> Response:
-    response = Response(status_code=200)
-    response.headers["HX-Redirect"] = url
+    if request.headers.get("HX-Request") == "true" or request.url.path == "/auth/register":
+        response = Response(status_code=200, headers={"HX-Redirect": url})
+    else:
+        response = RedirectResponse(url=url, status_code=303)
     set_auth_cookie(response, token_value, request)
     return response
 
@@ -41,11 +53,11 @@ async def login_page(
 ):
     """Display login page. Redirects to dashboard if already authenticated."""
     if user:
-        return RedirectResponse(url="/dashboard", status_code=303)
+        return RedirectResponse(url=_safe_next(request.query_params.get("next")), status_code=303)
     return templates.TemplateResponse(
         request=request,
         name="auth/login.html",
-        context={"registration_enabled": settings.REGISTRATION_ENABLED},
+        context={"registration_enabled": settings.REGISTRATION_ENABLED, "next": _safe_next(request.query_params.get("next"))},
     )
 
 
@@ -54,13 +66,14 @@ async def login_post(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
+    next: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ):
     """Process login form submission (HTMX)."""
     try:
         user = await auth_service.authenticate_user(username, password, db)
         token = await auth_service.create_user_access_token(user)
-        return _htmx_redirect("/dashboard", token.access_token, request)
+        return _htmx_redirect(_safe_next(next), token.access_token, request)
     except ValueError as e:
         return _render_alert(request, str(e), kind="error")
 
@@ -128,7 +141,7 @@ async def refresh_session(
     """Record same-origin browser activity; middleware advances the idle deadline."""
     origin = request.headers.get("origin")
     activity_header = request.headers.get("x-spendy-session-activity")
-    if origin != browser_origin(request) or activity_header != "true":
+    if not same_browser_origin(request, origin) or activity_header != "true":
         request.state.suppress_session_refresh = True
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid session activity request")
     return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "private, no-store"})

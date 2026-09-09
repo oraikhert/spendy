@@ -27,3 +27,4 @@ api_router.include_router(meta.router)
 api_router.include_router(exchange_rates.router)
 
 api_router.include_router(workspaces.router)
+api_router.include_router(workspaces.invitation_router)

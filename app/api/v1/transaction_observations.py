@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.workspace_context import WorkspaceContext
-from app.core.workspace_deps import get_api_workspace, WorkspaceRoute
+from app.core.workspace_deps import get_api_workspace, get_api_workspace_write, WorkspaceRoute
 from app.database import get_db
 from app.schemas.transaction import MAX_RECORD_ID, TransactionResponse
 from app.schemas.transaction_observation import (
@@ -95,7 +95,7 @@ async def link_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     link_data: TransactionLinkCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)],
 ):
     try:
         return await source_processing_service.link_observation_to_transaction(
@@ -114,7 +114,7 @@ async def move_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     link_data: TransactionMoveCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)],
 ):
     try:
         return await source_processing_service.move_observation_to_transaction(
@@ -137,7 +137,7 @@ async def create_transaction_from_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     transaction_data: TransactionCreateFromObservation,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)],
 ):
     try:
         return await source_processing_service.create_transaction_from_observation(
@@ -152,7 +152,7 @@ async def create_transaction_from_observation(
 async def unlink_observation(
     observation_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)],
 ):
     if not await source_processing_service.unlink_observation(context, db, observation_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")

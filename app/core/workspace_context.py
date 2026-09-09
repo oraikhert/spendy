@@ -24,6 +24,10 @@ class WorkspaceContext:
         if self.role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
             raise WorkspaceAccessError(403, "Forbidden")
 
+    def require_admin(self) -> None:
+        if self.role is not WorkspaceRole.OWNER:
+            raise WorkspaceAccessError(403, "Forbidden")
+
     def require_record(self, record) -> None:
         if record.workspace_id != self.workspace_id:
             raise WorkspaceAccessError(404, "Not Found")

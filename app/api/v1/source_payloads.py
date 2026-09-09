@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Path,
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.workspace_context import WorkspaceContext
-from app.core.workspace_deps import get_api_workspace, WorkspaceRoute
+from app.core.workspace_deps import get_api_workspace, get_api_workspace_write, WorkspaceRoute
 from app.database import get_db
 from app.models.source_payload import IngestionMethod, ProcessingStatus, SourceKind
 from app.schemas.source_payload import (
@@ -59,7 +59,7 @@ async def create_text_payload(
     source_data: SourcePayloadCreateText,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)],
     idempotency_key: Annotated[
         str | None, Header(alias="Idempotency-Key", min_length=1, max_length=255)
     ] = None,
@@ -82,7 +82,7 @@ async def create_upload_payload(
     file: Annotated[UploadFile, File()],
     source_kind: Annotated[SourceKind, Form()],
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)],
     account_id: Annotated[int | None, Form(gt=0, le=MAX_RECORD_ID)] = None,
     card_id: Annotated[int | None, Form(gt=0, le=MAX_RECORD_ID)] = None,
     source_timezone: Annotated[str | None, Form(min_length=1, max_length=64)] = None,
@@ -156,7 +156,7 @@ async def get_source_payload(
 async def reprocess_source_payload(
     payload_id: Annotated[int, Path(gt=0, le=MAX_RECORD_ID)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)],
     force_manual_links: bool = Query(
         False,
         description="Explicitly allow replacement of manually linked observations",

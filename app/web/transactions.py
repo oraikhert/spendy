@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.workspace_context import WorkspaceContext
-from app.core.workspace_deps import get_web_workspace, WorkspaceRoute
+from app.core.workspace_deps import get_web_workspace, get_web_workspace_write, WorkspaceRoute
 from app.core.deps import get_current_user_from_cookie_required
 from app.database import get_db
 from app.models.user import User
@@ -188,7 +188,7 @@ async def transaction_list(context: Annotated[WorkspaceContext, Depends(get_web_
                    "end": min(current_page * 50, total), "previous_url": parsed.url(current_page - 1) if parsed and current_page > 1 else None,
                    "next_url": parsed.url(current_page + 1) if parsed and current_page * 50 < total else None,
                    "errors": errors, "advanced_count": advanced, "has_filters": any(values.get(k) for k in values if k not in {"page", "period"}) or values.get("period") != "all",
-                   "can_create": bool(refs["cards"]), "return_url": return_url, "create_url": "/transactions/new?" + urlencode(create_params)}
+                   "can_write": context.role.value != "viewer", "can_create": context.role.value != "viewer" and bool(refs["cards"]), "return_url": return_url, "create_url": "/transactions/new?" + urlencode(create_params)}
         response = render(request, user, "_browser" if is_htmx(request) else "list", view_context, 422 if errors else 200)
         if is_htmx(request) and not errors:
             response.headers["HX-Push-Url"] = return_url
@@ -226,7 +226,7 @@ async def form_response(context: WorkspaceContext, request, db, user, transactio
     view_context = {**refs, "values": values, "errors": errors or {}, "transaction": transaction, "return_url": return_url,
                "cancel_url": detail_url(transaction.id, return_url) if transaction else return_url,
                "form_action": f"/transactions/{transaction.id}/edit" if transaction else "/transactions/new",
-               "submit_label": "Save changes" if transaction else "Create transaction", "can_create": bool(refs["cards"]), "title": title,
+               "submit_label": "Save changes" if transaction else "Create transaction", "can_write": True, "can_create": bool(refs["cards"]), "title": title,
                "blocked": status in {403, 503},
                "currency_manually_edited": getattr(request.state, "currency_manually_edited", False),
                "more_details": bool(any(values.get(key) for key in ("posting_datetime", "location", "original_amount", "original_currency", "fx_rate")) or errors)}
@@ -234,7 +234,7 @@ async def form_response(context: WorkspaceContext, request, db, user, transactio
 
 
 @router.get("/new", response_class=HTMLResponse)
-async def new_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, db: DB, user: ActiveUser):
+async def new_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace_write)], request: Request, db: DB, user: ActiveUser):
     return await form_response(context, request, db, user)
 
 
@@ -284,7 +284,7 @@ async def save_form(context: WorkspaceContext, request, db, user, transaction=No
 
 
 @router.post("/new", response_class=HTMLResponse)
-async def create_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, db: DB, user: ActiveUser):
+async def create_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace_write)], request: Request, db: DB, user: ActiveUser):
     return await save_form(context, request, db, user)
 
 
@@ -481,7 +481,7 @@ async def detail_response(
             else "Transaction included in the summary."
         )
     view_context = await sources_context(context, request, db, transaction, return_url, page, message, move_state)
-    view_context.update(transaction=transaction, return_url=return_url, back_url=return_url,
+    view_context.update(transaction=transaction, return_url=return_url, back_url=return_url, can_write=context.role.value != "viewer",
                    edit_url=f"/transactions/{transaction.id}/edit?" + urlencode({"return_url": return_url}),
                    message=detail_message or ("Transaction saved." if request.query_params.get("saved") == "1" else None))
     if is_htmx(request):
@@ -490,7 +490,7 @@ async def detail_response(
 
 
 @router.get("/{transaction_id}/edit", response_class=HTMLResponse)
-async def edit_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
+async def edit_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace_write)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
     transaction = await lookup(context, db, transaction_id)
     if transaction is None:
         return error_page(request, user, "This transaction no longer exists.", back_url=safe_return_url(request.query_params.get("return_url")))
@@ -498,7 +498,7 @@ async def edit_page(context: Annotated[WorkspaceContext, Depends(get_web_workspa
 
 
 @router.post("/{transaction_id}/edit", response_class=HTMLResponse)
-async def update_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
+async def update_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace_write)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
     transaction = await lookup(context, db, transaction_id)
     if transaction is None:
         return error_page(request, user, "This transaction no longer exists.")
@@ -581,7 +581,7 @@ async def move_error_response(
 
 @router.post("/{transaction_id}/sources/move", response_class=HTMLResponse)
 async def move_observation_page(
-    context: Annotated[WorkspaceContext, Depends(get_web_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_web_workspace_write)],
     request: Request, transaction_id: str, db: DB, user: ActiveUser
 ):
     posted = await request.form()
@@ -675,7 +675,7 @@ async def move_observation_page(
 
 
 @router.post("/{transaction_id}/delete", response_class=HTMLResponse)
-async def delete_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
+async def delete_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace_write)], request: Request, transaction_id: str, db: DB, user: ActiveUser):
     posted = await request.form()
     return_url = safe_return_url(posted.get("return_url"))
     transaction = await lookup(context, db, transaction_id)
@@ -694,7 +694,7 @@ async def delete_page(context: Annotated[WorkspaceContext, Depends(get_web_works
 
 @router.post("/{transaction_id}/summary-exclusion", response_class=HTMLResponse)
 async def set_summary_exclusion_page(
-    context: Annotated[WorkspaceContext, Depends(get_web_workspace)],
+    context: Annotated[WorkspaceContext, Depends(get_web_workspace_write)],
     request: Request, transaction_id: str, db: DB, user: ActiveUser
 ):
     posted = await request.form()
@@ -762,7 +762,7 @@ async def set_summary_exclusion_page(
 
 
 @router.post("/{transaction_id}/sources/{observation_id}/unlink", response_class=HTMLResponse)
-async def unlink_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace)], request: Request, transaction_id: str, observation_id: str, db: DB, user: ActiveUser):
+async def unlink_page(context: Annotated[WorkspaceContext, Depends(get_web_workspace_write)], request: Request, transaction_id: str, observation_id: str, db: DB, user: ActiveUser):
     posted = await request.form()
     return_url = safe_return_url(posted.get("return_url"))
     transaction = await lookup(context, db, transaction_id)

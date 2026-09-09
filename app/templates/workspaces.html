@@ -2,18 +2,20 @@
 {% block title %}Workspaces · Spendy{% endblock %}
 {% block content %}
 <div class="max-w-xl mx-auto p-4 space-y-6" hx-history="false">
-  <h1 class="text-2xl font-bold">Your workspaces</h1>
-  <p>Choose a workspace for your finances or create one to get started.</p>
+  <header>
+    <h1 class="text-3xl font-bold">Your workspaces</h1>
+    <p class="text-base-content/65 mt-1">Choose a workspace for your finances or create one to get started.</p>
+  </header>
   {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
   {% for workspace in workspaces %}
   <div class="card bg-base-100 shadow p-4 gap-3">
     <h2 class="font-semibold break-words">{{ workspace.name }}</h2>
     <p>{{ workspace.role.value|capitalize }} · {{ workspace.status|capitalize }}</p>
     {% if workspace.status == 'active' %}
-    <form method="post" action="/workspaces/{{ workspace.id }}/select">
+    <div class="flex flex-wrap gap-2"><form method="post" action="/workspaces/{{ workspace.id }}/select">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="btn btn-primary" type="submit">Select <span class="sr-only">{{ workspace.name }}</span></button>
-    </form>
+    </form><a class="btn btn-outline" href="/workspaces/{{ workspace.id }}">Manage <span class="sr-only">{{ workspace.name }}</span></a></div>
     {% endif %}
   </div>
   {% endfor %}

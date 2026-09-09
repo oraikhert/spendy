@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.workspace_context import WorkspaceContext
-from app.core.workspace_deps import get_api_workspace, WorkspaceRoute
+from app.core.workspace_deps import get_api_workspace, get_api_workspace_write, WorkspaceRoute
 from app.database import get_db
 from app.schemas.account import AccountCreate, AccountUpdate, AccountResponse
 from app.services import account_service
@@ -27,7 +27,7 @@ async def get_accounts(
 async def create_account(
     account_data: AccountCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Create a new account"""
     account = await account_service.create_account(context, db, account_data)
@@ -55,7 +55,7 @@ async def update_account(
     account_id: int,
     account_data: AccountUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Update account"""
     account = await account_service.update_account(context, db, account_id, account_data)
@@ -71,7 +71,7 @@ async def update_account(
 async def delete_account(
     account_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Delete account"""
     success = await account_service.delete_account(context, db, account_id)

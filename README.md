@@ -2,12 +2,14 @@
 
 Spendy tracks accounts, cards, transactions and their source messages/files.
 The JSON API supports transaction management, SMS parsing, matching and summaries.
-The web UI provides login, optional registration, a calendar-year spending dashboard
-with separate currency totals and date-range drill-down links, and transaction
+The web UI provides login, optional or invitation-only registration, collaborative
+workspaces with owner/editor/viewer roles, a calendar-year spending dashboard with
+separate currency totals and date-range drill-down links, and transaction
 list/detail/create/edit pages with filters, deletion and linked source-observation
-details. Uploaded files are private backend inputs and cannot be downloaded. The API parses Emirates NBD credit-card
-statement PDFs; other PDF/image formats are not implemented. Family groups, budgets,
-reports, and account/card management pages remain future work.
+details. Uploaded files are private backend inputs and cannot be downloaded. The API
+parses Emirates NBD credit-card statement PDFs; other PDF/image formats are not
+implemented. Budgets, reports, workspace lifecycle operations, and account/card
+management pages remain future work.
 
 Built with FastAPI, async SQLAlchemy, Pydantic, Alembic and SQLite/PostgreSQL.
 The UI uses Jinja2, HTMX, Tailwind CSS and DaisyUI; no frontend build is required.
@@ -21,7 +23,7 @@ Read the document for your task; there is no need to load the entire documentati
 | Install, run, use the API or run checks | This README |
 | Locate code or understand architectural decisions | [Architecture](docs/ARCHITECTURE.md) |
 | Understand workspace ownership, roles and access | [Workspaces](docs/WORKSPACES.md) |
-| Implement workspaces, iteration 1 | [Workspace development task v1](docs/requirements/WORKSPACES_v1.md) |
+| Implement workspaces | [Workspace development task v1](docs/requirements/WORKSPACES_v1.md) |
 | Understand the dashboard summary | [Dashboard UI](docs/ui/DASHBOARD.md) |
 | Implement the dashboard summary, iteration 1 | [Dashboard UI task v1](docs/requirements/DASHBOARD_UI_v1.md) |
 | Understand transaction screens and behavior | [Transactions UI](docs/ui/TRANSACTIONS.md) |
@@ -74,6 +76,9 @@ python run.py
 Open [the web UI](http://localhost:8000), register, log in and explicitly create a
 workspace from onboarding. To close registration afterward, set `REGISTRATION_ENABLED=false` and restart. For installations where
 self-registration stays disabled, use [manual user creation](docs/DEPLOYMENT.md#users).
+Invited recipients can still register through a valid invitation when public
+registration is disabled. Configure invitation SMTP delivery and `PUBLIC_BASE_URL`
+before using that workflow; see [Deployment](docs/DEPLOYMENT.md#configuration).
 Set a unique `SECRET_KEY` before using the app with real data. Web login sessions use
 `ACCESS_TOKEN_EXPIRE_MINUTES` as an inactivity timeout: authenticated requests and
 recent keyboard, pointer, touch, or scroll activity advance the deadline, while an
@@ -147,6 +152,7 @@ Run the transaction, source-processing and dashboard regressions without a runni
 
 ```bash
 python tests/test_workspaces.py
+python tests/test_workspaces_web.py
 python tests/test_workspace_migration.py
 python tests/test_transaction_service.py
 python tests/test_transactions_web.py

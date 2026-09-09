@@ -1,16 +1,26 @@
 {# app/templates/partials/_navbar.html #}
 {% set initial = (user.username[:1] if user and user.username else "U")|upper %}
 
-<div class="navbar flex-wrap bg-base-100 shadow">
-  <div class="flex-1">
-    <a href="/dashboard" class="btn btn-ghost text-xl">💰 Spendy</a>
-  </div>
+<div class="navbar flex-wrap items-center gap-y-2 bg-base-100 p-0 shadow">
+  <div class="container mx-auto flex w-full flex-wrap items-center gap-y-2 p-4">
+    <div class="order-1 flex-1 min-w-0">
+      <a href="/dashboard" class="btn btn-ghost px-0 text-xl">💰 Spendy</a>
+    </div>
 
-  <div class="flex-none gap-2">
-    {% if user %}
-      <a href="/workspaces" class="btn btn-ghost btn-sm max-w-32 truncate" aria-label="Choose workspace">{{ request.state.workspace_context.workspace_name if request.state.workspace_context is defined else 'Workspaces' }}</a>
-      <a href="/transactions" class="btn btn-ghost btn-sm" {% if request.url.path.startswith('/transactions') %}aria-current="page"{% endif %}>Transactions</a>
-      <div class="dropdown dropdown-end">
+  {% if user %}
+    <nav class="order-3 flex w-full min-w-0 items-center gap-1 pb-1 sm:order-2 sm:w-auto sm:pb-0" aria-label="Primary navigation">
+      {% if request.state.active_workspaces is defined and request.state.active_workspaces|length > 1 and csrf_token is defined %}
+      <form method="post" action="/workspaces/select" class="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ request.url.path }}">
+        <label class="sr-only" for="nav-workspace">Workspace</label>
+        <select id="nav-workspace" name="workspace_id" class="select select-sm min-w-0 flex-1 sm:w-40" aria-label="Workspace">
+          {% for item in request.state.active_workspaces %}<option value="{{ item.id }}" {% if request.state.workspace_context is defined and item.id == request.state.workspace_context.workspace_id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+        </select><button class="btn btn-ghost btn-sm shrink-0" type="submit">Switch</button>
+      </form>
+      {% else %}<a href="/workspaces" class="btn btn-ghost btn-sm max-w-32 truncate" aria-label="Choose workspace">{{ request.state.workspace_context.workspace_name if request.state.workspace_context is defined else 'Workspaces' }}</a>{% endif %}
+    </nav>
+
+    <div class="dropdown dropdown-end order-2 flex-none sm:order-3">
         <button
           type="button"
           tabindex="0"
@@ -32,12 +42,14 @@
           <li><a href="/transactions">Transactions</a></li>
           <li><a href="/auth/logout">Log out</a></li>
         </ul>
-      </div>
-    {% else %}
+    </div>
+  {% else %}
+    <div class="order-2 flex flex-none items-center gap-2">
       <a href="/auth/login" class="btn btn-ghost">Log in</a>
       {% if registration_enabled|default(true) %}
         <a href="/auth/register" class="btn btn-primary btn-sm">Sign up</a>
       {% endif %}
-    {% endif %}
+    </div>
+  {% endif %}
   </div>
 </div>

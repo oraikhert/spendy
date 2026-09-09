@@ -85,8 +85,10 @@ in [Transactions UI](ui/TRANSACTIONS.md).
   transaction. A transaction can be supported by many observations.
 - **BankStatementDetail** stores statement-wide metadata separately from its rows.
 - **User** stores global login identity. **WorkspaceMember** connects users to
-  **Workspace** with a local role. Every financial record belongs to a workspace;
-  composite foreign keys enforce same-workspace parent relationships.
+  **Workspace** with a local role, and **WorkspaceInvitation** stores a normalized
+  recipient plus only a cryptographic token hash and delivery/lifecycle state. Every
+  financial record belongs to a workspace; composite foreign keys enforce
+  same-workspace parent relationships.
 
 Models are the source for current fields and relationships; revisions in
 [alembic/versions/](../alembic/versions/) define how deployed schemas evolve.
@@ -103,7 +105,10 @@ defined in [Workspaces](WORKSPACES.md#workspace-context-and-isolation).
 Registration is controlled by `REGISTRATION_ENABLED` in API/web routes. The example
 `.env` disables it; the code default without that setting is enabled. The administrative
 creation script calls the user service directly and does not use that switch. All
-normal registration paths create only a user; workspace creation is explicit.
+normal registration paths create only a user; workspace creation is explicit. A valid
+invitation enables a separate fixed-email registration transaction even when public
+registration is disabled, atomically creating the user and membership without a
+personal workspace.
 
 Cookie login uses HttpOnly and SameSite=Lax; Secure depends on the request scheme.
 Transaction pages, fragments and mutations require an active cookie user.
@@ -112,13 +117,17 @@ The cookie JWT has a sliding inactivity deadline configured by
 pages report recent visible-tab keyboard, pointer, touch and scroll activity through
 a throttled same-origin endpoint. An idle or hidden page sends no heartbeat. Tokens
 renewed during one login retain a signed session ID so existing forms remain valid.
-Every transaction create/edit/delete/unlink POST validates a server-generated CSRF
-token bound to that login session; an HTMX header alone grants no access. Other cookie
-flows do not inherit this CSRF check automatically. Expired HTMX sessions use a full
-login redirect. Workspace create/select forms use the same login-bound CSRF check.
+Every financial and workspace mutation form validates a server-generated CSRF token
+bound to that login session; an HTMX header alone grants no access. Public invitation
+registration binds its token to the invitation path. Expired HTMX sessions use a full
+login redirect. Invitation, workspace and transaction responses containing private
+state are not stored by clients.
 Selection reissues the signed cookie while preserving its session ID, and every
-financial request revalidates membership. Financial and workspace web routes reject an explicit cross-origin `Origin` header, including on
-reads, so the existing JSON API CORS policy cannot expose cookie HTML or CSRF tokens.
+financial request revalidates membership. Financial, workspace and invitation web
+routes reject an explicit cross-origin `Origin` header, including on reads, so the
+existing JSON API CORS policy cannot expose cookie HTML or CSRF tokens. The comparison
+accepts the request-derived origin and the normalized `PUBLIC_BASE_URL` origin so a
+correctly configured reverse proxy may expose an internal request Host.
 
 The read-only Dashboard summarizes the selected workspace through one service operation.
 The JSON representation at `GET /api/v1/dashboard` requires an active bearer-token

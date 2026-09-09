@@ -2,7 +2,7 @@
 <div id="transaction-detail" class="space-y-6">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <a class="link link-hover" href="{{ back_url }}">← Back to transactions</a>
-    <a class="btn btn-outline" href="{{ edit_url }}">Edit</a>
+    {% if can_write %}<a class="btn btn-outline" href="{{ edit_url }}">Edit</a>{% endif %}
   </div>
   <div id="transaction-summary-message">{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}</div>
   <header class="card bg-base-100 shadow-sm"><div class="card-body gap-3">
@@ -45,7 +45,7 @@
           {% if transaction.fx_fee is not none %}{{ detail_row('Recorded FX fee', transaction.fx_fee) }}<p class="text-sm text-base-content/65">Fee currency is not recorded. This fee is read-only and excluded from calculations.</p>{% endif %}
         </dl>
       </details>
-      <div class="mt-6 flex flex-wrap items-start gap-3">
+      {% if can_write %}<div class="mt-6 flex flex-wrap items-start gap-3">
         <form method="post" action="/transactions/{{ transaction.id }}/summary-exclusion" hx-post="/transactions/{{ transaction.id }}/summary-exclusion" hx-target="#transaction-detail" hx-swap="outerHTML show:#transaction-summary-message:top">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="return_url" value="{{ return_url }}">
           <input type="hidden" name="excluded_from_summary" value="{{ 'false' if transaction.excluded_from_summary else 'true' }}">
@@ -56,7 +56,7 @@
           <button class="btn btn-outline btn-error" type="submit">Delete transaction</button>
           <p class="text-sm mt-2" data-mutation-status role="status" aria-live="polite"></p>
         </form>
-      </div>
+      </div>{% endif %}
     </div></section>
     {% include "transactions/_sources.html" %}
   </div>

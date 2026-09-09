@@ -1,6 +1,6 @@
 # Workspaces — development task v1
 
-Iteration: **v1** · Status: **In progress — Iteration 1 complete** · Baseline: **2026-09-08**
+Iteration: **v1** · Status: **In progress — Iterations 1 and 2 complete** · Baseline: **2026-09-08**
 
 Implement the [Workspace contract](../WORKSPACES.md) in three independently
 acceptable delivery stages. That document defines the target behavior; this task
@@ -185,9 +185,54 @@ telemetry.
 
 ### Completion record
 
-Record completion date, Workspace contract revision, declared SMTP dependency and
-configuration, focused checks, regression scripts, browser widths and untested
-delivery environments.
+Completed **2026-09-09**, against the Workspace contract at Git revision
+`7907e54d4ae428880000c0dd336b0c8d59f3bf39`. Migration:
+`workspace_collaboration_002`, following `workspace_ownership_001`.
+
+Implemented the owner/editor/viewer financial role matrix in services and both route
+layers; owner-only rename, membership and invitation administration; member leave;
+and serialized final-owner protection. Added request-driven invitation creation,
+safe inspection, acceptance and invite-only registration. Only SHA-256 token hashes
+are persisted. Creation/resend commits the pending token before delivery; delivery
+records `sent` or retained `failed`, and resend rotates the token. Workspace switching
+retains the signed session ID and refreshes the complete scoped dataset. Shared
+session-bound CSRF, same-origin and private/no-store helpers now cover transaction,
+workspace and invitation forms; all collaboration forms have ordinary POST behavior.
+
+Declared `aiosmtplib>=5.1.2,<6.0.0` without changing other dependency constraints;
+5.1.3 was used locally. Added `SMTP_HOST`, `SMTP_PORT`, optional
+`SMTP_USERNAME`/`SMTP_PASSWORD`, `SMTP_SENDER`, `SMTP_STARTTLS`,
+`PUBLIC_BASE_URL`, bounded `SMTP_TIMEOUT_SECONDS`, and bounded
+`WORKSPACE_INVITATION_LIFETIME_DAYS` (seven days by default).
+
+Verification used disposable SQLite databases, synthetic users and mocked SMTP:
+
+- `tests/test_workspaces.py`: representative financial read/write behavior for all
+  roles; owner-only administration; all final-owner cases including concurrent
+  demotion; normalization/one-actionable constraint; send success, retained failure,
+  resend rotation, expiry, revocation, replay and email mismatch; existing-user
+  acceptance and invite registration with public registration disabled.
+- `tests/test_workspaces_web.py`: selected-workspace dataset replacement with stable
+  session ID, role-aware controls, immediate removal, invitation landing/login return
+  and acceptance, invite registration while public registration is disabled, CSRF
+  rejection, and explicit foreign-Origin rejection.
+- `tests/test_workspace_migration.py`: invitation schema constraints plus reversible
+  SQLite upgrade/downgrade. Focused and affected auth/session, transaction, dashboard
+  and workspace-isolation regressions passed as listed in the implementation handoff.
+- Browser checks covered the collaboration/onboarding pages at desktop and 360 × 800,
+  including keyboard-reachable controls and no horizontal document overflow. Actual
+  Chrome selection of both local workspaces redirected to the Dashboard, updated the
+  selected-workspace navigation and showed different scoped financial totals.
+- `git diff --check`, Python compilation and `alembic check` passed; the complete
+  implementation and migration diff was reviewed.
+
+No real SMTP server, provider account, external network, personal email/database or
+PostgreSQL migration execution was used. Consequently provider authentication,
+STARTTLS/certificate behavior, outbound firewall/DNS, throttling, reputation and
+production PostgreSQL execution remain untested. Delivery remains synchronous to the
+request with bounded timeout and manual resend only; there is no worker, schedule or
+provider telemetry. Workspace archive, restore and permanent deletion remain Iteration
+3. No blockers remain for Iteration 2. **Workspace v1 remains open for Iteration 3.**
 
 ## Iteration 3 — lifecycle and hardening
 

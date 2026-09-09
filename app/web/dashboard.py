@@ -19,6 +19,7 @@ from app.services.dashboard_service import (
 )
 from app.web.presentation import money
 from app.web.transaction_helpers import ListFilters
+from app.web.security import csrf_token
 
 
 router = APIRouter(route_class=WorkspaceRoute, tags=["web-dashboard"])
@@ -40,7 +41,7 @@ async def dashboard(
 ):
     """Render the workspace financial overview, or a complete recoverable error."""
     # Snapshot navigation before a failed read can expire session ORM state.
-    view_context = {"user": {"username": user.username}, "overview": None}
+    view_context = {"user": {"username": user.username}, "overview": None, "csrf_token": csrf_token(request)}
     status_code = 200
     try:
         view_context["overview"] = await get_dashboard_overview(context, db)
@@ -71,6 +72,6 @@ async def dashboard_year(
     return templates.TemplateResponse(
         request=request,
         name="partials/dashboard_year.html",
-        context={"user": {"username": user.username}, "year_summary": overview},
+        context={"user": {"username": user.username}, "year_summary": overview, "csrf_token": csrf_token(request)},
         headers={"Cache-Control": "private, no-store", "Vary": "Cookie, HX-Request"},
     )

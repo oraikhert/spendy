@@ -1,21 +1,23 @@
-"""Minimal server-rendered onboarding, creation and signed-session selection."""
+"""Server-rendered workspace selection and collaboration."""
 from dataclasses import replace
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
+from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user_from_cookie_required
+from app.core.workspace_context import WorkspaceAccessError
 from app.core.workspace_deps import WorkspaceRoute
-from app.core.web_session import browser_origin
 from app.database import get_db
 from app.models import User
-from app.schemas.workspace import WorkspaceCreate
+from app.models.workspace import WorkspaceRole
+from app.schemas.workspace import WorkspaceCreate, WorkspaceInvitationCreate, WorkspaceUpdate
 from app.services import workspace_service
-from app.web.transaction_helpers import csrf_token, valid_csrf
+from app.web.security import csrf_token, protected_form
 
-router = APIRouter(prefix="/workspaces", route_class=WorkspaceRoute)
+router = APIRouter(prefix="/workspaces", tags=["web-workspaces"], route_class=WorkspaceRoute)
 templates = Jinja2Templates(directory="app/templates")
 DB = Annotated[AsyncSession, Depends(get_db)]
 ActiveUser = Annotated[User, Depends(get_current_user_from_cookie_required)]
@@ -28,6 +30,7 @@ async def page(request, db, user, *, name="", error=None, status=200):
     except ValueError:
         offset = 0
     workspaces = await workspace_service.list_workspaces(db, user, limit=101, offset=offset)
+    request.state.active_workspaces = [workspace for workspace in workspaces if workspace.status == "active"]
     return templates.TemplateResponse(request=request, name="workspaces.html", context={
         "user": user, "workspaces": workspaces[:100], "name": name, "error": error,
         "csrf_token": csrf_token(request), "next_offset": offset + 100 if len(workspaces) > 100 else None,
@@ -40,22 +43,14 @@ async def workspace_page(request: Request, db: DB, user: ActiveUser):
     return await page(request, db, user)
 
 
-async def form(request):
-    posted = await request.form()
-    origin = request.headers.get("origin")
-    if (origin and origin != browser_origin(request)) or not valid_csrf(request, posted.get("csrf_token")):
-        raise HTTPException(403, "Invalid form token")
-    return posted
-
-
-def select_session(request, workspace_id):
+def select_session(request, workspace_id, destination="/dashboard"):
     request.state.web_session = replace(request.state.web_session, workspace_id=workspace_id)
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse(destination, status_code=303)
 
 
 @router.post("")
 async def create_workspace(request: Request, db: DB, user: ActiveUser):
-    posted = await form(request)
+    posted = await protected_form(request)
     name = str(posted.get("name", ""))
     try:
         data = WorkspaceCreate(name=name)
@@ -67,6 +62,135 @@ async def create_workspace(request: Request, db: DB, user: ActiveUser):
 
 @router.post("/{workspace_id}/select")
 async def select_workspace(workspace_id: int, request: Request, db: DB, user: ActiveUser):
-    await form(request)
+    await protected_form(request)
     context = await workspace_service.resolve_workspace(db, user, workspace_id)
     return select_session(request, context.workspace_id)
+
+
+@router.post("/select")
+async def select_workspace_form(request: Request, db: DB, user: ActiveUser):
+    posted = await protected_form(request)
+    raw = str(posted.get("workspace_id", ""))
+    context = await workspace_service.resolve_workspace(db, user, raw)
+    destination = str(posted.get("return_url", "/dashboard"))
+    if not destination.startswith("/") or destination.startswith("//"):
+        destination = "/dashboard"
+    return select_session(request, context.workspace_id, destination)
+
+
+async def collaboration_page(request, db, user, workspace_id, *, error=None, message=None, status=200, invite_email="", invite_role="viewer"):
+    # Workspace mutation services roll back before surfacing business-rule
+    # conflicts. SQLAlchemy expires loaded ORM objects on rollback, so refresh
+    # the request user explicitly before re-rendering an error response.
+    if inspect(user).expired:
+        await db.refresh(user)
+    workspace = await workspace_service.read_workspace(db, user, workspace_id)
+    if workspace.status != "active":
+        raise HTTPException(409, "Workspace archived")
+    context = await workspace_service.resolve_workspace(db, user, workspace_id)
+    request.state.workspace_context = context
+    request.state.active_workspaces = [item for item in await workspace_service.list_workspaces(db, user) if item.status == "active"]
+    members = await workspace_service.list_members(db, user, workspace_id)
+    invitations = await workspace_service.list_invitations(db, user, workspace_id) if context.role is WorkspaceRole.OWNER else []
+    return templates.TemplateResponse(request=request, name="workspace_detail.html", context={
+        "user": user, "workspace": workspace, "members": members, "invitations": invitations,
+        "is_owner": context.role is WorkspaceRole.OWNER, "csrf_token": csrf_token(request),
+        "error": error, "message": message, "invite_email": invite_email, "invite_role": invite_role,
+    }, status_code=status)
+
+
+@router.get("/{workspace_id}")
+async def workspace_detail(workspace_id: int, request: Request, db: DB, user: ActiveUser):
+    messages = {"renamed": "Workspace renamed.", "role": "Member role updated.", "removed": "Member removed.", "invited": "Invitation sent.", "resent": "Invitation resent.", "revoked": "Invitation revoked."}
+    return await collaboration_page(request, db, user, workspace_id, message=messages.get(request.query_params.get("message", "")))
+
+
+@router.post("/{workspace_id}/members/{target_user_id}/role")
+async def role_form(workspace_id: int, target_user_id: int, request: Request, db: DB, user: ActiveUser):
+    posted = await protected_form(request)
+    try:
+        role = WorkspaceRole(str(posted.get("role", "")))
+    except ValueError:
+        return await collaboration_page(request, db, user, workspace_id, error="Choose a valid role.", status=422)
+    (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
+    try:
+        await workspace_service.change_member_role(db, user, workspace_id, target_user_id, role)
+    except WorkspaceAccessError as exc:
+        return await collaboration_page(request, db, user, workspace_id, error=exc.detail, status=exc.status_code)
+    return RedirectResponse(f"/workspaces/{workspace_id}?message=role", status_code=303)
+
+
+@router.post("/{workspace_id}/rename")
+async def rename_form(workspace_id: int, request: Request, db: DB, user: ActiveUser):
+    posted = await protected_form(request)
+    try:
+        data = WorkspaceUpdate(name=str(posted.get("name", "")))
+    except ValidationError:
+        return await collaboration_page(request, db, user, workspace_id, error="Enter a workspace name of 1–100 characters.", status=422)
+    (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
+    await workspace_service.rename_workspace(db, user, workspace_id, data)
+    return RedirectResponse(f"/workspaces/{workspace_id}?message=renamed", status_code=303)
+
+
+@router.post("/{workspace_id}/members/{target_user_id}/remove")
+async def remove_form(workspace_id: int, target_user_id: int, request: Request, db: DB, user: ActiveUser):
+    await protected_form(request)
+    (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
+    try:
+        await workspace_service.remove_member(db, user, workspace_id, target_user_id)
+    except WorkspaceAccessError as exc:
+        return await collaboration_page(request, db, user, workspace_id, error=exc.detail, status=exc.status_code)
+    return RedirectResponse(f"/workspaces/{workspace_id}?message=removed", status_code=303)
+
+
+@router.post("/{workspace_id}/leave")
+async def leave_form(workspace_id: int, request: Request, db: DB, user: ActiveUser):
+    await protected_form(request)
+    await workspace_service.resolve_workspace(db, user, workspace_id)
+    try:
+        await workspace_service.leave_workspace(db, user, workspace_id)
+    except WorkspaceAccessError as exc:
+        return await collaboration_page(request, db, user, workspace_id, error=exc.detail, status=exc.status_code)
+    return select_session(request, None, "/workspaces")
+
+
+@router.post("/{workspace_id}/invitations")
+async def invite_form(workspace_id: int, request: Request, db: DB, user: ActiveUser):
+    posted = await protected_form(request)
+    email, role = str(posted.get("recipient_email", "")), str(posted.get("role", "viewer"))
+    try:
+        data = WorkspaceInvitationCreate(recipient_email=email, role=role)
+    except ValidationError:
+        return await collaboration_page(request, db, user, workspace_id, error="Enter a valid email and choose editor or viewer.", status=422, invite_email=email, invite_role=role)
+    (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
+    try:
+        await workspace_service.create_invitation(db, user, workspace_id, data)
+        return RedirectResponse(f"/workspaces/{workspace_id}?message=invited", status_code=303)
+    except workspace_service.InvitationDeliveryError:
+        return await collaboration_page(request, db, user, workspace_id, error="Invitation saved, but email delivery failed. You can retry it.", status=502, invite_email=email, invite_role=role)
+    except WorkspaceAccessError as exc:
+        return await collaboration_page(request, db, user, workspace_id, error=exc.detail, status=exc.status_code, invite_email=email, invite_role=role)
+
+
+@router.post("/{workspace_id}/invitations/{invitation_id}/resend")
+async def resend_form(workspace_id: int, invitation_id: int, request: Request, db: DB, user: ActiveUser):
+    await protected_form(request)
+    (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
+    try:
+        await workspace_service.resend_invitation(db, user, workspace_id, invitation_id)
+        return RedirectResponse(f"/workspaces/{workspace_id}?message=resent", status_code=303)
+    except workspace_service.InvitationDeliveryError:
+        return await collaboration_page(request, db, user, workspace_id, error="The new link was saved, but email delivery failed. You can retry it.", status=502)
+    except WorkspaceAccessError as exc:
+        return await collaboration_page(request, db, user, workspace_id, error=exc.detail, status=exc.status_code)
+
+
+@router.post("/{workspace_id}/invitations/{invitation_id}/revoke")
+async def revoke_form(workspace_id: int, invitation_id: int, request: Request, db: DB, user: ActiveUser):
+    await protected_form(request)
+    (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
+    try:
+        await workspace_service.revoke_invitation(db, user, workspace_id, invitation_id)
+    except WorkspaceAccessError as exc:
+        return await collaboration_page(request, db, user, workspace_id, error=exc.detail, status=exc.status_code)
+    return RedirectResponse(f"/workspaces/{workspace_id}?message=revoked", status_code=303)

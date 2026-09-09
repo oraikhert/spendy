@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.workspace_context import WorkspaceContext
-from app.core.workspace_deps import get_api_workspace, WorkspaceRoute
+from app.core.workspace_deps import get_api_workspace, get_api_workspace_write, WorkspaceRoute
 from app.database import get_db
 from app.schemas.card import CardCreate, CardUpdate, CardResponse
 from app.services import card_service
@@ -29,7 +29,7 @@ async def create_card(
     account_id: int,
     card_data: CardCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Create a new card for an account"""
     card = await card_service.create_card(context, db, account_id, card_data)
@@ -57,7 +57,7 @@ async def update_card(
     card_id: int,
     card_data: CardUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Update card"""
     card = await card_service.update_card(context, db, card_id, card_data)
@@ -73,7 +73,7 @@ async def update_card(
 async def delete_card(
     card_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Delete card"""
     success = await card_service.delete_card(context, db, card_id)

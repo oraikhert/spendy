@@ -144,6 +144,12 @@ assignment and refuses to replace an existing owner. Registration never calls it
 Back up retained data before migration or recovery; verify SQLite and PostgreSQL on
 a disposable copy of the actual pre-upgrade schema before production rollout.
 
+`workspace_collaboration_002` follows the ownership revision and adds
+`workspace_invitations`. It constrains invited roles and delivery states, uniquely
+indexes token hashes, and uses a SQLite/PostgreSQL partial unique index to permit only
+one unaccepted, unrevoked invitation per normalized recipient and workspace. Its
+downgrade drops invitation history; take a backup before rolling it back.
+
 ## Recovery and rollback
 
 | Symptom or task | Procedure |

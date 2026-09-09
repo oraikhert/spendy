@@ -71,6 +71,24 @@ async def get_user_by_username_or_email(identifier: str, db: AsyncSession) -> Us
     return result.scalar_one_or_none()
 
 
+async def prepare_user(user_in: UserCreate, db: AsyncSession) -> User:
+    """Validate and add a user without committing, for atomic composed workflows."""
+    if await get_user_by_email(user_in.email, db):
+        raise ValueError("Email already registered")
+    if await get_user_by_username(user_in.username, db):
+        raise ValueError("Username already taken")
+    db_user = User(
+        email=user_in.email,
+        username=user_in.username,
+        full_name=user_in.full_name,
+        hashed_password=get_password_hash(user_in.password),
+        is_active=user_in.is_active,
+    )
+    db.add(db_user)
+    await db.flush()
+    return db_user
+
+
 async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
     """
     Create a new user.
@@ -85,30 +103,14 @@ async def create_user(user_in: UserCreate, db: AsyncSession) -> User:
     Raises:
         ValueError: If email or username already exists
     """
-    # Check if email already exists
-    existing_user = await get_user_by_email(user_in.email, db)
-    if existing_user:
-        raise ValueError("Email already registered")
-    
-    # Check if username already exists
-    existing_user = await get_user_by_username(user_in.username, db)
-    if existing_user:
-        raise ValueError("Username already taken")
-    
-    # Create new user
-    db_user = User(
-        email=user_in.email,
-        username=user_in.username,
-        full_name=user_in.full_name,
-        hashed_password=get_password_hash(user_in.password),
-        is_active=user_in.is_active,
-    )
-    
-    db.add(db_user)
-    await db.commit()
-    await db.refresh(db_user)
-    
-    return db_user
+    try:
+        db_user = await prepare_user(user_in, db)
+        await db.commit()
+        await db.refresh(db_user)
+        return db_user
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def update_user(user_id: int, user_update: UserUpdate, db: AsyncSession) -> User:

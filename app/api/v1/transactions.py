@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.workspace_context import WorkspaceContext
-from app.core.workspace_deps import get_api_workspace, WorkspaceRoute
+from app.core.workspace_deps import get_api_workspace, get_api_workspace_write, WorkspaceRoute
 from app.database import get_db
 from app.schemas.transaction import (
     TransactionCreate,
@@ -77,7 +77,7 @@ async def get_transactions(
 async def create_transaction(
     transaction_data: TransactionCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Create a new transaction"""
     try:
@@ -108,7 +108,7 @@ async def update_transaction(
     transaction_id: int,
     transaction_data: TransactionUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Update transaction"""
     try:
@@ -130,7 +130,7 @@ async def update_transaction(
 async def delete_transaction(
     transaction_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    context: Annotated[WorkspaceContext, Depends(get_api_workspace)]
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace_write)]
 ):
     """Delete transaction"""
     success = await transaction_service.delete_transaction(context, db, transaction_id)

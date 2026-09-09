@@ -7,7 +7,7 @@ from app.core.deps import get_current_active_user, get_current_user_from_cookie_
 from app.core.workspace_context import WorkspaceAccessError, WorkspaceContext
 from app.database import get_db
 from app.models import User
-from app.services.workspace_service import resolve_workspace
+from app.services.workspace_service import list_workspaces, resolve_workspace
 
 
 class WorkspaceRoute(APIRoute):
@@ -33,6 +33,13 @@ async def get_api_workspace(
         raise HTTPException(exc.status_code, exc.detail) from exc
 
 
+async def get_api_workspace_write(
+    context: Annotated[WorkspaceContext, Depends(get_api_workspace)],
+) -> WorkspaceContext:
+    context.require_write()
+    return context
+
+
 async def get_web_workspace(
     request: Request,
     user: Annotated[User, Depends(get_current_user_from_cookie_required)],
@@ -48,4 +55,15 @@ async def get_web_workspace(
             headers["HX-Redirect"] = destination
         raise HTTPException(303, "Select a workspace", headers=headers) from exc
     request.state.workspace_context = context
+    request.state.active_workspaces = [
+        workspace for workspace in await list_workspaces(db, user, limit=100)
+        if workspace.status == "active"
+    ]
+    return context
+
+
+async def get_web_workspace_write(
+    context: Annotated[WorkspaceContext, Depends(get_web_workspace)],
+) -> WorkspaceContext:
+    context.require_write()
     return context

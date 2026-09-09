@@ -3,7 +3,8 @@
 This is the runbook for the existing single-server deployment. It uses the
 repository's Docker configuration, PostgreSQL storage, host Nginx and Let's Encrypt.
 Read [the access model](ARCHITECTURE.md#access-model) before exposing an installation:
-authenticated users share transaction data and server-side CSRF validation is absent.
+financial data is workspace-isolated, roles are enforced server-side, and
+cookie-authenticated mutation forms require CSRF and same-origin validation.
 Return to the [documentation index](../README.md#documentation).
 
 - [Prerequisites](#prerequisites)
@@ -75,12 +76,32 @@ DATABASE_URL=postgresql+asyncpg://spendy:REPLACE_WITH_DB_PASSWORD@db:5432/spendy
 SECRET_KEY=REPLACE_WITH_RANDOM_SECRET
 REGISTRATION_ENABLED=false
 DEBUG=false
+PUBLIC_BASE_URL=https://spendy.example.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=REPLACE_WITH_SMTP_USERNAME
+SMTP_PASSWORD=REPLACE_WITH_SMTP_PASSWORD
+SMTP_SENDER=spendy@example.com
+SMTP_STARTTLS=true
+SMTP_TIMEOUT_SECONDS=10
+WORKSPACE_INVITATION_LIFETIME_DAYS=7
 ```
 
 Use the same database password in both settings; URL-encode special characters
 in the connection URL. Generate a signing secret with
 `python3 -c "import secrets; print(secrets.token_hex(32))"`. Preserve existing secrets
 on updates. Keep `.env` out of Git and restrict its filesystem permissions.
+
+`PUBLIC_BASE_URL` is the externally reachable HTTPS origin placed in invitation
+links and accepted by browser same-origin checks when a proxy exposes a different
+internal Host to the app. It must match the real public scheme, host and port. SMTP
+delivery runs inside the invitation request and is bounded by
+`SMTP_TIMEOUT_SECONDS`; there is no worker or automatic retry. Use the host, port,
+credentials, sender and STARTTLS policy required by the chosen SMTP service. A failed
+send remains recorded and an owner can resend, which rotates the invitation token.
+Do not place SMTP credentials in logs or commit them. Test delivery in the deployed
+network before inviting users; local mocked checks do not verify provider policy,
+DNS, certificates, firewall access or sender reputation.
 
 `db` is the Compose hostname used from inside the app container. The PostgreSQL
 driver is already a project dependency. App settings are defined in

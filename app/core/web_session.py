@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import hashlib
 import secrets
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import Request, Response
 
@@ -41,6 +42,38 @@ def browser_origin(request: Request) -> str:
     forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
     scheme = forwarded_proto if forwarded_proto in {"http", "https"} else request.url.scheme
     return f"{scheme}://{request.url.netloc}"
+
+
+def _normalized_origin(value: str) -> tuple[str, str, int] | None:
+    """Parse an HTTP origin without trusting string formatting or default ports."""
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+            return None
+        if parsed.username is not None or parsed.password is not None:
+            return None
+        port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    except ValueError:
+        return None
+    return parsed.scheme.lower(), parsed.hostname.casefold(), port
+
+
+def same_browser_origin(request: Request, origin: str | None) -> bool:
+    """Accept the request-facing or configured public origin.
+
+    Reverse proxies may expose an internal Host to ASGI while the browser uses the
+    deployment's PUBLIC_BASE_URL. The configured origin is therefore authoritative
+    alongside the request-derived origin.
+    """
+    if origin is None:
+        return False
+    supplied = _normalized_origin(origin)
+    if supplied is None:
+        return False
+    return supplied in {
+        _normalized_origin(browser_origin(request)),
+        _normalized_origin(settings.PUBLIC_BASE_URL),
+    }
 
 
 def set_auth_cookie(response: Response, token_value: str, request: Request) -> None:

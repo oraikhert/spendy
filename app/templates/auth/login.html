@@ -18,12 +18,15 @@
           {% include "partials/_messages.html" %}
 
           <form
+            method="post"
+            action="/auth/login"
             hx-post="/auth/login"
             hx-target="#messages"
             hx-swap="innerHTML"
             hx-disabled-elt="find button[type='submit']"
             class="space-y-4"
           >
+            <input type="hidden" name="next" value="{{ next or '/dashboard' }}">
             <fieldset class="fieldset">
               <legend class="fieldset-legend">Username or Email</legend>
               <input

@@ -1,6 +1,6 @@
 """Database models"""
 from app.models.user import User
-from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
+from app.models.workspace import Workspace, WorkspaceInvitation, WorkspaceMember, WorkspaceRole
 from app.models.account import Account
 from app.models.card import Card
 from app.models.transaction import Transaction
@@ -13,6 +13,7 @@ __all__ = [
     "User",
     "Workspace",
     "WorkspaceMember",
+    "WorkspaceInvitation",
     "WorkspaceRole",
     "Account",
     "Card",

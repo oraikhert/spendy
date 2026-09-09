@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Workspace invitation · Spendy{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto space-y-5" hx-history="false">
+  <section class="card bg-base-100 shadow"><div class="card-body p-4 sm:p-7">
+    <h1 class="text-3xl font-bold break-words">Invitation to {{ invitation.workspace_name }}</h1>
+    <p>You were invited as <strong>{{ invitation.role.value }}</strong> at {{ invitation.masked_recipient_email }}.</p>
+    <p class="text-sm">Expires <time datetime="{{ invitation.expires_at.isoformat() }}">{{ invitation.expires_at }}</time>.</p>
+    {% if error %}<div class="alert alert-error" role="alert" tabindex="-1">{{ error }}</div>{% endif %}
+    {% if user %}<form method="post" action="/workspace-invitations/{{ token }}/accept" class="space-y-3"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><p>Signed in as <strong>{{ user.email }}</strong>.</p><button class="btn btn-primary" type="submit">Accept invitation</button></form>
+    {% else %}<div class="flex flex-wrap gap-2"><a class="btn btn-primary" href="/auth/login?next={{ ('/workspace-invitations/' ~ token)|urlencode }}">Log in to accept</a><a class="btn btn-outline" href="/workspace-invitations/{{ token }}/register">Create invited account</a></div>{% endif %}
+  </div></section>
+  {% if not user and request.url.path.endswith('/register') %}<section class="card bg-base-100 shadow"><form method="post" action="/workspace-invitations/{{ token }}/register" class="card-body p-4 sm:p-7 space-y-4"><h2 class="card-title">Create your invited account</h2><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><p class="text-sm">The account email is fixed to {{ invitation.masked_recipient_email }}.</p><label>Username<input class="input w-full" name="username" required minlength="3" maxlength="100" autocomplete="username" value="{{ values.username or '' }}"></label><label>Full name (optional)<input class="input w-full" name="full_name" maxlength="255" autocomplete="name" value="{{ values.full_name or '' }}"></label><label>Password<input class="input w-full" type="password" name="password" required minlength="8" maxlength="72" autocomplete="new-password"></label><label>Confirm password<input class="input w-full" type="password" name="password_confirm" required minlength="8" maxlength="72" autocomplete="new-password"></label><button class="btn btn-primary" type="submit">Create account and join</button></form></section>{% endif %}
+</div>
+{% endblock %}

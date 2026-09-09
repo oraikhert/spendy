@@ -10,6 +10,7 @@ from the repository root with `venv` active. Return to the
 - [Port already in use](#port-already-in-use)
 - [Database errors](#database-errors)
 - [Registration or login fails](#registration-or-login-fails)
+- [Workspace selection or deletion fails](#workspace-selection-or-deletion-fails)
 - [API checks fail](#api-checks-fail)
 - [Source processing or FX fails](#source-processing-or-fx-fails)
 - [Rebuild the Python environment](#rebuild-the-python-environment)
@@ -86,6 +87,28 @@ the response.
 
 **Verify:** log in and request `/api/v1/auth/me` with the bearer token. For web-only
 HTTPS problems, check [proxy and cookie behavior](DEPLOYMENT.md#https-proxy).
+
+## Workspace selection or deletion fails
+
+**Symptom:** an archived selection redirects to Workspaces, a financial API returns
+`409 Workspace archived`, or permanent deletion is rejected.
+
+**Check:** confirm the target workspace, the caller's workspace-local role and the
+current lifecycle state. Archive clears a selected web workspace without selecting a
+replacement. Permanent deletion requires an owner, an already archived workspace and
+an exact case-sensitive `confirmation_name`; a form opened before another lifecycle
+change is stale and must be reloaded.
+
+**Fix:** select an active workspace explicitly, or have an owner restore the archived
+workspace. For permanent deletion, reload its management page and type the stored name
+exactly. Do not edit status or tenant records directly in the database.
+
+**Verify:** the active selector excludes archived workspaces while management still
+lists them. After deletion, verify the workspace is absent. If logs contain a safe
+post-commit cleanup diagnostic, the database deletion is final; inspect the opaque
+`UPLOAD_DIR/.quarantine` operation directory as an operator without exposing file
+paths or contents. Restore files manually only for a logged pre-commit compensation
+failure, never to imply that committed database records can be recovered.
 
 ## API checks fail
 

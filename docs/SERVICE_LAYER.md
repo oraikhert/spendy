@@ -32,6 +32,8 @@ a database failure and continues using that session must roll it back first.
 |-----------|-----------------|
 | Workspace plus creator membership | One atomic service commit; rollback on failure |
 | Membership role/removal/leave | Lock active workspace, revalidate final-owner invariant, then commit |
+| Workspace archive/restore | Lock workspace, revalidate current owner and lifecycle state, then commit |
+| Permanent workspace deletion | Lock and revalidate owner, archived state and exact name; quarantine uploads, delete the complete database graph in one commit, restore files on rollback, then clean quarantine |
 | Invitation create/resend | Commit token hash and pending state before bounded SMTP; commit sent/failed afterward |
 | Invitation acceptance/registration | Membership plus acceptance, and invited user when needed, in one atomic commit |
 | User/account/card/transaction writes | Commit inside the service |
@@ -43,7 +45,11 @@ a database failure and continues using that session must roll it back first.
 
 Source orchestration owns its transaction and uses flush-only helpers; it does not
 compose transaction CRUD commits. Filesystem and database writes cannot be truly
-atomic, so upload uses compensating file deletion on a failed commit.
+atomic, so upload uses compensating file deletion on a failed commit. Permanent
+workspace deletion uses the inverse compensation: every in-scope private file is
+resolved below `UPLOAD_DIR` and moved into an opaque operation quarantine before the
+database commit. A failed commit restores the files. A post-commit unlink failure is
+logged using only internal IDs and counts; it does not resurrect deleted database data.
 
 Expected business failures commonly use `ValueError`; routes map them to HTTP.
 `WorkspaceAccessError` carries workspace authorization/selection failures; financial

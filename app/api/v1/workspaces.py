@@ -9,6 +9,7 @@ from app.models import User
 from app.schemas.user import User as UserResponse
 from app.schemas.workspace import (
     WorkspaceCreate,
+    WorkspaceDelete,
     WorkspaceInvitationCreate,
     WorkspaceInvitationPublic,
     WorkspaceInvitationRegister,
@@ -45,6 +46,21 @@ async def read_workspace(workspace_id: int, db: DB, user: ActiveUser):
 async def rename_workspace(workspace_id: int, data: WorkspaceUpdate, db: DB, user: ActiveUser):
     (await workspace_service.resolve_workspace(db, user, workspace_id)).require_admin()
     return await workspace_service.rename_workspace(db, user, workspace_id, data)
+
+
+@router.post("/{workspace_id}/archive", response_model=WorkspaceResponse)
+async def archive_workspace(workspace_id: int, db: DB, user: ActiveUser):
+    return await workspace_service.archive_workspace(db, user, workspace_id)
+
+
+@router.post("/{workspace_id}/restore", response_model=WorkspaceResponse)
+async def restore_workspace(workspace_id: int, db: DB, user: ActiveUser):
+    return await workspace_service.restore_workspace(db, user, workspace_id)
+
+
+@router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workspace(workspace_id: int, data: WorkspaceDelete, db: DB, user: ActiveUser):
+    await workspace_service.delete_workspace(db, user, workspace_id, data)
 
 
 @router.get("/{workspace_id}/members", response_model=list[WorkspaceMemberResponse])

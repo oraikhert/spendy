@@ -103,6 +103,13 @@ Do not place SMTP credentials in logs or commit them. Test delivery in the deplo
 network before inviting users; local mocked checks do not verify provider policy,
 DNS, certificates, firewall access or sender reputation.
 
+`UPLOAD_DIR` defaults to `data/uploads`; the Compose mount already makes that path
+persistent. Keep it on one filesystem so permanent workspace deletion can atomically
+rename private files into its `.quarantine` subdirectory before committing database
+deletion. Do not serve the upload or quarantine directories. A post-commit cleanup
+diagnostic identifies only the workspace, operation and file count; inspect the
+quarantine as an operator and never expose its paths or contents to clients.
+
 `db` is the Compose hostname used from inside the app container. The PostgreSQL
 driver is already a project dependency. App settings are defined in
 [app/config.py](../app/config.py); Docker-only variables such as `POSTGRES_PASSWORD`
@@ -129,6 +136,9 @@ docker compose up -d app
 docker compose logs --tail=100 app
 curl --fail http://127.0.0.1:8000/health
 ```
+
+The complete Workspace v1 lifecycle requires migration head
+`workspace_collaboration_002`; Iteration 3 has no additional schema revision.
 
 The one-off container uses the app image and `.env` without running its normal
 server command. PostgreSQL schema creation is already disabled in `init_db()`;

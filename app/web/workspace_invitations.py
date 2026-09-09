@@ -59,7 +59,11 @@ async def invitation_accept(request: Request, token: str, db: DB, user: Annotate
         member = await workspace_service.accept_invitation(db, user, token)
     except WorkspaceAccessError as exc:
         return unavailable_response(request, exc)
-    request.state.web_session = replace(request.state.web_session, workspace_id=member.workspace_id)
+    request.state.web_session = replace(
+        request.state.web_session,
+        workspace_id=member.workspace_id,
+        workspace_invalidated=False,
+    )
     return RedirectResponse("/dashboard", status_code=303)
 
 

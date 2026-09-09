@@ -150,6 +150,13 @@ indexes token hashes, and uses a SQLite/PostgreSQL partial unique index to permi
 one unaccepted, unrevoked invitation per normalized recipient and workspace. Its
 downgrade drops invitation history; take a backup before rolling it back.
 
+Workspace archive, restore and aggregate deletion use the existing status,
+`archived_at`, ownership and tenant-key schema. Iteration 3 therefore adds no schema
+revision: `workspace_collaboration_002` remains the head. Apply it before deploying
+the complete lifecycle code. Do not infer schema cascade behavior from permanent
+deletion; the service explicitly deletes the tenant graph in one transaction and
+coordinates private files separately.
+
 ## Recovery and rollback
 
 | Symptom or task | Procedure |

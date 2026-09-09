@@ -133,6 +133,7 @@ async def get_current_user_from_cookie(
         username=user.username,
         session_id=session_id,
         workspace_id=payload.get("workspace_id"),
+        workspace_invalidated=payload.get("workspace_invalidated") is True,
     )
     
     return user

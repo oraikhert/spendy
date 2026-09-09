@@ -23,8 +23,8 @@ from app.core.security import create_access_token, decode_access_token
 from app.core.workspace_context import WorkspaceAccessError, WorkspaceContext
 from app.database import Base, get_db
 from app.main import app
-from app.models import Account, Card, SourcePayload, Transaction, Workspace, WorkspaceInvitation, WorkspaceMember, User
-from app.schemas.workspace import WorkspaceCreate
+from app.models import Account, BankStatementDetail, Card, SourcePayload, Transaction, TransactionObservation, TransactionSourceLink, Workspace, WorkspaceInvitation, WorkspaceMember, User
+from app.schemas.workspace import WorkspaceCreate, WorkspaceDelete
 from app.services import transaction_service, workspace_service
 from app.utils.canonicalization import canonicalize_transaction
 
@@ -401,6 +401,152 @@ class WorkspaceTests(unittest.IsolatedAsyncioTestCase):
             invited = await db.scalar(select(User).where(User.email == "invited@example.com"))
             member = await db.scalar(select(WorkspaceMember).where(WorkspaceMember.user_id == invited.id))
             self.assertEqual((member.workspace_id, member.role), (workspace, "viewer"))
+
+    async def test_owner_only_archive_restore_and_delete_guards(self):
+        workspace = await self.create(1, "Case Sensitive")
+        async with self.sessions() as db:
+            db.add(WorkspaceMember(user_id=2, workspace_id=workspace, role="editor"))
+            await db.commit()
+        active_delete = await self.client.request(
+            "DELETE", f"/api/v1/workspaces/{workspace}", headers=self.headers(1),
+            json={"confirmation_name":"Case Sensitive"},
+        )
+        self.assertEqual(active_delete.status_code, 409, active_delete.text)
+        self.assertEqual((await self.client.post(f"/api/v1/workspaces/{workspace}/archive", headers=self.headers(2))).status_code, 403)
+        archived = await self.client.post(f"/api/v1/workspaces/{workspace}/archive", headers=self.headers(1))
+        self.assertEqual((archived.status_code, archived.json()["status"]), (200, "archived"))
+        for method, path in (("GET", "accounts"), ("POST", f"workspaces/{workspace}/leave"), ("GET", f"workspaces/{workspace}/members")):
+            response = await self.client.request(method, f"/api/v1/{path}", headers=self.headers(1, workspace))
+            self.assertEqual(response.status_code, 409, response.text)
+        non_owner_delete = await self.client.request(
+            "DELETE", f"/api/v1/workspaces/{workspace}", headers=self.headers(2),
+            json={"confirmation_name":"Case Sensitive"},
+        )
+        self.assertEqual(non_owner_delete.status_code, 403, non_owner_delete.text)
+        mismatch = await self.client.request(
+            "DELETE", f"/api/v1/workspaces/{workspace}", headers=self.headers(1),
+            json={"confirmation_name":"case sensitive"},
+        )
+        self.assertEqual(mismatch.status_code, 409, mismatch.text)
+        self.assertEqual((await self.client.post(f"/api/v1/workspaces/{workspace}/restore", headers=self.headers(2))).status_code, 403)
+        restored = await self.client.post(f"/api/v1/workspaces/{workspace}/restore", headers=self.headers(1))
+        self.assertEqual((restored.status_code, restored.json()["status"]), (200, "active"))
+
+    async def test_delete_complete_graph_and_private_upload(self):
+        workspace, account, card, _transaction = await self.financial_fixture(1)
+        response = await self.client.post(
+            "/api/v1/source-payloads/text", headers=self.headers(1, workspace),
+            json={"source_kind":"sms", "text":SMS, "card_id":card},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        payload_id = response.json()["id"]
+        upload_dir = Path(self.directory.name) / "uploads"
+        upload_dir.mkdir()
+        upload = upload_dir / "synthetic.payload"
+        upload.write_bytes(b"synthetic private upload")
+        async with self.sessions() as db:
+            payload = await db.get(SourcePayload, payload_id)
+            payload.file_path = str(upload.resolve())
+            db.add_all([
+                WorkspaceMember(user_id=2, workspace_id=workspace, role="viewer"),
+                WorkspaceInvitation(
+                    workspace_id=workspace, recipient_email="pending@example.com", role="viewer",
+                    token_hash="a" * 64, expires_at=datetime.now(UTC) + timedelta(days=1),
+                    inviter_user_id=1, delivery_state="sent",
+                ),
+                BankStatementDetail(source_payload_id=payload_id, workspace_id=workspace, account_id=account, card_id=card),
+            ])
+            await db.commit()
+        with patch.object(settings, "UPLOAD_DIR", str(upload_dir)):
+            self.assertEqual((await self.client.post(f"/api/v1/workspaces/{workspace}/archive", headers=self.headers(1))).status_code, 200)
+            deleted = await self.client.request(
+                "DELETE", f"/api/v1/workspaces/{workspace}", headers=self.headers(1),
+                json={"confirmation_name":"Family"},
+            )
+        self.assertEqual(deleted.status_code, 204, deleted.text)
+        stale = await self.client.request(
+            "DELETE", f"/api/v1/workspaces/{workspace}", headers=self.headers(1),
+            json={"confirmation_name":"Family"},
+        )
+        self.assertEqual(stale.status_code, 404, stale.text)
+        self.assertFalse(upload.exists())
+        async with self.sessions() as db:
+            self.assertIsNone(await db.get(Workspace, workspace))
+            for model in (WorkspaceMember, WorkspaceInvitation, Account, Card, Transaction, SourcePayload, TransactionObservation, TransactionSourceLink, BankStatementDetail):
+                self.assertEqual(await db.scalar(select(func.count()).select_from(model).where(model.workspace_id == workspace)), 0)
+
+    async def test_delete_restores_files_on_database_failure(self):
+        workspace = await self.create(1, "Rollback")
+        upload_dir = Path(self.directory.name) / "rollback-uploads"
+        upload_dir.mkdir()
+        upload = upload_dir / "synthetic.payload"
+        upload.write_bytes(b"synthetic")
+        async with self.sessions() as db:
+            db.add(SourcePayload(
+                workspace_id=workspace, source_kind="other", media_type="application/octet-stream",
+                ingestion_method="manual_upload", file_path=str(upload.resolve()), content_hash="b" * 64,
+                processing_status="pending", ingestion_metadata={},
+            ))
+            await db.commit()
+        await self.client.post(f"/api/v1/workspaces/{workspace}/archive", headers=self.headers(1))
+        with patch.object(settings, "UPLOAD_DIR", str(upload_dir)):
+            async with self.sessions() as db:
+                user = await db.get(User, 1)
+                with patch.object(db, "commit", side_effect=RuntimeError("synthetic database failure")):
+                    with self.assertRaises(RuntimeError):
+                        await workspace_service.delete_workspace(db, user, workspace, WorkspaceDelete(confirmation_name="Rollback"))
+        self.assertTrue(upload.exists())
+        async with self.sessions() as db:
+            self.assertIsNotNone(await db.get(Workspace, workspace))
+
+    async def test_post_commit_cleanup_failure_is_safe(self):
+        workspace = await self.create(1, "Cleanup")
+        upload_dir = Path(self.directory.name) / "cleanup-uploads"
+        upload_dir.mkdir()
+        upload = upload_dir / "synthetic.payload"
+        upload.write_bytes(b"synthetic")
+        async with self.sessions() as db:
+            db.add(SourcePayload(
+                workspace_id=workspace, source_kind="other", media_type="application/octet-stream",
+                ingestion_method="manual_upload", file_path=str(upload.resolve()), content_hash="c" * 64,
+                processing_status="pending", ingestion_metadata={},
+            ))
+            await db.commit()
+        await self.client.post(f"/api/v1/workspaces/{workspace}/archive", headers=self.headers(1))
+        with patch.object(settings, "UPLOAD_DIR", str(upload_dir)):
+            async with self.sessions() as db:
+                user = await db.get(User, 1)
+                with patch.object(workspace_service, "_cleanup_private_uploads", side_effect=OSError("synthetic cleanup failure")):
+                    with self.assertLogs("app.services.workspace_service", level="ERROR") as captured:
+                        await workspace_service.delete_workspace(db, user, workspace, WorkspaceDelete(confirmation_name="Cleanup"))
+        self.assertFalse(upload.exists())
+        self.assertNotIn(str(upload), "\n".join(captured.output))
+        async with self.sessions() as db:
+            self.assertIsNone(await db.get(Workspace, workspace))
+
+    async def test_delete_rejects_private_path_outside_upload_dir(self):
+        workspace = await self.create(1, "Unsafe path")
+        upload_dir = Path(self.directory.name) / "safe-uploads"
+        upload_dir.mkdir()
+        outside = Path(self.directory.name) / "outside.payload"
+        outside.write_bytes(b"synthetic")
+        async with self.sessions() as db:
+            db.add(SourcePayload(
+                workspace_id=workspace, source_kind="other", media_type="application/octet-stream",
+                ingestion_method="manual_upload", file_path=str(outside.resolve()), content_hash="d" * 64,
+                processing_status="pending", ingestion_metadata={},
+            ))
+            await db.commit()
+        await self.client.post(f"/api/v1/workspaces/{workspace}/archive", headers=self.headers(1))
+        with patch.object(settings, "UPLOAD_DIR", str(upload_dir)):
+            response = await self.client.request(
+                "DELETE", f"/api/v1/workspaces/{workspace}", headers=self.headers(1),
+                json={"confirmation_name":"Unsafe path"},
+            )
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertTrue(outside.exists())
+        async with self.sessions() as db:
+            self.assertIsNotNone(await db.get(Workspace, workspace))
 
 
 if __name__ == "__main__":

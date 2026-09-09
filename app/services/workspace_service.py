@@ -2,18 +2,28 @@
 from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
+import logging
+import os
+from pathlib import Path
 import secrets
+from uuid import uuid4
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.core.workspace_context import WorkspaceAccessError, WorkspaceContext
-from app.models import User, Workspace, WorkspaceInvitation, WorkspaceMember, WorkspaceRole
+from app.models import (
+    Account, BankStatementDetail, Card, SourcePayload, Transaction,
+    TransactionObservation, TransactionSourceLink, User, Workspace,
+    WorkspaceInvitation, WorkspaceMember, WorkspaceRole,
+)
 from app.schemas.user import UserCreate
 from app.schemas.workspace import (
     WorkspaceCreate,
+    WorkspaceDelete,
     WorkspaceInvitationCreate,
     WorkspaceInvitationPublic,
     WorkspaceInvitationRegister,
@@ -24,6 +34,9 @@ from app.schemas.workspace import (
 )
 from app.services import user_service
 from app.services.invitation_delivery import send_workspace_invitation
+
+
+logger = logging.getLogger(__name__)
 
 
 class InvitationDeliveryError(Exception):
@@ -87,6 +100,189 @@ async def rename_workspace(db: AsyncSession, user: User, workspace_id: int, data
     except Exception:
         await db.rollback()
         raise
+
+
+async def _lock_workspace(db: AsyncSession, workspace_id: int) -> Workspace:
+    """Serialize lifecycle changes on SQLite and lock the row on PostgreSQL."""
+    if not 0 < workspace_id <= 2147483647:
+        raise WorkspaceAccessError(404, "Not Found")
+    result = await db.execute(
+        text("UPDATE workspaces SET id = id WHERE id = :workspace_id"),
+        {"workspace_id": workspace_id},
+    )
+    if result.rowcount != 1:
+        raise WorkspaceAccessError(404, "Not Found")
+    workspace = await db.scalar(
+        select(Workspace).where(Workspace.id == workspace_id).with_for_update()
+    )
+    if workspace is None:
+        raise WorkspaceAccessError(404, "Not Found")
+    return workspace
+
+
+async def archive_workspace(
+    db: AsyncSession, user: User, workspace_id: int
+) -> WorkspaceResponse:
+    try:
+        workspace = await _lock_workspace(db, workspace_id)
+        member = await _require_locked_owner(db, workspace_id, user.id)
+        if workspace.status != "active":
+            raise WorkspaceAccessError(409, "Workspace archived")
+        now = _now()
+        workspace.status = "archived"
+        workspace.archived_at = now
+        workspace.updated_at = now
+        await db.commit()
+        return _response(workspace, member.role)
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def restore_workspace(
+    db: AsyncSession, user: User, workspace_id: int
+) -> WorkspaceResponse:
+    try:
+        workspace = await _lock_workspace(db, workspace_id)
+        member = await _require_locked_owner(db, workspace_id, user.id)
+        if workspace.status != "archived":
+            raise WorkspaceAccessError(409, "Workspace is not archived")
+        workspace.status = "active"
+        workspace.archived_at = None
+        workspace.updated_at = _now()
+        await db.commit()
+        return _response(workspace, member.role)
+    except Exception:
+        await db.rollback()
+        raise
+
+
+def _private_upload_path(raw_path: str, upload_root: Path) -> Path:
+    candidate = Path(raw_path).resolve(strict=False)
+    if candidate == upload_root or not candidate.is_relative_to(upload_root):
+        raise WorkspaceAccessError(409, "Workspace deletion could not be prepared")
+    return candidate
+
+
+def _stage_private_uploads(raw_paths: list[str], operation_id: str) -> list[tuple[Path, Path]]:
+    upload_root = Path(settings.UPLOAD_DIR).resolve()
+    quarantine = upload_root / ".quarantine" / operation_id
+    staged: list[tuple[Path, Path]] = []
+    try:
+        for index, raw_path in enumerate(raw_paths):
+            source = _private_upload_path(raw_path, upload_root)
+            if not source.exists():
+                continue
+            if not source.is_file():
+                raise WorkspaceAccessError(409, "Workspace deletion could not be prepared")
+            quarantine.mkdir(parents=True, exist_ok=True)
+            target = quarantine / f"{index:08d}.payload"
+            os.replace(source, target)
+            staged.append((source, target))
+    except Exception as exc:
+        try:
+            _restore_private_uploads(staged, operation_id)
+        except Exception:
+            logger.error(
+                "Workspace deletion staging compensation failed "
+                "operation_id=%s file_count=%s",
+                operation_id, len(staged),
+            )
+        if isinstance(exc, WorkspaceAccessError):
+            raise
+        raise WorkspaceAccessError(409, "Workspace deletion could not be prepared") from exc
+    return staged
+
+
+def _restore_private_uploads(staged: list[tuple[Path, Path]], operation_id: str) -> None:
+    for source, target in reversed(staged):
+        if target.exists():
+            source.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(target, source)
+    quarantine = Path(settings.UPLOAD_DIR).resolve() / ".quarantine" / operation_id
+    if quarantine.exists():
+        quarantine.rmdir()
+    parent = quarantine.parent
+    if parent.exists():
+        try:
+            parent.rmdir()
+        except OSError:
+            pass
+
+
+def _cleanup_private_uploads(staged: list[tuple[Path, Path]], operation_id: str) -> None:
+    for _source, target in staged:
+        target.unlink(missing_ok=True)
+    quarantine = Path(settings.UPLOAD_DIR).resolve() / ".quarantine" / operation_id
+    if quarantine.exists():
+        quarantine.rmdir()
+    parent = quarantine.parent
+    if parent.exists():
+        try:
+            parent.rmdir()
+        except OSError:
+            pass
+
+
+async def _delete_workspace_records(db: AsyncSession, workspace_id: int) -> None:
+    for model in (
+        TransactionSourceLink,
+        BankStatementDetail,
+        TransactionObservation,
+        Transaction,
+        SourcePayload,
+        Card,
+        Account,
+        WorkspaceInvitation,
+        WorkspaceMember,
+    ):
+        await db.execute(delete(model).where(model.workspace_id == workspace_id))
+    result = await db.execute(delete(Workspace).where(
+        Workspace.id == workspace_id,
+        Workspace.status == "archived",
+    ))
+    if result.rowcount != 1:
+        raise WorkspaceAccessError(409, "Workspace state changed; reload and try again")
+
+
+async def delete_workspace(
+    db: AsyncSession, user: User, workspace_id: int, data: WorkspaceDelete
+) -> None:
+    operation_id = uuid4().hex
+    staged: list[tuple[Path, Path]] = []
+    try:
+        workspace = await _lock_workspace(db, workspace_id)
+        await _require_locked_owner(db, workspace_id, user.id)
+        if workspace.status != "archived":
+            raise WorkspaceAccessError(409, "Workspace must be archived before deletion")
+        if data.confirmation_name != workspace.name:
+            raise WorkspaceAccessError(409, "Workspace name confirmation does not match")
+        raw_paths = list(await db.scalars(select(SourcePayload.file_path).where(
+            SourcePayload.workspace_id == workspace_id,
+            SourcePayload.file_path.is_not(None),
+        )))
+        staged = await run_in_threadpool(_stage_private_uploads, raw_paths, operation_id)
+        await _delete_workspace_records(db, workspace_id)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        try:
+            await run_in_threadpool(_restore_private_uploads, staged, operation_id)
+        except Exception:
+            logger.error(
+                "Workspace deletion rollback file restoration failed "
+                "workspace_id=%s operation_id=%s file_count=%s",
+                workspace_id, operation_id, len(staged),
+            )
+        raise
+    try:
+        await run_in_threadpool(_cleanup_private_uploads, staged, operation_id)
+    except Exception:
+        logger.error(
+            "Workspace deletion post-commit cleanup failed "
+            "workspace_id=%s operation_id=%s file_count=%s",
+            workspace_id, operation_id, len(staged),
+        )
 
 
 async def resolve_workspace(db: AsyncSession, user: User, selection: str | int | None):
@@ -203,7 +399,7 @@ async def _require_locked_owner(db: AsyncSession, workspace_id: int, user_id: in
 
 
 async def list_members(db: AsyncSession, user: User, workspace_id: int, *, limit=100, offset=0):
-    await read_workspace(db, user, workspace_id)
+    await resolve_workspace(db, user, workspace_id)
     rows = await db.execute(
         select(WorkspaceMember, User)
         .join(User, User.id == WorkspaceMember.user_id)

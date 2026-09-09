@@ -1,6 +1,6 @@
 # Workspaces — development task v1
 
-Iteration: **v1** · Status: **In progress — Iterations 1 and 2 complete** · Baseline: **2026-09-08**
+Iteration: **v1** · Status: **Completed — all three iterations** · Baseline: **2026-09-08**
 
 Implement the [Workspace contract](../WORKSPACES.md) in three independently
 acceptable delivery stages. That document defines the target behavior; this task
@@ -134,7 +134,7 @@ Viewer mutation controls are still presented by existing financial templates;
 services deny those writes, with role-aware presentation deferred to Iteration 2.
 The existing account/card list services retain their unbounded response contract;
 workspace lists are bounded and ordered. No blockers remain for Iteration 1.
-**Workspace v1 remains open for Iterations 2 and 3.**
+This Iteration 1 record remains historical; Iterations 2 and 3 are now also complete.
 
 ## Iteration 2 — collaboration
 
@@ -232,7 +232,8 @@ STARTTLS/certificate behavior, outbound firewall/DNS, throttling, reputation and
 production PostgreSQL execution remain untested. Delivery remains synchronous to the
 request with bounded timeout and manual resend only; there is no worker, schedule or
 provider telemetry. Workspace archive, restore and permanent deletion remain Iteration
-3. No blockers remain for Iteration 2. **Workspace v1 remains open for Iteration 3.**
+3. No blockers remain for Iteration 2. This Iteration 2 record remains historical;
+Iteration 3 is now complete.
 
 ## Iteration 3 — lifecycle and hardening
 
@@ -283,9 +284,50 @@ future work.
 
 ### Completion record
 
-Record completion date, final Workspace contract revision, schema revision, checks,
-browser results, tested database backends, filesystem failure simulations and any
-remaining operational limitations.
+Completed **2026-09-09** against the final Workspace contract at Git revision
+`7907e54d4ae428880000c0dd336b0c8d59f3bf39`. No schema change was required, so
+`workspace_collaboration_002` remains the migration head.
+
+Implemented owner-only archive and restore; archived-selection invalidation without
+fallback; archived management state; financial, membership and invitation blocking;
+and exact-name permanent deletion. Deletion locks and revalidates ownership, state and
+confirmation, stages every private payload file inside an opaque per-operation
+`UPLOAD_DIR` quarantine, deletes the complete tenant graph in one transaction,
+restores files after rollback, and safely logs only IDs/counts if post-commit cleanup
+fails. The web UI has role-aware lifecycle controls, separate confirmations, ordinary
+POST and HTMX redirects, private/no-store responses, status announcements and dialog
+focus restoration.
+
+Verification used disposable SQLite databases with foreign keys enabled and synthetic
+users, financial records, source data and private files:
+
+- `tests/test_workspaces.py` covered owner-only archive/restore, active deletion,
+  exact case-sensitive confirmation, archived financial/collaboration blocking, full
+  graph deletion, strict upload-root containment and private file cleanup. An injected
+  commit failure restored the staged file and retained the workspace. An injected
+  post-commit unlink failure left the workspace deleted and produced a path-free
+  operator diagnostic.
+- `tests/test_workspaces_web.py` covered role presentation, archive selection clearing,
+  archived management, confirmation/cancel markup, stale archive/restore submissions,
+  exact-name errors, confirmed deletion, CSRF/origin rejection and HTMX redirects.
+- `tests/test_workspace_migration.py` passed; `alembic check` reported no model/schema
+  drift and confirmed that no Iteration 3 revision is needed.
+- Affected transaction, source-processing, dashboard, authentication, CSRF and sliding
+  web-session regression scripts passed. Python compilation, documentation link/path
+  checks, `git diff --check` and complete diff review also passed.
+
+Browser checks used the isolated synthetic SQLite environment at a desktop viewport
+and at 360 × 800. Workspace management, the archived state and the mobile dashboard
+had no horizontal overflow. Keyboard activation moved focus into the archive, restore
+and permanent-delete dialogs; Escape/cancel returned focus to the invoking control.
+The archive and restore flows completed through ordinary browser POSTs, archived
+workspaces stayed out of the selector, and archiving the selected workspace redirected
+subsequent dashboard access to workspace management without selecting another tenant.
+PostgreSQL migration/runtime execution, real SMTP and provider/network behavior remain
+untested. No dependencies or configuration keys changed in Iteration 3; the existing
+SMTP settings and `UPLOAD_DIR` contract are now documented for lifecycle operations.
+Permanent deletion has no recovery window, and SMTP remains request-driven with manual
+resend. No implementation blockers remain.
 
 ## Implementation constraints
 

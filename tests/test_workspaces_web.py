@@ -263,6 +263,74 @@ class WorkspaceWebTests(unittest.IsolatedAsyncioTestCase):
             memberships = (await db.scalars(select(WorkspaceMember).where(WorkspaceMember.user_id == user.id))).all()
             self.assertEqual([(member.workspace_id, member.role) for member in memberships], [(workspace, "editor")])
 
+    async def test_archive_restore_and_permanent_delete_web_lifecycle(self):
+        workspace = await self.create_financial_workspace("Lifecycle", "LIFECYCLE DATA")
+        other_workspace = await self.create_financial_workspace("Other active", "OTHER DATA")
+        async with self.sessions() as db:
+            db.add_all([
+                WorkspaceMember(workspace_id=workspace, user_id=2, role="editor"),
+                WorkspaceMember(workspace_id=workspace, user_id=3, role="viewer"),
+            ])
+            await db.commit()
+
+        self.sign_in(3, workspace)
+        viewer_page = await self.client.get(f"/workspaces/{workspace}")
+        self.assertNotIn("Archive workspace", viewer_page.text)
+        self.assertNotIn("Permanently delete", viewer_page.text)
+
+        self.sign_in(1, workspace)
+        owner_page = await self.client.get(f"/workspaces/{workspace}")
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', owner_page.text)[1]
+        self.assertIn('id="archive-workspace-confirmation"', owner_page.text)
+        self.assertIn("data-workspace-confirm-cancel", owner_page.text)
+        self.assertEqual((await self.client.post(f"/workspaces/{workspace}/archive", data={"csrf_token":"bad"})).status_code, 403)
+        self.assertEqual((await self.client.post(f"/workspaces/{workspace}/archive", data={"csrf_token":csrf}, headers={"Origin":"https://foreign.example"})).status_code, 403)
+        self.sign_in(2, workspace)
+        self.assertEqual((await self.client.post(f"/workspaces/{workspace}/archive", data={"csrf_token":csrf})).status_code, 403)
+
+        self.sign_in(1, workspace)
+        archived = await self.client.post(f"/workspaces/{workspace}/archive", data={"csrf_token":csrf})
+        self.assertEqual((archived.status_code, archived.headers["location"]), (303, "/workspaces?message=archived"))
+        self.assertIsNone(decode_access_token(archived.cookies["access_token"])["workspace_id"])
+        self.assertTrue(decode_access_token(archived.cookies["access_token"])["workspace_invalidated"])
+        no_fallback = await self.client.get("/dashboard")
+        self.assertEqual((no_fallback.status_code, no_fallback.headers["location"]), (303, "/workspaces"))
+        self.assertNotIn("OTHER DATA", no_fallback.text)
+        listing = await self.client.get("/workspaces")
+        self.assertIn("View archived workspace", listing.text)
+        self.assertNotIn(f'action="/workspaces/{workspace}/select"', listing.text)
+        archived_page = await self.client.get(f"/workspaces/{workspace}")
+        self.assertIn("Archived workspace", archived_page.text)
+        self.assertNotIn("Send invitation", archived_page.text)
+        self.assertIn('id="delete-workspace-confirmation"', archived_page.text)
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', archived_page.text)[1]
+
+        stale_archive = await self.client.post(f"/workspaces/{workspace}/archive", data={"csrf_token":csrf})
+        self.assertEqual(stale_archive.status_code, 409, stale_archive.text)
+        mismatch = await self.client.post(
+            f"/workspaces/{workspace}/delete",
+            data={"csrf_token":csrf, "confirmation_name":"lifecycle"},
+        )
+        self.assertEqual(mismatch.status_code, 409, mismatch.text)
+        self.assertIn('value="lifecycle"', mismatch.text)
+
+        restored = await self.client.post(
+            f"/workspaces/{workspace}/restore", data={"csrf_token":csrf},
+            headers={"HX-Request":"true"},
+        )
+        self.assertEqual((restored.status_code, restored.headers["hx-redirect"]), (200, f"/workspaces/{workspace}?message=restored"))
+        stale_restore = await self.client.post(f"/workspaces/{workspace}/restore", data={"csrf_token":csrf})
+        self.assertEqual(stale_restore.status_code, 409, stale_restore.text)
+
+        await self.client.post(f"/workspaces/{workspace}/archive", data={"csrf_token":csrf})
+        deleted = await self.client.post(
+            f"/workspaces/{workspace}/delete",
+            data={"csrf_token":csrf, "confirmation_name":"Lifecycle"},
+        )
+        self.assertEqual((deleted.status_code, deleted.headers["location"]), (303, "/workspaces?message=deleted"))
+        self.assertEqual((await self.client.get(f"/workspaces/{workspace}")).status_code, 404)
+        self.assertEqual((await self.client.get(f"/workspaces/{other_workspace}")).status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,4 +1,5 @@
 """JSON and signed-cookie workspace selection dependencies."""
+from dataclasses import replace
 from typing import Annotated
 from fastapi import Depends, Header, HTTPException, Request
 from fastapi.routing import APIRoute
@@ -46,9 +47,21 @@ async def get_web_workspace(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> WorkspaceContext:
     selection = request.state.web_session.workspace_id
+    if request.state.web_session.workspace_invalidated:
+        destination = "/workspaces"
+        headers = {"Location": destination}
+        if request.headers.get("HX-Request") == "true":
+            headers["HX-Redirect"] = destination
+        raise HTTPException(303, "Select a workspace", headers=headers)
     try:
         context = await resolve_workspace(db, user, selection)
     except WorkspaceAccessError as exc:
+        if selection is not None:
+            request.state.web_session = replace(
+                request.state.web_session,
+                workspace_id=None,
+                workspace_invalidated=True,
+            )
         destination = "/workspaces/onboarding" if exc.detail == "Workspace required" else "/workspaces"
         headers = {"Location": destination}
         if request.headers.get("HX-Request") == "true":

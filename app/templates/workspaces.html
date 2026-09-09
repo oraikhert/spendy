@@ -7,6 +7,7 @@
     <p class="text-base-content/65 mt-1">Choose a workspace for your finances or create one to get started.</p>
   </header>
   {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+  {% if message %}<div class="alert alert-success" role="status" tabindex="-1" autofocus>{{ message }}</div>{% endif %}
   {% for workspace in workspaces %}
   <div class="card bg-base-100 shadow p-4 gap-3">
     <h2 class="font-semibold break-words">{{ workspace.name }}</h2>
@@ -16,6 +17,8 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="btn btn-primary" type="submit">Select <span class="sr-only">{{ workspace.name }}</span></button>
     </form><a class="btn btn-outline" href="/workspaces/{{ workspace.id }}">Manage <span class="sr-only">{{ workspace.name }}</span></a></div>
+    {% else %}
+    <a class="btn btn-outline w-fit" href="/workspaces/{{ workspace.id }}">View archived workspace <span class="sr-only">{{ workspace.name }}</span></a>
     {% endif %}
   </div>
   {% endfor %}

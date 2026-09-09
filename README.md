@@ -3,13 +3,13 @@
 Spendy tracks accounts, cards, transactions and their source messages/files.
 The JSON API supports transaction management, SMS parsing, matching and summaries.
 The web UI provides login, optional or invitation-only registration, collaborative
-workspaces with owner/editor/viewer roles, a calendar-year spending dashboard with
+workspaces with owner/editor/viewer roles and guarded archive, restore, and permanent
+deletion, a calendar-year spending dashboard with
 separate currency totals and date-range drill-down links, and transaction
 list/detail/create/edit pages with filters, deletion and linked source-observation
 details. Uploaded files are private backend inputs and cannot be downloaded. The API
 parses Emirates NBD credit-card statement PDFs; other PDF/image formats are not
-implemented. Budgets, reports, workspace lifecycle operations, and account/card
-management pages remain future work.
+implemented. Budgets, reports, and account/card management pages remain future work.
 
 Built with FastAPI, async SQLAlchemy, Pydantic, Alembic and SQLite/PostgreSQL.
 The UI uses Jinja2, HTMX, Tailwind CSS and DaisyUI; no frontend build is required.
@@ -23,7 +23,7 @@ Read the document for your task; there is no need to load the entire documentati
 | Install, run, use the API or run checks | This README |
 | Locate code or understand architectural decisions | [Architecture](docs/ARCHITECTURE.md) |
 | Understand workspace ownership, roles and access | [Workspaces](docs/WORKSPACES.md) |
-| Implement workspaces | [Workspace development task v1](docs/requirements/WORKSPACES_v1.md) |
+| Review the completed Workspace v1 delivery | [Workspace development task v1](docs/requirements/WORKSPACES_v1.md) |
 | Understand the dashboard summary | [Dashboard UI](docs/ui/DASHBOARD.md) |
 | Implement the dashboard summary, iteration 1 | [Dashboard UI task v1](docs/requirements/DASHBOARD_UI_v1.md) |
 | Understand transaction screens and behavior | [Transactions UI](docs/ui/TRANSACTIONS.md) |

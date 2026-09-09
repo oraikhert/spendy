@@ -1,13 +1,35 @@
 {% extends "base.html" %}
 {% block title %}{{ workspace.name }} · Spendy{% endblock %}
-{% block extra_head %}
-  <script src="/static/js/workspace_detail.js" defer></script>
-{% endblock %}
+{% block extra_head %}<script src="/static/js/workspace_detail.js" defer></script>{% endblock %}
 {% block content %}
 <div class="max-w-4xl mx-auto space-y-6 min-w-0" hx-history="false">
-  <header class="flex flex-wrap items-start justify-between gap-3"><div class="min-w-0"><a class="link link-hover" href="/workspaces">← Workspaces</a><h1 class="text-xl sm:text-2xl font-semibold transaction-text mt-2">{{ workspace.name }}</h1><p class="text-base-content/65 mt-1">{{ workspace.role.value|capitalize }}</p></div></header>
-  {% if error %}<div class="alert alert-error" role="alert" tabindex="-1">{{ error }}</div>{% endif %}
-  {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+  <header class="min-w-0">
+    <a class="link link-hover" href="/workspaces">← Workspaces</a>
+    <h1 class="text-xl sm:text-2xl font-semibold transaction-text mt-2">{{ workspace.name }}</h1>
+    <p class="text-base-content/65 mt-1">{{ workspace.role.value|capitalize }} · {{ workspace.status|capitalize }}</p>
+  </header>
+  {% if error %}<div class="alert alert-error" role="alert" tabindex="-1" data-workspace-alert>{{ error }}</div>{% endif %}
+  {% if message %}<div class="alert alert-success" role="status" tabindex="-1" data-workspace-alert>{{ message }}</div>{% endif %}
+
+  {% if is_archived %}
+  <section class="card bg-base-100 shadow"><div class="card-body p-4 sm:p-6 gap-4">
+    <h2 class="card-title">Archived workspace</h2>
+    <p>This workspace’s data and memberships are preserved, but financial access and collaboration changes are disabled.</p>
+    {% if is_owner %}<form method="post" action="/workspaces/{{ workspace.id }}/restore" data-workspace-confirm-form="restore-workspace-confirmation"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-primary w-full sm:w-auto" type="submit">Restore workspace</button></form>{% endif %}
+  </div></section>
+  {% if is_owner %}
+  <section class="card border border-error/40 bg-base-100 shadow">
+    <form method="post" action="/workspaces/{{ workspace.id }}/delete" class="card-body p-4 sm:p-6 gap-3" data-workspace-confirm-form="delete-workspace-confirmation">
+      <h2 class="card-title text-error">Permanently delete workspace</h2>
+      <p>This permanently removes all financial data, sources, memberships, invitations, and private uploads. It cannot be undone.</p>
+      <label for="confirmation-name">Type <strong class="break-words">{{ workspace.name }}</strong> to confirm</label>
+      <input id="confirmation-name" name="confirmation_name" class="input w-full min-w-0" required maxlength="100" autocomplete="off" value="{{ confirmation_name }}" {% if error %}aria-invalid="true"{% endif %}>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-error w-full sm:w-fit" type="submit">Permanently delete</button>
+    </form>
+  </section>
+  {% endif %}
+  {% else %}
   {% if is_owner %}<section class="card bg-base-100 shadow"><form method="post" action="/workspaces/{{ workspace.id }}/rename" class="card-body p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Workspace name<input class="input w-full" name="name" required maxlength="100" value="{{ workspace.name }}"></label><button class="btn btn-outline" type="submit">Rename</button></form></section>{% endif %}
   <section class="card bg-base-100 shadow"><div class="card-body p-4 sm:p-6"><h2 class="card-title">Members</h2><div class="space-y-4">
     {% for member in members %}<article class="border border-base-300 rounded-box p-3 flex flex-col sm:flex-row sm:items-end gap-3 justify-between min-w-0"><div class="min-w-0"><h3 class="font-semibold break-words">{{ member.full_name or member.username }}</h3><p class="text-sm break-all">{{ member.email }}</p><p class="badge badge-ghost mt-1">{{ member.role.value|capitalize }}</p></div><div class="flex flex-wrap gap-3 items-end">
@@ -18,16 +40,15 @@
     <form method="post" action="/workspaces/{{ workspace.id }}/invitations" class="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3 items-end"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>Email<input name="recipient_email" type="email" required value="{{ invite_email }}" class="input w-full" autocomplete="email"></label><label>Role<select name="role" class="select"><option value="viewer" {% if invite_role == 'viewer' %}selected{% endif %}>Viewer</option><option value="editor" {% if invite_role == 'editor' %}selected{% endif %}>Editor</option></select></label><button class="btn btn-primary" type="submit">Send invitation</button></form>
     <div class="space-y-3 mt-5">{% for invitation in invitations %}<article class="border border-base-300 rounded-box p-3 min-w-0"><p class="break-all font-medium">{{ invitation.recipient_email }}</p><p class="text-sm">{{ invitation.role.value|capitalize }} · Delivery: {{ invitation.delivery_state }}{% if invitation.accepted_at %} · Accepted{% elif invitation.revoked_at %} · Revoked{% endif %}</p>{% if not invitation.accepted_at and not invitation.revoked_at %}<div class="flex flex-wrap gap-2 mt-2"><form method="post" action="/workspaces/{{ workspace.id }}/invitations/{{ invitation.id }}/resend"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-outline btn-sm" type="submit">Resend</button></form><form method="post" action="/workspaces/{{ workspace.id }}/invitations/{{ invitation.id }}/revoke"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-error btn-outline btn-sm" type="submit">Revoke</button></form></div>{% endif %}</article>{% else %}<p class="text-sm text-base-content/70">No invitations yet.</p>{% endfor %}</div>
   </div></section>{% endif %}
-  <section><form method="post" action="/workspaces/{{ workspace.id }}/leave" data-leave-workspace-form><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-error btn-outline" type="submit">Leave workspace</button></form></section>
-  <dialog id="leave-workspace-confirmation" class="modal" aria-labelledby="leave-workspace-title" aria-describedby="leave-workspace-message">
-    <div class="modal-box">
-      <h2 id="leave-workspace-title" class="text-xl font-bold">Leave workspace?</h2>
-      <p id="leave-workspace-message" class="mt-3">Leave {{ workspace.name }}? You will lose access to its financial data until an owner invites you again.</p>
-      <div class="modal-action flex-wrap">
-        <button type="button" class="btn" data-leave-workspace-cancel>Cancel</button>
-        <button type="button" class="btn btn-error" data-leave-workspace-confirm>Leave workspace</button>
-      </div>
-    </div>
-  </dialog>
+  <section class="flex flex-wrap gap-3"><form method="post" action="/workspaces/{{ workspace.id }}/leave" data-leave-workspace-form data-workspace-confirm-form="leave-workspace-confirmation"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-error btn-outline" type="submit">Leave workspace</button></form>{% if is_owner %}<form method="post" action="/workspaces/{{ workspace.id }}/archive" data-workspace-confirm-form="archive-workspace-confirmation"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-warning btn-outline" type="submit">Archive workspace</button></form>{% endif %}</section>
+  {% endif %}
+
+  {% set dialogs = [
+    ('leave-workspace-confirmation', 'Leave workspace?', 'Leave ' ~ workspace.name ~ '? You will lose access until an owner invites you again.', 'Leave workspace', 'btn-error'),
+    ('archive-workspace-confirmation', 'Archive workspace?', 'Archive ' ~ workspace.name ~ '? Financial access and collaboration changes will stop until an owner restores it.', 'Archive workspace', 'btn-warning'),
+    ('restore-workspace-confirmation', 'Restore workspace?', 'Restore ' ~ workspace.name ~ ' and make its financial data available again?', 'Restore workspace', 'btn-primary'),
+    ('delete-workspace-confirmation', 'Permanently delete workspace?', 'This cannot be undone. Confirm that you want to permanently delete ' ~ workspace.name ~ '.', 'Permanently delete', 'btn-error')
+  ] %}
+  {% for dialog_id, title, body, action, button_class in dialogs %}{% if (dialog_id == 'leave-workspace-confirmation' and not is_archived) or (is_owner and dialog_id == 'archive-workspace-confirmation' and not is_archived) or (is_owner and dialog_id in ['restore-workspace-confirmation', 'delete-workspace-confirmation'] and is_archived) %}<dialog id="{{ dialog_id }}" class="modal" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-message"><div class="modal-box max-w-lg min-w-0"><h2 id="{{ dialog_id }}-title" class="text-xl font-bold">{{ title }}</h2><p id="{{ dialog_id }}-message" class="mt-3 break-words">{{ body }}</p><div class="modal-action flex-wrap"><button type="button" class="btn" data-workspace-confirm-cancel>Cancel</button><button type="button" class="btn {{ button_class }}" data-workspace-confirm-submit>{{ action }}</button></div></div></dialog>{% endif %}{% endfor %}
 </div>
 {% endblock %}

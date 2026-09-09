@@ -88,7 +88,8 @@ in [Transactions UI](ui/TRANSACTIONS.md).
   **Workspace** with a local role, and **WorkspaceInvitation** stores a normalized
   recipient plus only a cryptographic token hash and delivery/lifecycle state. Every
   financial record belongs to a workspace; composite foreign keys enforce
-  same-workspace parent relationships.
+  same-workspace parent relationships. Archive preserves this graph; guarded permanent
+  deletion removes it and its private payload files as one aggregate operation.
 
 Models are the source for current fields and relationships; revisions in
 [alembic/versions/](../alembic/versions/) define how deployed schemas evolve.
@@ -123,7 +124,10 @@ registration binds its token to the invitation path. Expired HTMX sessions use a
 login redirect. Invitation, workspace and transaction responses containing private
 state are not stored by clients.
 Selection reissues the signed cookie while preserving its session ID, and every
-financial request revalidates membership. Financial, workspace and invitation web
+financial request revalidates active membership. An archived or otherwise invalid
+selection is cleared without choosing another workspace. Archived workspaces remain
+management resources, but financial access, membership changes and invitations are
+blocked; only an owner can restore or permanently delete one. Financial, workspace and invitation web
 routes reject an explicit cross-origin `Origin` header, including on reads, so the
 existing JSON API CORS policy cannot expose cookie HTML or CSRF tokens. The comparison
 accepts the request-derived origin and the normalized `PUBLIC_BASE_URL` origin so a
